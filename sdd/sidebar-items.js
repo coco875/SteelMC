@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Tag"],"fn":["suspend"],"struct":["AtomicOwned","AtomicShared","Epoch","Guard","Owned","Ptr","Shared"]};

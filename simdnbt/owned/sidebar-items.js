@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Nbt","NbtList","NbtTag"],"fn":["read","read_compound","read_optional_tag","read_tag","read_unnamed"],"struct":["BaseNbt","NbtCompound"]};

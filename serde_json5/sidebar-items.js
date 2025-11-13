@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Error"],"fn":["from_reader","from_slice","from_str","to_string","to_writer"],"struct":["Deserializer","Location"],"type":["Result"]};

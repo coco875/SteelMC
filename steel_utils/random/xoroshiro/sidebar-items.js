@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Xoroshiro","XoroshiroSplitter"]};
+window.SIDEBAR_ITEMS = {"constant":["GOLDEN_RATIO_64","SILVER_RATIO_64"],"fn":["mix_stafford_13"],"struct":["Xoroshiro","XoroshiroSplitter"]};

@@ -3,7 +3,7 @@
 </div></details><details class="toggle method-toggle" open><summary><section id="method.written_size" class="method"><a class="src rightside" href="../../../src/steel_utils/codec/var_int.rs.html#21-26">Source</a><h4 class="code-header">pub fn <a href="#method.written_size" class="fn">written_size</a>(val: <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Returns the exact number of bytes this <code>VarInt</code> will write when
 <a href="../../serial/trait.WriteTo.html#tymethod.write" title="method steel_utils::serial::WriteTo::write"><code>WriteTo::write</code></a> is called, assuming no error occurs.</p>
 </div></details><details class="toggle method-toggle" open><summary><section id="method.read_async" class="method"><a class="src rightside" href="../../../src/steel_utils/codec/var_int.rs.html#32-45">Source</a><h4 class="code-header">pub async fn <a href="#method.read_async" class="fn">read_async</a>(
-    read: &amp;mut (impl <a class="trait" href="../../../tokio/io/async_read/trait.AsyncRead.html" title="trait tokio::io::async_read::AsyncRead">AsyncRead</a> + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Unpin.html" title="trait core::marker::Unpin">Unpin</a>),
+    read: &amp;mut (impl AsyncRead + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Unpin.html" title="trait core::marker::Unpin">Unpin</a>),
 ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.i32.html">i32</a>, <a class="struct" href="https://doc.rust-lang.org/nightly/std/io/error/struct.Error.html" title="struct std::io::error::Error">Error</a>&gt;</h4></section></summary><div class="docblock"><p>Reads a <code>VarInt</code> from an async reader.</p>
 <h5 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h5>
 <ul>
@@ -11,7 +11,7 @@
 </ul>
 </div></details><details class="toggle method-toggle" open><summary><section id="method.write_async" class="method"><a class="src rightside" href="../../../src/steel_utils/codec/var_int.rs.html#52-65">Source</a><h4 class="code-header">pub async fn <a href="#method.write_async" class="fn">write_async</a>(
     self,
-    write: &amp;mut (impl <a class="trait" href="../../../tokio/io/async_write/trait.AsyncWrite.html" title="trait tokio::io::async_write::AsyncWrite">AsyncWrite</a> + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Unpin.html" title="trait core::marker::Unpin">Unpin</a>),
+    write: &amp;mut (impl AsyncWrite + <a class="trait" href="https://doc.rust-lang.org/nightly/core/marker/trait.Unpin.html" title="trait core::marker::Unpin">Unpin</a>),
 ) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.unit.html">()</a>, <a class="struct" href="https://doc.rust-lang.org/nightly/std/io/error/struct.Error.html" title="struct std::io::error::Error">Error</a>&gt;</h4></section></summary><div class="docblock"><p>Writes a <code>VarInt</code> to an async writer.</p>
 <h5 id="errors-1"><a class="doc-anchor" href="#errors-1">§</a>Errors</h5>
 <ul>

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["hazmat"],"struct":["InvalidLength","WeakKeyError"],"trait":["AlgorithmName","BlockSizeUser","BlockSizes","InnerInit","InnerIvInit","InnerUser","IvSizeUser","IvState","KeyInit","KeyIvInit","KeySizeUser","OutputSizeUser","ParBlocksSizeUser","Reset"],"type":["AddBlockSize","Block","Iv","Key","Output","OutputSize","ParBlocks","SubBlockSize"]};

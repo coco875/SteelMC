@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["LucasCheck","Primality","SetBits"],"fn":["estimate_primecount","lucas_test","minimum_mr_iterations","random_odd_integer"],"struct":["AStarBase","BruteForceBase","MillerRabin","SelfridgeBase","SmallFactorsSieve","SmallFactorsSieveFactory"],"trait":["LucasBase","SieveFactory"]};

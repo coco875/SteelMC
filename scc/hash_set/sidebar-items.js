@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["ConsumableEntry","HashSet"],"type":["Reserve"]};

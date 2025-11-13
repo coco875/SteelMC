@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["barrier","gate","lock","pager","semaphore"]};

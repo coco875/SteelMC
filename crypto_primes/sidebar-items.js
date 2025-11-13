@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Error","Flavor"],"fn":["is_prime","random_prime","sieve_and_find"],"mod":["fips","hazmat"]};
