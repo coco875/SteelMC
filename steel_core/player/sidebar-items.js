@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["chunk_sender","networking"],"struct":["GameProfile","Player"]};

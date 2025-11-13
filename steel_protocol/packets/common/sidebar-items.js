@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CCustomPayload","CDisconnect","CUpdateTags","SClientInformation","SCustomPayload"],"type":["TagCollection"]};

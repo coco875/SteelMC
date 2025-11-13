@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["config","login","mojang_authentication","status"],"struct":["JavaTcpClient"]};

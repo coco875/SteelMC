@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["swap_endianness","swap_endianness_as_u8"],"trait":["SwappableNumber"]};

@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="`simd_cesu8`   Build Status Crates.io Version Crates.io MSRV"><title>simd_cesu8 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="simd_cesu8" data-themes="" data-resource-suffix="" data-rustdoc-version="1.93.0-nightly (01867557c 2025-11-12)" data-channel="nightly" data-search-js="search-8e3fad08.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-a410ff4d.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate simd_cesu8</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../simd_cesu8/index.html">simd_<wbr>cesu8</a><span class="version">1.1.0</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#simd_cesu8--build-status-cratesio-version-cratesio-msrv" title="`simd_cesu8`   Build Status Crates.io Version Crates.io MSRV"><code>simd_cesu8</code>   Build Status Crates.io Version Crates.io MSRV</a><ul><li><a href="#features" title="Features">Features</a></li><li><a href="#usage" title="Usage">Usage</a></li><li><a href="#documentation" title="Documentation">Documentation</a></li><li><a href="#msrv" title="MSRV">MSRV</a></li><li><a href="#benchmarks" title="Benchmarks">Benchmarks</a></li><li><a href="#thanks" title="Thanks">Thanks</a></li><li><a href="#license" title="License">License</a></li><li><a href="#contribution" title="Contribution">Contribution</a></li></ul></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>simd_<wbr>cesu8</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/simd_cesu8/lib.rs.html#1-484">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="simd_cesu8--build-status-cratesio-version-cratesio-msrv"><a class="doc-anchor" href="#simd_cesu8--build-status-cratesio-version-cratesio-msrv">§</a><code>simd_cesu8</code>   <a href="https://github.com/seancroach/simd_cesu8"><img src="https://img.shields.io/github/actions/workflow/status/seancroach/simd_cesu8/ci.yml" alt="Build Status" /></a> <a href="https://crates.io/crates/simd_cesu8"><img src="https://img.shields.io/crates/v/simd_cesu8" alt="Crates.io Version" /></a> <img src="https://img.shields.io/crates/msrv/simd_cesu8" alt="Crates.io MSRV" /></h2>
+<p>An extremely fast, SIMD-accelerated, encoding and decoding library
+for <a href="https://en.wikipedia.org/wiki/UTF-8#CESU-8">CESU-8</a> and <a href="https://en.wikipedia.org/wiki/UTF-8#Modified_UTF-8">Modified
+UTF-8</a>.</p>
+<h3 id="features"><a class="doc-anchor" href="#features">§</a>Features</h3>
+<ul>
+<li>Extremely fast encoding and decoding of CESU-8 and Modified UTF-8.</li>
+<li>Only allocates memory when absolutely necessary. Zero reallocations.</li>
+<li>Supports lossy decoding of CESU-8 and MUTF-8.</li>
+<li>Supports strict decoding of CESU-8 and MUTF-8.</li>
+<li>Up to 25 times faster than known alternatives when encoding.</li>
+<li>Up to 14 times faster than known alternatives when decoding.</li>
+<li>Supports AVX 2 and SSE 4.2 implementations on x86 and x86-64.</li>
+<li>ARM64 (aarch64) SIMD is supported.</li>
+<li>WASM (wasm32) SIMD is supported.</li>
+<li>PowerPC (powerpc) SIMD is (partially) supported.</li>
+<li>Falls back to word-at-a-time implementations instead of byte-at-a-time.</li>
+<li>No-std support.</li>
+</ul>
+<h3 id="usage"><a class="doc-anchor" href="#usage">§</a>Usage</h3>
+<p>Add this to your <code>Cargo.toml</code> file:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies.simd_cesu8]
+version = &quot;1&quot;
+features = [&quot;nightly&quot;]</code></pre></div>
+<p>It is extremely recommended to use the nightly feature, as it enables the
+fastest implementations of the library. If you don’t want to use nightly, you
+can remove the feature and the library will still work, but will be slower.</p>
+<h3 id="documentation"><a class="doc-anchor" href="#documentation">§</a>Documentation</h3>
+<p>The documentation can be found on <a href="https://docs.rs/simd_cesu8">docs.rs</a>.</p>
+<p>For quick access to certain functions, I highly recommend pressing the “All
+Items” button in the top left corner of the documentation page.</p>
+<h3 id="msrv"><a class="doc-anchor" href="#msrv">§</a>MSRV</h3>
+<p>The minimum supported Rust version is 1.88.0.</p>
+<h3 id="benchmarks"><a class="doc-anchor" href="#benchmarks">§</a>Benchmarks</h3>
+<p>These benchmarks were run with an AMD Ryzen 9 7950X3D on WSL2 with Rust
+1.81.0-nightly. Each of the operations were measured with an input exactly equal
+to 16,380 bytes. Data sets were randomly generated with the same seed for each
+operation. Each set contained 1,000 values, that were endlessly repeated as
+input. The benchmarks were run with the <a href="https://github.com/bheisler/criterion.rs"><code>criterion</code></a> crate. The tables got
+created via <a href="https://github.com/BurntSushi/critcmp"><code>critcmp</code></a>. The source code for the benchmarks can be found in the
+<code>benches</code> directory. Any call to <code>simd_cesu8</code> was replaced with the <code>cesu8</code>
+equivalent when collecting the data for the <code>cesu8</code> benchmarks. The data
+collected can also be found in the <code>benches</code> directory.</p>
+<p>We compare <code>simd_cesu8</code> to the <a href="https://github.com/emk/cesu8-rs/"><code>cesu8</code></a> library, as it’s the most popular
+library for CESU-8 and MUTF-8 encoding and decoding in Rust. I originally
+started this project, however, because there’s a few minor semantic errors in
+the <code>cesu8</code> library that I wanted to fix myself.</p>
+<h4 id="encoding"><a class="doc-anchor" href="#encoding">§</a>Encoding</h4>
+<p>To understand the benchmarks, it’s first a good idea to familiarize yourself
+with the datasets used to benchmark the encoding operations:</p>
+<ul>
+<li><code>ascii_non_null_strings</code> are strings exactly 16,380 bytes long with only ASCII
+characters and no null bytes.</li>
+<li><code>ascii_null_alternating_strings</code> are strings exactly 16,380 bytes long with
+only ASCII characters and null bytes alternating, where every odd byte is
+non-null and every even byte is null.</li>
+<li><code>interspersed_strings</code> are strings exactly 16,380 bytes long with every 20
+bytes in the following pattern:
+<ul>
+<li>A non-null ASCII character (1 byte)</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character</li>
+<li>A null byte</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character</li>
+</ul>
+</li>
+<li><code>null_strings</code> are strings exactly 16,380 bytes long with only null bytes.</li>
+<li><code>utf8_clamped_width_2_strings</code> are strings exactly 16,380 bytes long with only
+2-byte UTF-8 characters.</li>
+<li><code>utf8_clamped_width_3_strings</code> are strings exactly 16,380 bytes long with only
+3-byte UTF-8 characters.</li>
+<li><code>utf8_clamped_width_4_strings</code> are strings exactly 16,380 bytes long with only
+4-byte UTF-8 characters.</li>
+</ul>
+<h5 id="simd_cesu8encode"><a class="doc-anchor" href="#simd_cesu8encode">§</a><code>simd_cesu8::encode</code></h5>
+<p><img src="https://raw.githubusercontent.com/seancroach/simd_cesu8/main/img/encode_cesu8.png" alt="Encode CESU-8 Benchmarks" /></p>
+<p><code>simd_cesu8::encode</code> is around %2,500 faster than <code>cesu8::to_cesu8</code> in optimal
+conditions. In suboptimal conditions, <code>simd_cesu8::encode</code> is around %50 faster
+than <code>cesu8::to_cesu8</code>. The main reason for the speedup, beyond SIMD, is
+that <code>simd_cesu8</code> doesn’t quickly check for just ASCII characters, but instead,
+it checks for the start of 4-byte characters. This is a significant speedup over
+the traditional ASCII hot paths. Other speedups come in the form of cumulative,
+tiny optimizations that add up to a significant speedup.</p>
+<h5 id="simd_cesu8mutf8encode"><a class="doc-anchor" href="#simd_cesu8mutf8encode">§</a><code>simd_cesu8::mutf8::encode</code></h5>
+<p><img src="https://raw.githubusercontent.com/seancroach/simd_cesu8/main/img/encode_mutf8.png" alt="Encode MUTF-8 Benchmarks" /></p>
+<p>Similar to <code>simd_cesu8::encode</code>, <code>simd_cesu8::mutf8::encode</code> is around %1800
+faster than <code>cesu8::to_java_cesu8</code> in optimal conditions. In suboptimal
+conditions, <code>simd_cesu8::mutf8::encode</code> is around %50 faster than
+<code>cesu8::to_java_cesu8</code>. The same reason for the speedup applies here, but
+instead of checking for the start of 4-byte characters, we’re also checking for
+any null bytes with SIMD. Other speedups come in the form of cumulative, tiny
+optimizations that add up to a significant speedup.</p>
+<h4 id="decoding"><a class="doc-anchor" href="#decoding">§</a>Decoding</h4>
+<p>To understand the benchmarks, it’s first a good idea to familiarize yourself
+with the datasets used to benchmark the decoding operations:</p>
+<ul>
+<li><code>ascii_non_null_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes long
+with only ASCII characters and no null bytes.</li>
+<li><code>ascii_null_alternating_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes
+long with only ASCII characters and null bytes alternating, where every odd
+byte is non-null and every even byte is null.</li>
+<li><code>interspersed_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes long with
+every 20 bytes in the following pattern:
+<ul>
+<li>A non-null ASCII character (1 byte)</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character</li>
+<li>A null byte</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character</li>
+</ul>
+</li>
+<li><code>interspersed_cesu8_bytes</code> is a set of CESU-8 strings exactly 16,380 bytes
+long with every 12 bytes in the following pattern:
+<ul>
+<li>An ASCII character (1 byte)</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character encoded as a surrogate pair (6 bytes)</li>
+</ul>
+</li>
+<li><code>interspersed_mutf8_bytes</code> is a set of MUTF-8 strings exactly 16,380 bytes
+long with every 26 bytes in the following pattern:
+<ul>
+<li>A non-null ASCII character (1 byte)</li>
+<li>A non-null ASCII character (1 byte)</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character encoded as a surrogate pair (6 bytes)</li>
+<li>A null byte encoded as a 2-byte sequence</li>
+<li>A 2-byte UTF-8 character</li>
+<li>A 3-byte UTF-8 character</li>
+<li>A 4-byte UTF-8 character encoded as a surrogate pair (6 bytes)</li>
+</ul>
+</li>
+<li><code>mutf8_null_bytes</code> is a set of MUTF-8 strings exactly 16,380 bytes long with
+only null encoded as a 2-byte sequence.</li>
+<li><code>null_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes long with only
+null bytes.</li>
+<li><code>surrogate_pairs_bytes</code> is a set of CESU-8 strings exactly 16,380 bytes long
+with only 6-byte surrogate pairs.</li>
+<li><code>utf8_clamped_width_2_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes
+long with only 2-byte UTF-8 characters.</li>
+<li><code>utf8_clamped_width_3_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes
+long with only 3-byte UTF-8 characters.</li>
+<li><code>utf8_clamped_width_4_bytes</code> is a set of UTF-8 strings exactly 16,380 bytes
+long with only 4-byte UTF-8 characters.</li>
+</ul>
+<h5 id="simd_cesu8decode"><a class="doc-anchor" href="#simd_cesu8decode">§</a><code>simd_cesu8::decode</code></h5>
+<p><img src="https://raw.githubusercontent.com/seancroach/simd_cesu8/main/img/decode_cesu8.png" alt="Decode CESU-8 Benchmarks" /></p>
+<p>In optimal conditions, <code>simd_cesu8::decode</code> can be around %1,400 faster than
+<code>cesu8::to_cesu8</code>. However, <code>simd_cesu8::decode</code> is slower
+than <code>cesu8::to_cesu8</code> when decoding surrogate pairs. The main reason is
+that <code>simd_cesu8</code> supports lossy decoding, but the internals of that seems to
+introduce a decent amount of overhead. <code>simd_cesu8</code> is faster in all ways
+that <code>cesu8</code> <strong>when LTO is enabled</strong>. However, I didn’t run the benchmarks with
+LTO enabled because it seems disingenuous to do so as LTO shouldn’t be a
+requirement for a library to be fast.</p>
+<h5 id="simd_cesu8mutf8decode"><a class="doc-anchor" href="#simd_cesu8mutf8decode">§</a><code>simd_cesu8::mutf8::decode</code></h5>
+<p><img src="https://raw.githubusercontent.com/seancroach/simd_cesu8/main/img/decode_mutf8.png" alt="Decode MUTF-8 Benchmarks" /></p>
+<p>Much like <code>simd_cesu8::decode</code>, <code>simd_cesu8::mutf8::decode</code> can be around %1,400
+faster than <code>cesu8::to_java_cesu8</code>. But, the pitfalls are equally the same, as
+<code>simd_cesu8::mutf8::decode</code> is slower than <code>cesu8::to_java_cesu8</code> when decoding
+surrogate pairs. The other catch is that we’re slightly slower than <code>cesu8</code> when
+decoding null bytes. The same reasoning applies here, as the overhead is higher.</p>
+<h3 id="thanks"><a class="doc-anchor" href="#thanks">§</a>Thanks</h3>
+<ul>
+<li>To the authors of the <a href="https://github.com/emk/cesu8-rs/"><code>cesu8</code></a> library. It’s a genuinely good library that
+helped me years ago learn some more complex Rust concepts.</li>
+<li>To the authors of <a href="https://github.com/rusticstuff/simdutf8"><code>simdutf8</code></a> for arguably one of the biggest improvements to
+the borrow paths in this library.</li>
+<li>To the authors of <a href="https://github.com/azalea-rs/simdnbt"><code>simdnbt</code></a> for the inspiration of using <code>portable_simd</code>.</li>
+</ul>
+<h3 id="license"><a class="doc-anchor" href="#license">§</a>License</h3>
+<p>Licensed under either of</p>
+<ul>
+<li>Apache License, Version 2.0
+(<a href="https://github.com/seancroach/simd_cesu8/blob/main/LICENSE-APACHE">LICENSE-APACHE</a>
+or <a href="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</a>)</li>
+<li>MIT license
+(<a href="https://github.com/seancroach/simd_cesu8/blob/main/LICENSE-MIT">LICENSE-MIT</a>
+or <a href="http://opensource.org/licenses/MIT">http://opensource.org/licenses/MIT</a>)</li>
+</ul>
+<p>at your option.</p>
+<h3 id="contribution"><a class="doc-anchor" href="#contribution">§</a>Contribution</h3>
+<p>Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="mutf8/index.html" title="mod simd_cesu8::mutf8">mutf8</a></dt><dd>A module for encoding and decoding Modified UTF-8 (MUTF-8), a variant of
+CESU-8 that encodes the null character (<code>0x00</code>) as two bytes: <code>0xc0</code> and
+<code>0x80</code>. In general, this module is nearly identical to the functions found
+in the root of this crate.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.DecodingError.html" title="struct simd_cesu8::DecodingError">Decoding<wbr>Error</a></dt><dd>A zero-sized type that represents an error that occurred while decoding.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.decode.html" title="fn simd_cesu8::decode">decode</a></dt><dd>Converts a slice of bytes to a string.</dd><dt><a class="fn" href="fn.decode_lossy.html" title="fn simd_cesu8::decode_lossy">decode_<wbr>lossy</a></dt><dd>Converts a slice of bytes to a string, including invalid characters.</dd><dt><a class="fn" href="fn.decode_lossy_strict.html" title="fn simd_cesu8::decode_lossy_strict">decode_<wbr>lossy_<wbr>strict</a></dt><dd>Converts a slice of bytes to a string, including invalid characters.</dd><dt><a class="fn" href="fn.decode_strict.html" title="fn simd_cesu8::decode_strict">decode_<wbr>strict</a></dt><dd>Converts a slice of bytes to a string.</dd><dt><a class="fn" href="fn.encode.html" title="fn simd_cesu8::encode">encode</a></dt><dd>Encodes a string to CESU-8.</dd><dt><a class="fn" href="fn.needs_encoded.html" title="fn simd_cesu8::needs_encoded">needs_<wbr>encoded</a></dt><dd>Returns <code>true</code> if the input string needs to be encoded to CESU-8.</dd></dl></section></div></main></body></html>

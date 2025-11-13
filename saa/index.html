@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Synchronous and Asynchronous Synchronization Primitives"><title>saa - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="saa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.93.0-nightly (01867557c 2025-11-12)" data-channel="nightly" data-search-js="search-8e3fad08.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-a410ff4d.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate saa</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../saa/index.html">saa</a><span class="version">5.3.2</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#synchronous-and-asynchronous-synchronization-primitives" title="Synchronous and Asynchronous Synchronization Primitives">Synchronous and Asynchronous Synchronization Primitives</a><ul><li><a href="#features" title="Features">Features</a></li><li><a href="#lock" title="Lock">Lock</a></li><li><a href="#barrier" title="Barrier">Barrier</a></li><li><a href="#semaphore" title="Semaphore">Semaphore</a></li><li><a href="#gate" title="Gate">Gate</a></li><li><a href="#pager" title="Pager">Pager</a></li><li><a href="#notes" title="Notes">Notes</a></li><li><a href="#changelog" title="Changelog">Changelog</a></li></ul></li></ul><h3><a href="#reexports">Crate Items</a></h3><ul class="block"><li><a href="#reexports" title="Re-exports">Re-exports</a></li><li><a href="#modules" title="Modules">Modules</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>saa</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/saa/lib.rs.html#1-24">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="synchronous-and-asynchronous-synchronization-primitives"><a class="doc-anchor" href="#synchronous-and-asynchronous-synchronization-primitives">§</a>Synchronous and Asynchronous Synchronization Primitives</h2>
+<p><a href="https://crates.io/crates/saa"><img src="https://img.shields.io/crates/v/saa" alt="Cargo" /></a>
+<img src="https://img.shields.io/crates/l/saa" alt="Crates.io" />
+<img src="https://img.shields.io/github/actions/workflow/status/wvwwvwwv/synchronous-and-asynchronous/saa.yml?branch=main" alt="GitHub Workflow Status" /></p>
+<p>Word-sized low-level synchronization primitives providing both asynchronous and synchronous interfaces.</p>
+<h3 id="features"><a class="doc-anchor" href="#features">§</a>Features</h3>
+<ul>
+<li>No heap allocation.</li>
+<li>No hidden global variables.</li>
+<li>Provides both asynchronous and synchronous interfaces.</li>
+<li>Small memory footprint.</li>
+<li><a href="https://github.com/tokio-rs/loom"><code>Loom</code></a> support: <code>features = ["loom"]</code>.</li>
+</ul>
+<h3 id="lock"><a class="doc-anchor" href="#lock">§</a>Lock</h3>
+<p><code>saa::Lock</code> is a low-level shared-exclusive lock providing both asynchronous and synchronous interfaces. Synchronous locking methods such as <code>lock_sync</code> and <code>share_sync</code> can be used alongside their asynchronous counterparts <code>lock_async</code> and <code>share_async</code> simultaneously. <code>saa::Lock</code> implements an allocation-free fair wait queue shared between both synchronous and asynchronous methods.</p>
+<h4 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>saa::Lock;
+
+<span class="kw">let </span>lock = Lock::default();
+
+lock.lock_sync();
+
+<span class="macro">assert!</span>(!lock.try_lock());
+<span class="macro">assert!</span>(!lock.try_share());
+
+<span class="macro">assert!</span>(!lock.release_share());
+<span class="macro">assert!</span>(lock.release_lock());
+
+<span class="kw">async </span>{
+    lock.share_async();
+    <span class="macro">assert!</span>(lock.release_share());
+};</code></pre></div><h3 id="barrier"><a class="doc-anchor" href="#barrier">§</a>Barrier</h3>
+<p><code>saa::Barrier</code> is a synchronization primitive to enable a number of tasks to start execution at the same time.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::sync::Arc;
+<span class="kw">use </span>std::thread;
+
+<span class="kw">use </span>saa::Barrier;
+
+<span class="kw">let </span>barrier = Arc::new(Barrier::with_count(<span class="number">8</span>));
+
+<span class="kw">let </span><span class="kw-2">mut </span>threads = Vec::new();
+
+<span class="kw">for _ in </span><span class="number">0</span>..<span class="number">8 </span>{
+    <span class="kw">let </span>barrier = barrier.clone();
+    threads.push(thread::spawn(<span class="kw">move </span>|| {
+        <span class="kw">for _ in </span><span class="number">0</span>..<span class="number">4 </span>{
+            barrier.wait_sync();
+        }
+    }));
+}
+
+<span class="kw">for </span>thread <span class="kw">in </span>threads {
+    thread.join().unwrap();
+}</code></pre></div><h3 id="semaphore"><a class="doc-anchor" href="#semaphore">§</a>Semaphore</h3>
+<p><code>saa::Semaphore</code> is a synchronization primitive that allows a fixed number of threads to access a resource concurrently.</p>
+<h4 id="examples-1"><a class="doc-anchor" href="#examples-1">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>saa::Semaphore;
+
+<span class="kw">let </span>semaphore = Semaphore::default();
+
+semaphore.acquire_many_sync(Semaphore::MAX_PERMITS - <span class="number">1</span>);
+
+<span class="macro">assert!</span>(semaphore.try_acquire());
+<span class="macro">assert!</span>(!semaphore.try_acquire());
+
+<span class="macro">assert!</span>(semaphore.release());
+<span class="macro">assert!</span>(!semaphore.release_many(Semaphore::MAX_PERMITS));
+<span class="macro">assert!</span>(semaphore.release_many(Semaphore::MAX_PERMITS - <span class="number">1</span>));
+
+<span class="kw">async </span>{
+    semaphore.acquire_async().<span class="kw">await</span>;
+    <span class="macro">assert!</span>(semaphore.release());
+};</code></pre></div><h3 id="gate"><a class="doc-anchor" href="#gate">§</a>Gate</h3>
+<p><code>saa::Gate</code> is an unbounded barrier that can be opened or sealed manually as needed.</p>
+<h4 id="examples-2"><a class="doc-anchor" href="#examples-2">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::sync::Arc;
+<span class="kw">use </span>std::thread;
+
+<span class="kw">use </span>saa::Gate;
+<span class="kw">use </span>saa::gate::State;
+
+<span class="kw">let </span>gate = Arc::new(Gate::default());
+
+<span class="kw">let </span><span class="kw-2">mut </span>threads = Vec::new();
+
+<span class="kw">for _ in </span><span class="number">0</span>..<span class="number">4 </span>{
+    <span class="kw">let </span>gate = gate.clone();
+    threads.push(thread::spawn(<span class="kw">move </span>|| {
+        <span class="macro">assert_eq!</span>(gate.enter_sync(), <span class="prelude-val">Ok</span>(State::Controlled));
+    }));
+}
+
+<span class="kw">let </span><span class="kw-2">mut </span>count = <span class="number">0</span>;
+<span class="kw">while </span><span class="macro">count !</span>= <span class="number">4 </span>{
+    <span class="kw">if let </span><span class="prelude-val">Ok</span>(n) = gate.permit() {
+        count += n;
+    }
+}
+
+<span class="kw">for </span>thread <span class="kw">in </span>threads {
+    thread.join().unwrap();
+}</code></pre></div><h3 id="pager"><a class="doc-anchor" href="#pager">§</a>Pager</h3>
+<p><code>saa::Pager</code> enables remotely waiting for a resource to become available.</p>
+<h4 id="examples-3"><a class="doc-anchor" href="#examples-3">§</a>Examples</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::pin::pin;
+
+<span class="kw">use </span>saa::{Gate, Pager};
+<span class="kw">use </span>saa::gate::State;
+
+<span class="kw">let </span>gate = Gate::default();
+
+<span class="kw">let </span><span class="kw-2">mut </span>pinned_pager = <span class="macro">pin!</span>(Pager::default());
+
+<span class="macro">assert!</span>(gate.register_pager(<span class="kw-2">&amp;mut </span>pinned_pager, <span class="bool-val">true</span>));
+<span class="macro">assert_eq!</span>(gate.open().<span class="number">1</span>, <span class="number">1</span>);
+
+<span class="macro">assert_eq!</span>(pinned_pager.poll_sync(), <span class="prelude-val">Ok</span>(State::Open));</code></pre></div><h3 id="notes"><a class="doc-anchor" href="#notes">§</a>Notes</h3>
+<p>Using synchronous methods in an asynchronous context may lead to deadlocks. Consider a scenario where an asynchronous runtime uses two threads to execute three tasks.</p>
+<ul>
+<li>ThreadId(0): <code>task-0: share-waiting / pending</code> || <code>task-1: "synchronous"-lock-waiting</code>.</li>
+<li>ThreadId(1): <code>task-2: release-lock / ready: wake-up task-0</code> -&gt; <code>task-2: lock-waiting / pending</code>.</li>
+</ul>
+<p>In this example, <code>task-0</code> has logically acquired a shared lock transferred from <code>task-2</code>; however, it may remain in the task queue indefinitely depending on the task scheduling policy.</p>
+<h3 id="changelog"><a class="doc-anchor" href="#changelog">§</a><a href="https://github.com/wvwwvwwv/synchronous-and-asynchronous/blob/main/CHANGELOG.md">Changelog</a></h3></div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt id="reexport.Barrier"><code>pub use barrier::<a class="struct" href="barrier/struct.Barrier.html" title="struct saa::barrier::Barrier">Barrier</a>;</code></dt><dt id="reexport.Gate"><code>pub use gate::<a class="struct" href="gate/struct.Gate.html" title="struct saa::gate::Gate">Gate</a>;</code></dt><dt id="reexport.Lock"><code>pub use lock::<a class="struct" href="lock/struct.Lock.html" title="struct saa::lock::Lock">Lock</a>;</code></dt><dt id="reexport.Pager"><code>pub use pager::<a class="struct" href="pager/struct.Pager.html" title="struct saa::pager::Pager">Pager</a>;</code></dt><dt id="reexport.Semaphore"><code>pub use semaphore::<a class="struct" href="semaphore/struct.Semaphore.html" title="struct saa::semaphore::Semaphore">Semaphore</a>;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="barrier/index.html" title="mod saa::barrier">barrier</a></dt><dd><a href="barrier/struct.Barrier.html" title="struct saa::barrier::Barrier"><code>Barrier</code></a> is a synchronization primitive that enables multiple tasks to start execution at the
+same time.</dd><dt><a class="mod" href="gate/index.html" title="mod saa::gate">gate</a></dt><dd><a href="gate/struct.Gate.html" title="struct saa::gate::Gate"><code>Gate</code></a> is a synchronization primitive that blocks tasks from entering a critical section until
+they are allowed to do so.</dd><dt><a class="mod" href="lock/index.html" title="mod saa::lock">lock</a></dt><dd><a href="lock/struct.Lock.html" title="struct saa::lock::Lock"><code>Lock</code></a> is a low-level locking primitive for both synchronous and asynchronous operations.</dd><dt><a class="mod" href="pager/index.html" title="mod saa::pager">pager</a></dt><dd><a href="pager/struct.Pager.html" title="struct saa::pager::Pager"><code>Pager</code></a> allows the user to remotely wait for a desired resource.</dd><dt><a class="mod" href="semaphore/index.html" title="mod saa::semaphore">semaphore</a></dt><dd><a href="semaphore/struct.Semaphore.html" title="struct saa::semaphore::Semaphore"><code>Semaphore</code></a> is a synchronization primitive that allows a fixed number of threads to access a
+resource concurrently.</dd></dl></section></div></main></body></html>

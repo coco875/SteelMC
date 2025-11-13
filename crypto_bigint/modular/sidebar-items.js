@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BoxedMontyForm","BoxedMontyParams","ConstMontyForm","MontyForm","MontyParams"],"trait":["ConstMontyParams","Retrieve"]};

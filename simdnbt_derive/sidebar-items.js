@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"derive":["Deserialize","FromNbtTag","Serialize","ToNbtTag"]};

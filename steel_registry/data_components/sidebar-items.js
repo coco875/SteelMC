@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["vanilla_components"],"struct":["DataComponentMap","DataComponentRegistry","DataComponentType"]};

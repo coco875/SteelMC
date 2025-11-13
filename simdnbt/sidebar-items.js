@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"derive":["Deserialize","FromNbtTag","Serialize","ToNbtTag"],"enum":["DeserializeError","Error"],"mod":["borrow","owned","raw_list","swap_endianness"],"struct":["Mutf8Str","Mutf8String"],"trait":["Deserialize","FromNbtTag","Serialize","ToNbtTag"]};

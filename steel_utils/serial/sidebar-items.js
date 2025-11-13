@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["prefixed_read","prefixed_write","read","write"],"trait":["PrefixedRead","PrefixedWrite","ReadFrom","WriteTo"]};

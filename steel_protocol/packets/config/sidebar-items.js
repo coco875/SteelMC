@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CFinishConfiguration","CRegistryData","CSelectKnownPacks","RegistryEntry","SFinishConfiguration","SSelectKnownPacks"]};

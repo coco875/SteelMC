@@ -1,0 +1,53 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Converts a slice of bytes to a string."><title>decode in simd_cesu8::mutf8 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="simd_cesu8" data-themes="" data-resource-suffix="" data-rustdoc-version="1.93.0-nightly (01867557c 2025-11-12)" data-channel="nightly" data-search-js="search-8e3fad08.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-a410ff4d.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">decode</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../simd_cesu8/index.html">simd_<wbr>cesu8</a><span class="version">1.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">decode</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#errors" title="Errors">Errors</a></li><li><a href="#panics" title="Panics">Panics</a></li><li><a href="#examples" title="Examples">Examples</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In simd_<wbr>cesu8::<wbr>mutf8</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">simd_cesu8</a>::<wbr><a href="index.html">mutf8</a></div><h1>Function <span class="fn">decode</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/simd_cesu8/mutf8.rs.html#399-410">Source</a> </span></div><pre class="rust item-decl"><code>pub fn decode(bytes: &amp;[<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>]) -&gt; <a class="enum" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="enum" href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html" title="enum alloc::borrow::Cow">Cow</a>&lt;'_, <a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;, <a class="struct" href="../struct.DecodingError.html" title="struct simd_cesu8::DecodingError">DecodingError</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Converts a slice of bytes to a string.</p>
+<p>The algorithm is as follows:</p>
+<ul>
+<li>If the input is valid UTF-8, but invalid MUTF-8, the function will return
+<code><a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed" title="variant alloc::borrow::Cow::Borrowed">Cow::Borrowed</a>([&amp;str])</code>.</li>
+<li>If the input is valid MUTF-8, but also valid UTF-8, the function will
+return <code><a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed" title="variant alloc::borrow::Cow::Borrowed">Cow::Borrowed</a>([&amp;str])</code>.</li>
+<li>If the input is valid MUTF-8, but invalid UTF-8, the function will return
+<code><a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Owned" title="variant alloc::borrow::Cow::Owned">Cow::Owned</a>(<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>)</code>. This case has the potential to
+panic.</li>
+</ul>
+<p><strong>NOTE:</strong> The first case might be interpreted as an error, but it’s actually
+a significant performance optimization. If you need to strictly enforce
+MUTF-8 decoding, use <a href="fn.decode_strict.html" title="fn simd_cesu8::mutf8::decode_strict"><code>decode_strict</code></a> instead.</p>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<p>If the input is not valid MUTF-8 or UTF-8, the function will return a
+<a href="../struct.DecodingError.html" title="struct simd_cesu8::DecodingError"><code>DecodingError</code></a>.</p>
+<h2 id="panics"><a class="doc-anchor" href="#panics">§</a>Panics</h2>
+<p>This function will panic if the buffer required to decode the input exceeds
+<a href="https://doc.rust-lang.org/nightly/std/primitive.isize.html#associatedconstant.MAX" title="associated constant isize::MAX"><code>isize::MAX</code></a> bytes.</p>
+<h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
+<p>If the input is valid UTF-8, but invalid MUTF-8, the function will return
+a borrowed string:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>alloc::borrow::Cow;
+
+<span class="kw">use </span>simd_cesu8::mutf8;
+
+<span class="comment">// NOTE: This is valid UTF-8, but invalid MUTF-8.
+</span><span class="kw">let </span>bytes = [<span class="number">0x00</span>];
+<span class="kw">let </span>decoded = mutf8::decode(<span class="kw-2">&amp;</span>bytes)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(decoded, Cow::Borrowed(<span class="string">"\0"</span>));</code></pre></div>
+<p>If the input is valid MUTF-8, but also valid UTF-8, the function will return
+a borrowed string:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>alloc::borrow::Cow;
+
+<span class="kw">use </span>simd_cesu8::mutf8;
+
+<span class="kw">let </span>bytes = <span class="string">b"Hello, world!"</span>;
+<span class="kw">let </span>decoded = mutf8::decode(bytes)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(decoded, Cow::Borrowed(<span class="string">"Hello, world!"</span>));</code></pre></div>
+<p>If the input is valid MUTF-8, but invalid UTF-8, the function will return an
+owned string:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>alloc::borrow::Cow;
+<span class="kw">use </span>alloc::string::String;
+
+<span class="kw">use </span>simd_cesu8::mutf8;
+
+<span class="kw">let </span>bytes = [<span class="number">0xc0</span>, <span class="number">0x80</span>];
+<span class="kw">let </span>decoded = mutf8::decode(<span class="kw-2">&amp;</span>bytes)<span class="question-mark">?</span>;
+<span class="macro">assert_eq!</span>(decoded, Cow::&lt;str&gt;::Owned(String::from(<span class="string">"\0"</span>)));</code></pre></div></div></details></section></div></main></body></html>

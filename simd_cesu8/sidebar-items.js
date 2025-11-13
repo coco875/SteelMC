@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["decode","decode_lossy","decode_lossy_strict","decode_strict","encode","needs_encoded"],"mod":["mutf8"],"struct":["DecodingError"]};
