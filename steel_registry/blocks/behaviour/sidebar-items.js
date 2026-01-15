@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["PushReaction"],"struct":["BlockBehaviourProperties"]};
+window.SIDEBAR_ITEMS = {"enum":["PushReaction"],"struct":["BlockConfig"]};

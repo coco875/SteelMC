@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["SteelRwLock"]};
+window.SIDEBAR_ITEMS = {"type":["AsyncMutex","AsyncRwLock","SyncMutex","SyncRwLock"]};

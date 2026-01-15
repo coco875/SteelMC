@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["components","vanilla_components"],"struct":["DataComponentMap","DataComponentRegistry","DataComponentType"]};
+window.SIDEBAR_ITEMS = {"enum":["ComponentPatchEntry"],"fn":["component_try_into"],"mod":["components","vanilla_components"],"struct":["DataComponentMap","DataComponentPatch","DataComponentRegistry","DataComponentType"],"trait":["ComponentValue"]};
