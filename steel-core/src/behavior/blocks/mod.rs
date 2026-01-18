@@ -6,7 +6,9 @@
 mod crafting_table_block;
 mod fence_block;
 mod rotated_pillar_block;
+mod wall_block;
 
 pub use crafting_table_block::CraftingTableBlock;
 pub use fence_block::FenceBlock;
 pub use rotated_pillar_block::RotatedPillarBlock;
+pub use wall_block::WallBlock;
