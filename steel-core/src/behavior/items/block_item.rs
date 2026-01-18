@@ -20,6 +20,25 @@ impl BlockItemBehavior {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    /// Converts player yaw (degrees) to horizontal direction.
+    /// Yaw 0 = South, 90 = West, 180/-180 = North, -90/270 = East
+    fn yaw_to_horizontal_direction(yaw: f32) -> Direction {
+        // Normalize yaw to 0-360
+        let yaw = ((yaw % 360.0) + 360.0) % 360.0;
+
+        // Minecraft yaw: 0 = south, 90 = west, 180 = north, 270 = east
+        // We return the direction the player is FACING (looking at)
+        if !(45.0..315.0).contains(&yaw) {
+            Direction::South
+        } else if (45.0..135.0).contains(&yaw) {
+            Direction::West
+        } else if (135.0..225.0).contains(&yaw) {
+            Direction::North
+        } else {
+            Direction::East
+        }
+    }
 }
 
 impl ItemBehavior for BlockItemBehavior {
@@ -53,8 +72,11 @@ impl ItemBehavior for BlockItemBehavior {
             return InteractionResult::Fail;
         }
 
+        // Get player rotation and calculate horizontal direction
+        let (yaw, _pitch) = context.player.rotation.load();
+        let horizontal_direction = Self::yaw_to_horizontal_direction(yaw);
+
         // Create placement context
-        // TODO: Calculate horizontal_direction from player rotation
         let place_context = BlockPlaceContext {
             clicked_pos,
             clicked_face: context.hit_result.direction,
@@ -62,8 +84,8 @@ impl ItemBehavior for BlockItemBehavior {
             inside: context.hit_result.inside,
             relative_pos: place_pos,
             replace_clicked,
-            horizontal_direction: Direction::North,
-            rotation: 0.0,
+            horizontal_direction,
+            rotation: yaw,
             world: context.world,
         };
 
