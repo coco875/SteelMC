@@ -7,8 +7,6 @@
 pub mod density_function;
 #[allow(missing_docs)]
 pub mod evaluator;
-#[allow(missing_docs)]
-pub mod types;
 // noise_params is generated at build time from noise_parameters.json
 pub use crate::generated_noise_params as noise_params;
 
@@ -19,9 +17,7 @@ pub use crate::generated_density_functions::*;
 #[allow(missing_docs)]
 pub mod chunk_density_function;
 #[allow(missing_docs)]
-pub mod chunk_noise_router;
-#[allow(missing_docs)]
-pub mod proto_noise_router;
+pub mod component;
 
 // Terrain generation modules
 #[allow(missing_docs)]
@@ -37,18 +33,17 @@ pub mod surface_height_sampler;
 
 pub use evaluator::{NoisePos, NoiseRouterRuntime};
 pub use noise_params::*;
-pub use types::*;
 
 // Re-export chunk noise router types
 pub use chunk_density_function::{
     ChunkNoiseFunctionBuilderOptions, ChunkNoiseFunctionSampleOptions,
     ChunkSpecificNoiseFunctionComponent, SampleAction, WrapperData,
 };
-pub use chunk_noise_router::{
+pub use component::chunk_noise_router::{
     ChunkNoiseDensityFunction, ChunkNoiseFunctionComponent, ChunkNoiseRouter,
     MutableChunkNoiseFunctionComponentImpl, StaticChunkNoiseFunctionComponentImpl,
 };
-pub use proto_noise_router::{
+pub use component::proto_noise_router::{
     DependentProtoNoiseFunctionComponent, DoublePerlinNoiseBuilder,
     IndependentProtoNoiseFunctionComponent, ProtoMultiNoiseRouter, ProtoNoiseFunctionComponent,
     ProtoNoiseRouter, ProtoNoiseRouters, ProtoSurfaceEstimator,
@@ -78,10 +73,10 @@ pub use surface_height_sampler::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use density_function::{StaticIndependentChunkNoiseFunctionComponentImpl, UnblendedNoisePos};
-    use proto_noise_router::{
+    use component::proto_noise_router::{
         IndependentProtoNoiseFunctionComponent, ProtoNoiseFunctionComponent, ProtoNoiseRouters,
     };
+    use density_function::{StaticIndependentChunkNoiseFunctionComponentImpl, UnblendedNoisePos};
 
     const SEED: u64 = 12345;
 

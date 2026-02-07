@@ -34,7 +34,7 @@
 //! All components implement [`NoiseFunctionComponentRange`] to track
 //! min/max possible outputs, enabling early-exit optimizations.
 
-use crate::noise_router::WrapperType;
+use crate::noise_router::component::base_noise_router::WrapperType;
 use enum_dispatch::enum_dispatch;
 
 use super::chunk_density_function::ChunkNoiseFunctionSampleOptions;

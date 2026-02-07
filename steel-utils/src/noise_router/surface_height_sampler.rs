@@ -5,14 +5,14 @@
 
 use rustc_hash::FxHashMap;
 
-use super::WrapperType;
 use super::chunk_density_function::{
     Cache2D, ChunkNoiseFunctionSampleOptions, ChunkSpecificNoiseFunctionComponent, FlatCache,
     SampleAction, biome_coords,
 };
-use super::chunk_noise_router::ChunkNoiseFunctionComponent;
+use super::component::base_noise_router::WrapperType;
+use super::component::chunk_noise_router::ChunkNoiseFunctionComponent;
+use super::component::proto_noise_router::{ProtoNoiseFunctionComponent, ProtoSurfaceEstimator};
 use super::density_function::{NoiseFunctionComponentRange, PassThrough, UnblendedNoisePos};
-use super::proto_noise_router::{ProtoNoiseFunctionComponent, ProtoSurfaceEstimator};
 
 /// Density cutoff for surface detection.
 ///

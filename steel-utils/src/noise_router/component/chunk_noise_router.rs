@@ -37,20 +37,20 @@
 
 use enum_dispatch::enum_dispatch;
 
-use crate::noise_router::WrapperType;
+use super::base_noise_router::WrapperType;
 
-use super::chunk_density_function::{
+use super::proto_noise_router::{
+    DependentProtoNoiseFunctionComponent, IndependentProtoNoiseFunctionComponent,
+    ProtoNoiseFunctionComponent, ProtoNoiseRouter,
+};
+use crate::noise_router::chunk_density_function::{
     Cache2D, CacheOnce, CellCache, ChunkNoiseFunctionBuilderOptions,
     ChunkNoiseFunctionSampleOptions, ChunkSpecificNoiseFunctionComponent, DensityInterpolator,
     FlatCache, SampleAction, biome_coords,
 };
-use super::density_function::{
+use crate::noise_router::density_function::{
     IndexToNoisePos, NoiseFunctionComponentRange, NoisePos, PassThrough,
     StaticIndependentChunkNoiseFunctionComponentImpl, UnblendedNoisePos,
-};
-use super::proto_noise_router::{
-    DependentProtoNoiseFunctionComponent, IndependentProtoNoiseFunctionComponent,
-    ProtoNoiseFunctionComponent, ProtoNoiseRouter,
 };
 
 #[enum_dispatch]

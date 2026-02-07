@@ -7,7 +7,7 @@ use crate::BlockStateId;
 
 use super::aquifer_sampler::{AquiferSampler, AquiferSamplerImpl};
 use super::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use super::chunk_noise_router::ChunkNoiseRouter;
+use super::component::chunk_noise_router::ChunkNoiseRouter;
 use super::density_function::NoisePos;
 use super::ore_sampler::OreVeinSampler;
 use super::surface_height_sampler::SurfaceHeightEstimateSampler;

@@ -7,9 +7,11 @@ use rustc_hash::FxHashMap;
 use crate::noise::{BlendedNoise, DoublePerlinNoise};
 use crate::random::{PositionalRandom, Random, RandomSource, xoroshiro::Xoroshiro};
 
-use super::{
-    BaseNoiseFunctionComponent, BaseNoiseRouter, BinaryOperation, DoublePerlinNoiseParameters,
-    LinearOperation, SplineRepr, UnaryOperation,
+use crate::noise_router::DoublePerlinNoiseParameters;
+
+use crate::noise_router::component::base_noise_router::{
+    BaseNoiseFunctionComponent, BaseNoiseRouter, BinaryOperation, LinearOperation, SplineRepr,
+    UnaryOperation,
 };
 
 /// Position for noise sampling.

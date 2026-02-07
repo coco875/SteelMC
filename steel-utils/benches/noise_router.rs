@@ -7,9 +7,9 @@ use steel_utils::noise_router::{
         ChunkNoiseFunctionBuilderOptions, ChunkNoiseFunctionSampleOptions, SampleAction,
         WrapperData,
     },
-    chunk_noise_router::ChunkNoiseRouter,
+    component::chunk_noise_router::ChunkNoiseRouter,
+    component::proto_noise_router::ProtoNoiseRouters,
     density_function::{IndexToNoisePos, NoisePos, UnblendedNoisePos},
-    proto_noise_router::ProtoNoiseRouters,
 };
 
 const SEED: u64 = 12345;

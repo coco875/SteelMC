@@ -110,11 +110,16 @@ fn build_noise_stack(
     }
 }
 
+struct SurfaceStackResult {
+    ctx: FlattenContext,
+    stack_name: Ident,
+}
+
 fn build_surface_stack(
     env_name: &str,
     env_name_upper: &str,
     noise_router: &FxHashMap<String, DensityFunctionNode>,
-) -> (FlattenContext, Ident) {
+) -> SurfaceStackResult {
     let surface_prefix = format!("{env_name}_surface");
     let mut ctx = FlattenContext::new(&surface_prefix);
 
@@ -144,7 +149,7 @@ fn build_surface_stack(
         &format!("{env_name_upper}_SURFACE_STACK"),
         Span::call_site(),
     );
-    (ctx, stack_name)
+    SurfaceStackResult { ctx, stack_name }
 }
 
 struct MultiNoiseStackResult {
@@ -302,19 +307,23 @@ fn build_noise_router_tokens(
     }
 }
 
+struct GeneratedEnvironment {
+    stream: TokenStream,
+    router_name: String,
+}
+
 fn generate_environment(
     env_name: &str,
     noise_router: &FxHashMap<String, DensityFunctionNode>,
-) -> (TokenStream, String) {
+) -> GeneratedEnvironment {
     let env_name_upper = env_name.to_shouty_snake_case();
 
     let noise_result = build_noise_stack(env_name, &env_name_upper, noise_router);
-    let (surface_ctx, surface_stack_name) =
-        build_surface_stack(env_name, &env_name_upper, noise_router);
+    let surface_result = build_surface_stack(env_name, &env_name_upper, noise_router);
     let multi_result = build_multi_noise_stack(env_name, &env_name_upper, noise_router);
 
     let noise_stream = emit_stack(&noise_result.ctx, &noise_result.stack_name);
-    let surface_stream = emit_stack(&surface_ctx, &surface_stack_name);
+    let surface_stream = emit_stack(&surface_result.ctx, &surface_result.stack_name);
     let multi_stream = emit_stack(&multi_result.ctx, &multi_result.stack_name);
 
     let router_name = Ident::new(
@@ -329,7 +338,7 @@ fn generate_environment(
     );
 
     let surface_estimator_tokens =
-        build_surface_estimator_tokens(surface_stream.as_ref(), &surface_stack_name);
+        build_surface_estimator_tokens(surface_stream.as_ref(), &surface_result.stack_name);
 
     let multi_noise_tokens = build_multi_noise_tokens(
         multi_stream.as_ref(),
@@ -356,7 +365,10 @@ fn generate_environment(
         };
     });
 
-    (stream, router_name.to_string())
+    GeneratedEnvironment {
+        stream,
+        router_name: router_name.to_string(),
+    }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -418,8 +430,8 @@ pub(crate) fn build() -> TokenStream {
                 }
             };
 
-        let (env_stream, _router_name) = generate_environment(env_name, &noise_router);
-        stream.extend(env_stream);
+        let env_result = generate_environment(env_name, &noise_router);
+        stream.extend(env_result.stream);
     }
 
     stream

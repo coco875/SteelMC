@@ -10,7 +10,7 @@ use crate::chunk::{
     chunk_pyramid::ChunkStep,
     proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
-    world_gen_context::WorldGenContext,
+    world_gen::world_gen_context::WorldGenContext,
 };
 
 pub struct ChunkStatusTasks;

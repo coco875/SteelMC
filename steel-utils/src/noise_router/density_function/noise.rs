@@ -7,14 +7,16 @@
 #![allow(clippy::similar_names, clippy::many_single_char_names)]
 
 use crate::noise::{DoublePerlinNoise, PerlinNoise, clamped_lerp};
-use crate::noise_router::{InterpolatedNoiseSamplerData, NoiseData, ShiftedNoiseData};
+use crate::noise_router::component::base_noise_router::{
+    InterpolatedNoiseSamplerData, NoiseData, ShiftedNoiseData,
+};
 use crate::random::RandomSource;
 
 use super::{
     NoiseFunctionComponentRange, NoisePos, StaticIndependentChunkNoiseFunctionComponentImpl,
 };
 use crate::noise_router::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use crate::noise_router::chunk_noise_router::{
+use crate::noise_router::component::chunk_noise_router::{
     ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl,
 };
 

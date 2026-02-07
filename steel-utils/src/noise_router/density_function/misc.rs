@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::noise::{DoublePerlinNoise, SimplexNoise, clamped_map};
-use crate::noise_router::{
+use crate::noise_router::component::base_noise_router::{
     ClampedYGradientData, RangeChoiceData, WeirdScaledData, WeirdScaledMapper,
 };
 use crate::random::{Random, legacy_random::LegacyRandom};
@@ -19,7 +19,7 @@ use super::{
     StaticIndependentChunkNoiseFunctionComponentImpl,
 };
 use crate::noise_router::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use crate::noise_router::chunk_noise_router::{
+use crate::noise_router::component::chunk_noise_router::{
     ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl,
 };
 

@@ -3,14 +3,16 @@
 //! This module contains density functions for mathematical operations like
 //! constants, linear transformations, binary operations, unary operations, and clamping.
 
-use crate::noise_router::{BinaryData, BinaryOperation, ClampData, LinearData, UnaryData};
+use crate::noise_router::component::base_noise_router::{
+    BinaryData, BinaryOperation, ClampData, LinearData, UnaryData,
+};
 
 use super::{
     IndexToNoisePos, NoiseFunctionComponentRange, NoisePos,
     StaticIndependentChunkNoiseFunctionComponentImpl,
 };
 use crate::noise_router::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use crate::noise_router::chunk_noise_router::{
+use crate::noise_router::component::chunk_noise_router::{
     ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl,
 };
 

@@ -20,7 +20,7 @@ use steel_utils::noise_router::{
     SurfaceHeightSamplerBuilderOptions, UnblendedNoisePos, WorldAquiferSampler, WrapperData,
 };
 
-use super::random_config::WorldRandomConfig;
+use crate::chunk::random_config::WorldRandomConfig;
 
 /// Converts block coordinates to biome coordinates.
 #[inline]

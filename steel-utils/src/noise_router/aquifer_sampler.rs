@@ -48,7 +48,7 @@ use crate::noise::{clamped_map, floor_div, map};
 use crate::random::{PositionalRandom, Random, RandomSplitter};
 
 use super::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use super::chunk_noise_router::ChunkNoiseRouter;
+use super::component::chunk_noise_router::ChunkNoiseRouter;
 use super::density_function::{NoisePos, UnblendedNoisePos};
 use super::fluid_level::{FluidLevel, FluidLevelSampler, FluidLevelSamplerImpl};
 use super::surface_height_sampler::SurfaceHeightEstimateSampler;

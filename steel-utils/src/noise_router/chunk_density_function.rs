@@ -9,7 +9,7 @@
 use std::cell::RefCell;
 use std::mem;
 
-use super::chunk_noise_router::{
+use super::component::chunk_noise_router::{
     ChunkNoiseFunctionComponent, MutableChunkNoiseFunctionComponentImpl,
 };
 use super::density_function::{IndexToNoisePos, NoiseFunctionComponentRange, NoisePos};

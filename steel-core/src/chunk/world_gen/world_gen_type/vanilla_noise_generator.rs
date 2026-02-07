@@ -7,8 +7,8 @@
 //! # Architecture
 //!
 //! The generation uses a two-stage noise router architecture:
-//! 1. **ProtoNoiseRouters**: Built once per world from seed, contains initialized noise samplers
-//! 2. **ChunkNoiseGenerator**: Built per chunk, handles interpolation and block sampling
+//! 1. `ProtoNoiseRouters`: Built once per world from seed, contains initialized noise samplers
+//! 2. `ChunkNoiseGenerator`: Built per chunk, handles interpolation and block sampling
 //!
 //! # Cell-Based Interpolation
 //!
@@ -39,8 +39,8 @@
 //! # Block Sampling Chain
 //!
 //! The [`ChainedBlockStateSampler`] determines the final block:
-//! 1. **OreVeinSampler**: Check for large copper/iron veins
-//! 2. **AquiferSampler**: Check for water/lava placement
+//! 1. `OreVeinSampler`: Check for large copper/iron veins
+//! 2. `AquiferSampler`: Check for water/lava placement
 //! 3. **Default**: Stone if density > 0, air otherwise
 //!
 //! [`ChainedBlockStateSampler`]: steel_utils::noise_router::ChainedBlockStateSampler
@@ -56,14 +56,16 @@ use steel_utils::{
     noise::floor_div,
     noise_router::{
         FluidLevel, FluidLevelSampler, OVERWORLD_BASE_NOISE_ROUTER, StandardChunkFluidLevelSampler,
-        proto_noise_router::ProtoNoiseRouters,
+        component::proto_noise_router::ProtoNoiseRouters,
     },
 };
 
 use crate::chunk::{chunk_access::ChunkAccess, chunk_generator::ChunkGenerator};
 
-use super::chunk_noise_generator::{ChunkNoiseGenerator, GenerationShapeConfig, TerrainBlocks};
-use super::random_config::WorldRandomConfig;
+use crate::chunk::random_config::WorldRandomConfig;
+use crate::chunk::world_gen::chunk_noise_generator::{
+    ChunkNoiseGenerator, GenerationShapeConfig, TerrainBlocks,
+};
 
 /// Sea level for overworld.
 const SEA_LEVEL: i32 = 63;

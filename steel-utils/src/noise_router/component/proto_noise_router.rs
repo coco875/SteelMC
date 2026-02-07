@@ -40,18 +40,19 @@
 
 use enum_dispatch::enum_dispatch;
 
-use crate::noise::DoublePerlinNoise;
-use crate::noise_router::{
-    BaseNoiseFunctionComponent, BaseNoiseRouters, BinaryOperation, DoublePerlinNoiseParameters,
-    LinearOperation, SplineRepr, UnaryOperation,
+use super::base_noise_router::{
+    BaseNoiseFunctionComponent, BaseNoiseRouters, BinaryOperation, LinearOperation, SplineRepr,
+    UnaryOperation,
 };
+use crate::noise::DoublePerlinNoise;
+use crate::noise_router::DoublePerlinNoiseParameters;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, xoroshiro::Xoroshiro};
 
-use super::chunk_density_function::ChunkNoiseFunctionSampleOptions;
 use super::chunk_noise_router::{
     ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl,
 };
-use super::density_function::{
+use crate::noise_router::chunk_density_function::ChunkNoiseFunctionSampleOptions;
+use crate::noise_router::density_function::{
     IndexToNoisePos, NoiseFunctionComponentRange, NoisePos, PassThrough,
     StaticIndependentChunkNoiseFunctionComponentImpl, Wrapper,
     math::{Binary, Clamp, Constant, Linear, Unary},

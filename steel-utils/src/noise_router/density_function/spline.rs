@@ -7,10 +7,10 @@ use crate::noise::lerp_f32;
 
 use super::{NoiseFunctionComponentRange, NoisePos};
 use crate::noise_router::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use crate::noise_router::chunk_noise_router::{
+use crate::noise_router::component::chunk_noise_router::{
     ChunkNoiseFunctionComponent, StaticChunkNoiseFunctionComponentImpl,
 };
-use crate::noise_router::proto_noise_router::ProtoNoiseFunctionComponent;
+use crate::noise_router::component::proto_noise_router::ProtoNoiseFunctionComponent;
 
 /// A spline value that can be either a fixed value or a nested spline.
 ///

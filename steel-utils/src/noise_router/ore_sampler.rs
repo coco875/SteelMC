@@ -29,7 +29,7 @@ use crate::noise::clamped_map;
 use crate::random::{PositionalRandom, Random, RandomSplitter};
 
 use super::chunk_density_function::ChunkNoiseFunctionSampleOptions;
-use super::chunk_noise_router::ChunkNoiseRouter;
+use super::component::chunk_noise_router::ChunkNoiseRouter;
 use super::density_function::NoisePos;
 
 /// Configuration for a vein type (copper or iron).

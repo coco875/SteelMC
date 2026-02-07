@@ -7,10 +7,10 @@ use std::hint::black_box;
 use steel_core::chunk::{
     chunk_access::ChunkAccess,
     chunk_generator::ChunkGenerator,
-    chunk_noise_generator::TerrainBlocks,
     proto_chunk::ProtoChunk,
     section::{ChunkSection, Sections},
-    vanilla_noise_generator::VanillaNoiseGenerator,
+    world_gen::chunk_noise_generator::TerrainBlocks,
+    world_gen::world_gen_type::vanilla_noise_generator::VanillaNoiseGenerator,
 };
 use steel_utils::{BlockStateId, ChunkPos, math::Vector2};
 

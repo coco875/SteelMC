@@ -21,18 +21,20 @@ use tokio::runtime::Runtime;
 use tokio_util::task::TaskTracker;
 use tracing::instrument;
 
+use crate::chunk::chunk_holder::ChunkHolder;
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicketManager, LevelChange, MAX_VIEW_DISTANCE, is_full,
 };
 use crate::chunk::player_chunk_view::PlayerChunkView;
-use crate::chunk::world_gen_context::ChunkGeneratorType;
-use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
-use crate::chunk::{
-    chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask,
-    chunk_noise_generator::TerrainBlocks, flat_chunk_generator::FlatChunkGenerator,
-    world_gen_context::WorldGenContext,
+use crate::chunk::world_gen::world_gen_context::ChunkGeneratorType;
+use crate::chunk::world_gen::world_gen_type::{
+    flat_chunk_generator::FlatChunkGenerator, vanilla_noise_generator::VanillaNoiseGenerator,
 };
-use crate::chunk::{chunk_holder::ChunkHolder, vanilla_noise_generator::VanillaNoiseGenerator};
+use crate::chunk::world_gen::{
+    chunk_noise_generator::TerrainBlocks, world_gen_context::WorldGenContext,
+};
+use crate::chunk::{chunk_access::ChunkAccess, chunk_ticket_manager::is_ticked};
+use crate::chunk::{chunk_access::ChunkStatus, chunk_generation_task::ChunkGenerationTask};
 use crate::chunk_saver::RegionManager;
 use crate::player::Player;
 use crate::world::World;
