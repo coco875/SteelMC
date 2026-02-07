@@ -9,6 +9,8 @@ mod message_validator;
 pub mod movement;
 /// This module contains the networking implementation for the player.
 pub mod networking;
+pub mod player_data;
+pub mod player_data_storage;
 pub mod player_inventory;
 pub mod profile_key;
 mod signature_cache;
@@ -31,12 +33,17 @@ use std::{
 };
 use steel_protocol::packets::game::CSystemChatMessage;
 use steel_protocol::packets::game::{
-    AnimateAction, CAnimate, CEntityPositionSync, COpenSignEditor, CPlayerPosition, CSetHeldSlot,
-    PlayerAction, SAcceptTeleportation, SPickItemFromBlock, SPlayerAbilities, SPlayerAction,
-    SSetCarriedItem, SUseItem, SUseItemOn,
+    AnimateAction, CAnimate, CEntityPositionSync, COpenSignEditor, CPlayerPosition, CSetEntityData,
+    CSetHeldSlot, PlayerAction, SAcceptTeleportation, SPickItemFromBlock, SPlayerAbilities,
+    SPlayerAction, SSetCarriedItem, SUseItem, SUseItemOn,
 };
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::blocks::shapes::AABBd;
+use steel_registry::entity_data::EntityPose;
+use steel_registry::entity_types::EntityTypeRef;
 use steel_registry::game_rules::GameRuleValue;
+use steel_registry::vanilla_entities;
+use steel_registry::vanilla_entity_data::PlayerEntityData;
 use steel_registry::vanilla_game_rules::{ELYTRA_MOVEMENT_CHECK, PLAYER_MOVEMENT_CHECK};
 use steel_registry::{REGISTRY, vanilla_chat_types};
 
@@ -53,7 +60,11 @@ use uuid::Uuid;
 
 use crate::inventory::SyncPlayerInv;
 use crate::player::player_inventory::PlayerInventory;
-use crate::{config::STEEL_CONFIG, entity::Entity};
+use crate::server::Server;
+use crate::{
+    config::STEEL_CONFIG,
+    entity::{Entity, EntityLevelCallback, NullEntityCallback, RemovalReason},
+};
 
 use steel_crypto::{SignatureValidator, public_key_from_bytes, signature::NoValidation};
 use steel_protocol::packets::{
@@ -146,6 +157,10 @@ pub struct Player {
     /// The world the player is in.
     pub world: Arc<World>,
 
+    /// Reference to the server (for entity ID generation, etc.).
+    #[allow(dead_code)]
+    pub(crate) server: Weak<Server>,
+
     /// The entity ID assigned to this player.
     pub id: i32,
 
@@ -161,11 +176,9 @@ pub struct Player {
     /// The previous rotation for movement broadcasts.
     prev_rotation: AtomicCell<(f32, f32)>,
 
-    // LivingEntity fields
-    /// The player's health (synced with client via entity data).
-    health: AtomicCell<f32>,
-    /// The player's absorption amount (extra health from effects like Absorption).
-    absorption_amount: AtomicCell<f32>,
+    /// Synchronized entity data (health, pose, flags, etc.) for network sync.
+    entity_data: SyncMutex<PlayerEntityData>,
+
     /// The player's movement speed.
     speed: AtomicCell<f32>,
     /// Whether the player is sprinting.
@@ -275,6 +288,12 @@ pub struct Player {
 
     /// Last `on_ground` state sent to tracking players (for detecting changes).
     last_sent_on_ground: AtomicBool,
+
+    /// Whether the player has been removed from the world.
+    removed: AtomicBool,
+
+    /// Callback for entity lifecycle events (movement between chunks, removal).
+    level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
 }
 
 impl Player {
@@ -283,6 +302,7 @@ impl Player {
         gameprofile: GameProfile,
         connection: Arc<JavaConnection>,
         world: Arc<World>,
+        server: Weak<Server>,
         entity_id: i32,
         player: &Weak<Player>,
         client_information: ClientInformation,
@@ -299,14 +319,14 @@ impl Player {
             connection,
 
             world,
+            server,
             id: entity_id,
             client_loaded: AtomicBool::new(false),
             position: SyncMutex::new(pos),
             rotation: AtomicCell::new((0.0, 0.0)),
             prev_position: SyncMutex::new(pos),
             prev_rotation: AtomicCell::new((0.0, 0.0)),
-            health: AtomicCell::new(20.0), // Default max health
-            absorption_amount: AtomicCell::new(0.0),
+            entity_data: SyncMutex::new(PlayerEntityData::new()),
             speed: AtomicCell::new(0.1), // Default walking speed
             sprinting: AtomicBool::new(false),
             last_chunk_pos: SyncMutex::new(ChunkPos::new(0, 0)),
@@ -343,6 +363,8 @@ impl Player {
             block_breaking: SyncMutex::new(BlockBreakingManager::new()),
             position_sync_delay: AtomicI32::new(0),
             last_sent_on_ground: AtomicBool::new(false),
+            removed: AtomicBool::new(false),
+            level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
         }
     }
 
@@ -385,11 +407,20 @@ impl Player {
             .lock()
             .send_next_chunks(self.connection.clone(), &self.world, chunk_pos);
 
+        // Try to pick up nearby items (vanilla: Player.aiStep)
+        self.touch_nearby_items();
+
         // Broadcast inventory changes to client
         self.broadcast_inventory_changes();
 
         // Tick block breaking
         self.block_breaking.lock().tick(self, &self.world);
+
+        // Update pose based on current state
+        self.update_pose();
+
+        // Sync dirty entity data to nearby players
+        self.sync_entity_data();
 
         self.connection.tick();
 
@@ -404,13 +435,64 @@ impl Player {
         // - Handling falling
     }
 
+    /// Syncs dirty entity data to nearby players.
+    fn sync_entity_data(&self) {
+        if let Some(dirty_values) = self.entity_data.lock().pack_dirty() {
+            let packet = CSetEntityData::new(self.id, dirty_values);
+            let chunk_pos = *self.last_chunk_pos.lock();
+            self.world.broadcast_to_nearby(chunk_pos, packet, None);
+        }
+    }
+
+    /// Attempts to pick up nearby item entities.
+    ///
+    /// Mirrors vanilla's `Player.aiStep()` item pickup logic:
+    /// - Calculates pickup area as bounding box inflated by (1.0, 0.5, 1.0)
+    /// - Calls `playerTouch()` on each entity in range
+    fn touch_nearby_items(&self) {
+        // Spectators can't pick up items
+        if self.game_mode.load() == GameType::Spectator {
+            return;
+        }
+
+        // Calculate pickup area (vanilla: Player.aiStep lines 454-458)
+        let pickup_area = self.bounding_box().inflate_xyz(1.0, 0.5, 1.0);
+
+        // Get all entities in the pickup area
+        let entities = self.world.get_entities_in_aabb(&pickup_area);
+
+        // Get player Arc for try_pickup (needed because try_pickup takes &Arc<Player>)
+        let Some(player_arc) = self.world.players.get_by_entity_id(self.id) else {
+            return;
+        };
+
+        for entity in entities {
+            // Skip self
+            if entity.id() == self.id {
+                continue;
+            }
+
+            // Skip removed entities
+            if entity.is_removed() {
+                continue;
+            }
+
+            // Try to pick up item entities
+            if let Some(item_entity) = entity.as_item_entity() {
+                item_entity.try_pickup(&player_arc);
+            }
+
+            // TODO: Handle other entity types (experience orbs, arrows)
+        }
+    }
+
     /// Handles a custom payload packet.
     pub fn handle_custom_payload(&self, packet: SCustomPayload) {
         log::info!("Hello from the other side! {packet:?}");
     }
 
     /// Handles the end of a client tick.
-    pub fn handle_client_tick_end(&self) {
+    pub const fn handle_client_tick_end(&self) {
         //log::info!("Hello from the other side!");
     }
 
@@ -565,14 +647,14 @@ impl Player {
                     )))
                     .hover_event(HoverEvent::show_entity(
                         "minecraft:player",
-                        self.get_uuid(),
+                        self.uuid(),
                         Some(player.gameprofile.name.clone()),
                     )),
                 target_name: None,
             },
         );
 
-        if let Some(ref sig_box) = signature {
+        if let Some(sig_box) = &signature {
             if sig_box.len() == 256 {
                 let mut sig_array = [0u8; 256];
                 sig_array.copy_from_slice(&sig_box[..]);
@@ -583,7 +665,7 @@ impl Player {
                     LastSeen::default()
                 };
 
-                log::info!("<{}> {}", player.gameprofile.name, chat_message);
+                steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
                 self.world.broadcast_chat(
                     chat_packet,
                     Arc::clone(&player),
@@ -612,7 +694,7 @@ impl Player {
             .send_packet(CSystemChatMessage::new(text, self, false));
     }
 
-    fn is_invalid_position(x: f64, y: f64, z: f64, rot_x: f32, rot_y: f32) -> bool {
+    const fn is_invalid_position(x: f64, y: f64, z: f64, rot_x: f32, rot_y: f32) -> bool {
         if x.is_nan() || y.is_nan() || z.is_nan() {
             return true;
         }
@@ -835,7 +917,11 @@ impl Player {
 
         // Update current state
         if packet.has_pos {
+            let old_pos = *self.position.lock();
             *self.position.lock() = packet.position;
+
+            // Notify callback of position change (updates entity cache section index)
+            self.level_callback.lock().on_move(old_pos, packet.position);
         }
         if packet.has_rot {
             self.rotation.store((packet.y_rot, packet.x_rot));
@@ -1433,6 +1519,29 @@ impl Player {
         self.on_ground.load(Ordering::Relaxed)
     }
 
+    /// Determines the desired pose based on current player state.
+    /// Priority: `Sleeping` > `FallFlying` > `Sneaking` > `Standing`
+    // TODO: Add Swimming pose (requires water detection)
+    // TODO: Add SpinAttack pose (requires riptide trident)
+    // TODO: Add pose collision checks (force crouch in low ceilings)
+    fn get_desired_pose(&self) -> EntityPose {
+        if self.sleeping.load(Ordering::Relaxed) {
+            EntityPose::Sleeping
+        } else if self.fall_flying.load(Ordering::Relaxed) {
+            EntityPose::FallFlying
+        } else if self.shift_key_down.load(Ordering::Relaxed) && !self.abilities.lock().flying {
+            EntityPose::Sneaking
+        } else {
+            EntityPose::Standing
+        }
+    }
+
+    /// Updates the player's pose in entity data based on current state.
+    fn update_pose(&self) {
+        let desired_pose = self.get_desired_pose();
+        self.entity_data.lock().pose.set(desired_pose);
+    }
+
     /// Returns the player's client information settings.
     #[must_use]
     pub fn client_information(&self) -> ClientInformation {
@@ -1469,7 +1578,7 @@ impl Player {
     ///
     /// Matches vanilla `LivingEntity.getGravity()` which reads from `Attributes.GRAVITY`.
     /// Default is 0.08 blocks/tick².
-    fn get_gravity(&self) -> f64 {
+    const fn get_gravity(&self) -> f64 {
         // TODO: Read from attribute system when implemented
         let _ = self; // Silence unused warning until attributes are implemented
         movement::DEFAULT_GRAVITY
@@ -1718,12 +1827,10 @@ impl Player {
                 self.ack_block_changes_up_to(packet.sequence);
             }
             PlayerAction::DropAllItems => {
-                // TODO: Implement drop all items (Q + Ctrl)
-                log::debug!("Player {} wants to drop all items", self.gameprofile.name);
+                self.drop_from_selected(true);
             }
             PlayerAction::DropItem => {
-                // TODO: Implement drop single item (Q)
-                log::debug!("Player {} wants to drop an item", self.gameprofile.name);
+                self.drop_from_selected(false);
             }
             PlayerAction::ReleaseUseItem => {
                 // TODO: Implement release use item (releasing bow, etc.)
@@ -1978,7 +2085,7 @@ impl Player {
     /// This sends a close packet to the client.
     pub fn close_container(&self) {
         let open_menu = self.open_menu.lock();
-        if let Some(ref menu) = *open_menu {
+        if let Some(menu) = &*open_menu {
             self.connection.send_packet(CContainerClose {
                 container_id: i32::from(menu.container_id()),
             });
@@ -2029,24 +2136,98 @@ impl Player {
         }
     }
 
+    /// Drops an item from the player's selected hotbar slot.
+    ///
+    /// Based on Java's `ServerPlayer.drop(boolean all)`.
+    ///
+    /// - `all`: If true, drops the entire stack (Ctrl+Q). If false, drops one item (Q).
+    pub fn drop_from_selected(&self, all: bool) {
+        if !self.can_drop_items() {
+            return;
+        }
+
+        let removed = {
+            let mut inventory = self.inventory.lock();
+            let selected = inventory.get_selected_item_mut();
+            if selected.is_empty() {
+                return;
+            }
+            if all {
+                selected.split(selected.count())
+            } else {
+                selected.split(1)
+            }
+        };
+
+        self.drop_item(removed, false, true);
+    }
+
     /// Drops an item into the world.
     ///
-    /// Based on Java's `Player.drop(ItemStack, boolean throwRandomly)`.
+    /// Based on Java's `LivingEntity.drop(ItemStack, boolean randomly, boolean thrownFromHand)`.
     ///
-    /// - `throw_randomly`: If true, the item is thrown in a random direction (like pressing Q).
+    /// - `throw_randomly`: If true, the item is thrown in a random direction.
     ///   If false, it's thrown in the direction the player is facing.
-    pub fn drop_item(&self, item: ItemStack, throw_randomly: bool) {
+    /// - `thrown_from_hand`: If true, sets the thrower and uses a longer pickup delay.
+    pub fn drop_item(&self, item: ItemStack, throw_randomly: bool, thrown_from_hand: bool) {
+        use std::f32::consts::TAU;
+
         if item.is_empty() {
             return;
         }
-        // TODO: Spawn an ItemEntity in the world at the player's position
-        // For now, just log it
-        log::debug!(
-            "Player {} dropped item: {:?} (throw_randomly: {})",
-            self.gameprofile.name,
-            item,
-            throw_randomly
-        );
+
+        let pos = self.position();
+        let (yaw, pitch) = self.rotation.load();
+
+        // Spawn position: eye height - 0.3 (hand level)
+        // Vanilla: double yHandPos = this.getEyeY() - 0.3F
+        let spawn_y = self.get_eye_y() - 0.3;
+
+        // Calculate velocity based on throw type
+        let velocity = if throw_randomly {
+            // Random direction throw (like death drops)
+            let power = rand::random::<f32>() * 0.5;
+            let angle = rand::random::<f32>() * TAU;
+            Vector3::new(
+                f64::from(-angle.sin() * power),
+                0.2,
+                f64::from(angle.cos() * power),
+            )
+        } else {
+            // Directional throw (player facing direction)
+            let pitch_rad = pitch.to_radians();
+            let yaw_rad = yaw.to_radians();
+
+            let sin_pitch = pitch_rad.sin();
+            let cos_pitch = pitch_rad.cos();
+            let sin_yaw = yaw_rad.sin();
+            let cos_yaw = yaw_rad.cos();
+
+            // Random offset for slight variation
+            let angle_offset = rand::random::<f32>() * TAU;
+            let power_offset = 0.02 * rand::random::<f32>();
+
+            Vector3::new(
+                f64::from(-sin_yaw * cos_pitch * 0.3)
+                    + f64::from(angle_offset.cos() * power_offset),
+                f64::from(-sin_pitch * 0.3 + 0.1)
+                    + f64::from((rand::random::<f32>() - rand::random::<f32>()) * 0.1),
+                f64::from(cos_yaw * cos_pitch * 0.3) + f64::from(angle_offset.sin() * power_offset),
+            )
+        };
+
+        let spawn_pos = Vector3::new(pos.x, spawn_y, pos.z);
+
+        if let Some(entity) = self
+            .world
+            .spawn_item_with_velocity(spawn_pos, item, velocity)
+        {
+            // Set pickup delay: 40 ticks (2 seconds) when thrown from hand
+            if thrown_from_hand {
+                entity.set_pickup_delay(40);
+                entity.set_thrower(self.gameprofile.id);
+            }
+        }
     }
 
     /// Returns true if the player can drop items.
@@ -2055,9 +2236,9 @@ impl Player {
     /// Returns false if the player is dead, removed, or has a flag preventing item drops.
     #[must_use]
     pub fn can_drop_items(&self) -> bool {
-        // TODO: Check if player is alive and not removed
-        // For now, always return true
-        true
+        // Check if player is removed
+        !self.removed.load(Ordering::Relaxed)
+        // TODO: Check if player is alive (health > 0)
     }
 
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.
@@ -2072,7 +2253,7 @@ impl Player {
         let added = self.inventory.lock().add(&mut item);
         if !added || !item.is_empty() {
             // Couldn't fit everything, drop the rest
-            self.drop_item(item, false);
+            self.drop_item(item, false, false);
         }
     }
 
@@ -2090,38 +2271,119 @@ impl Player {
         if let Some(inv) = guard.get_mut(inv_id) {
             let added = inv.add(&mut item);
             if !added || !item.is_empty() {
-                self.drop_item(item, false);
+                self.drop_item(item, false, false);
             }
         } else {
             // Inventory not in guard - this shouldn't happen but drop the item to be safe
-            self.drop_item(item, false);
+            self.drop_item(item, false, false);
         }
     }
 
     /// Cleans up player resources.
-    pub fn cleanup(&self) {}
+    pub const fn cleanup(&self) {}
 }
 
 impl Entity for Player {
-    fn get_uuid(&self) -> Uuid {
+    fn entity_type(&self) -> EntityTypeRef {
+        vanilla_entities::PLAYER
+    }
+
+    fn id(&self) -> i32 {
+        self.id
+    }
+
+    fn uuid(&self) -> Uuid {
         self.gameprofile.id
+    }
+
+    fn position(&self) -> Vector3<f64> {
+        *self.position.lock()
+    }
+
+    fn bounding_box(&self) -> AABBd {
+        let pos = self.position();
+        // Player hitbox: 0.6 wide, 1.8 tall (standing)
+        // TODO: Adjust for pose (crouching, swimming, etc.)
+        let half_width = 0.3;
+        let height = 1.8;
+        AABBd {
+            min_x: pos.x - half_width,
+            min_y: pos.y,
+            min_z: pos.z - half_width,
+            max_x: pos.x + half_width,
+            max_y: pos.y + height,
+            max_z: pos.z + half_width,
+        }
+    }
+
+    fn tick(&self) {
+        // Player tick is handled separately by World::tick_b()
+        // This is here for Entity trait compliance
+    }
+
+    fn level(&self) -> Option<Arc<World>> {
+        Some(Arc::clone(&self.world))
+    }
+
+    fn is_removed(&self) -> bool {
+        self.removed.load(Ordering::Relaxed)
+    }
+
+    fn set_removed(&self, reason: RemovalReason) {
+        if !self.removed.swap(true, Ordering::AcqRel) {
+            // First time being removed - notify callback
+            self.level_callback.lock().on_remove(reason);
+        }
+    }
+
+    fn set_level_callback(&self, callback: Arc<dyn EntityLevelCallback>) {
+        *self.level_callback.lock() = callback;
     }
 
     fn as_player(self: Arc<Self>) -> Option<Arc<Player>> {
         Some(self)
     }
+
+    fn rotation(&self) -> (f32, f32) {
+        self.rotation.load()
+    }
+
+    fn velocity(&self) -> Vector3<f64> {
+        *self.delta_movement.lock()
+    }
+
+    fn on_ground(&self) -> bool {
+        self.on_ground.load(Ordering::Relaxed)
+    }
+
+    /// Returns the eye height for the current pose.
+    ///
+    /// Vanilla eye heights from `Avatar.POSES`:
+    /// - Standing: 1.62
+    /// - Crouching: 1.27
+    /// - Swimming/FallFlying/SpinAttack: 0.4
+    /// - Sleeping/Dying: 0.2
+    fn get_eye_height(&self) -> f64 {
+        match self.get_desired_pose() {
+            EntityPose::Sneaking => 1.27,
+            EntityPose::FallFlying | EntityPose::Swimming | EntityPose::SpinAttack => 0.4,
+            EntityPose::Sleeping | EntityPose::Dying => 0.2,
+            // Standing and all other poses use default player eye height
+            _ => f64::from(vanilla_entities::PLAYER.dimensions.eye_height),
+        }
+    }
 }
 
 impl LivingEntity for Player {
     fn get_health(&self) -> f32 {
-        self.health.load()
+        *self.entity_data.lock().health.get()
     }
 
     fn set_health(&mut self, health: f32) {
         let max_health = self.get_max_health();
         let clamped = health.clamp(0.0, max_health);
-        self.health.store(clamped);
-        // TODO: Sync health to client via entity data
+        self.entity_data.lock().health.set(clamped);
+        // Dirty flag set automatically, will sync on next tick
     }
 
     fn get_max_health(&self) -> f32 {
@@ -2134,12 +2396,15 @@ impl LivingEntity for Player {
     }
 
     fn get_absorption_amount(&self) -> f32 {
-        self.absorption_amount.load()
+        *self.entity_data.lock().player_absorption.get()
     }
 
     fn set_absorption_amount(&mut self, amount: f32) {
-        self.absorption_amount.store(amount.max(0.0));
-        // TODO: Sync to client
+        self.entity_data
+            .lock()
+            .player_absorption
+            .set(amount.max(0.0));
+        // Dirty flag set automatically, will sync on next tick
     }
 
     fn get_armor_value(&self) -> i32 {

@@ -2,37 +2,30 @@
 
 use std::sync::Arc;
 
-use steel::SteelServer;
-use steel_utils::{text::DisplayResolutor, translations};
+use steel::logger::CommandLogger;
+use steel::spawn_progress::generate_spawn_chunks;
+use steel::{SERVER, SteelServer, logger::LoggerLayer};
+use steel_utils::text::DisplayResolutor;
 use text_components::fmt::set_display_resolutor;
-use tokio::{
-    runtime::{Builder, Runtime},
-    signal,
-};
-use tokio_util::task::TaskTracker;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
-#[cfg(not(feature = "jaeger"))]
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_timer(fmt::time::uptime()))
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(tracing::Level::INFO.into())
-                .from_env_lossy(),
-        )
-        .init();
-}
+use tokio::runtime::{Builder, Runtime};
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
+#[cfg(feature = "jaeger")]
+use tracing::Subscriber;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+#[cfg(feature = "jaeger")]
+use tracing_subscriber::{Layer, registry::LookupSpan};
 
 #[cfg(feature = "jaeger")]
-fn init_tracing() {
+fn init_jaeger<S>() -> impl Layer<S> + Send + Sync
+where
+    S: Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
+{
     use opentelemetry::KeyValue;
     use opentelemetry::global;
     use opentelemetry::trace::TracerProvider;
     use opentelemetry_sdk::Resource;
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use tracing_opentelemetry::OpenTelemetryLayer;
-    use tracing_subscriber::Layer;
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
@@ -60,20 +53,30 @@ fn init_tracing() {
 
     let tracer = tracer_provider.tracer("steel");
     global::set_tracer_provider(tracer_provider);
+    OpenTelemetryLayer::new(tracer)
+        .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off"))
+}
 
-    tracing_subscriber::registry()
-        .with(
-            OpenTelemetryLayer::new(tracer)
-                .with_filter(EnvFilter::new("trace,h2=off,hyper=off,tonic=off,tower=off")),
-        )
-        .with(
-            fmt::layer().with_timer(fmt::time::uptime()).with_filter(
-                EnvFilter::builder()
-                    .with_default_directive(tracing::Level::INFO.into())
-                    .from_env_lossy(),
-            ),
-        )
-        .init();
+async fn init_tracing(cancel_token: CancellationToken) -> Arc<CommandLogger> {
+    let layer = LoggerLayer::new("./.tmp", cancel_token)
+        .await
+        .expect("Couldn't initialize the logger");
+    let logger = layer.0.clone();
+
+    let tracing = tracing_subscriber::registry().with(layer);
+
+    #[cfg(feature = "jaeger")]
+    let tracing = tracing.with(init_jaeger());
+
+    let tracing = tracing.with(
+        EnvFilter::builder()
+            .with_default_directive(tracing::Level::INFO.into())
+            .from_env_lossy(),
+    );
+
+    set_display_resolutor(&DisplayResolutor);
+    tracing.init();
+    logger
 }
 
 #[cfg(feature = "dhat-heap")]
@@ -110,13 +113,19 @@ fn main() {
 }
 
 async fn main_async(chunk_runtime: Arc<Runtime>) {
-    init_tracing();
-    run_server(chunk_runtime).await;
+    let cancel_token = CancellationToken::new();
+    let logger = init_tracing(cancel_token.clone()).await;
+
+    run_server(chunk_runtime, cancel_token, &logger).await;
+
+    logger.stop().await;
 }
 
-async fn run_server(chunk_runtime: Arc<Runtime>) {
-    set_display_resolutor(&DisplayResolutor);
-
+async fn run_server(
+    chunk_runtime: Arc<Runtime>,
+    cancel_token: CancellationToken,
+    logger: &Arc<CommandLogger>,
+) {
     #[cfg(feature = "deadlock_detection")]
     {
         // only for #[cfg]
@@ -145,24 +154,12 @@ async fn run_server(chunk_runtime: Arc<Runtime>) {
         });
     }
 
-    let mut steel = SteelServer::new(chunk_runtime.clone()).await;
+    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone()).await;
 
-    log::info!(
-        "{:p}",
-        translations::DEATH_ATTACK_ANVIL_PLAYER
-            .message(["4LVE", "Borrow Checker"])
-            .component()
-    );
+    generate_spawn_chunks(&steel.server, logger).await;
 
+    SERVER.set(steel.server.clone()).ok();
     let server = steel.server.clone();
-    let cancel_token = steel.cancel_token.clone();
-
-    tokio::spawn(async move {
-        if signal::ctrl_c().await.is_ok() {
-            log::info!("Shutdown signal received");
-            cancel_token.cancel();
-        }
-    });
 
     let task_tracker = TaskTracker::new();
 
@@ -185,6 +182,20 @@ async fn run_server(chunk_runtime: Arc<Runtime>) {
         world.cleanup(&mut total_saved).await;
     }
     log::info!("Saved {total_saved} chunks");
+
+    // Save all player data before shutdown
+    log::info!("Saving player data...");
+    let mut players_to_save = Vec::new();
+    for world in &server.worlds {
+        world.players.iter_players(|_, player| {
+            players_to_save.push(player.clone());
+            true
+        });
+    }
+    match server.player_data_storage.save_all(&players_to_save).await {
+        Ok(count) => log::info!("Saved {count} players"),
+        Err(e) => log::error!("Failed to save player data: {e}"),
+    }
 
     log::info!("Server stopped");
 }

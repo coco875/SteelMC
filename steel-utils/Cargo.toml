@@ -2,11 +2,14 @@
 name = "steel-utils"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+authors.workspace = true
 build = "build/build.rs"
 
 [dependencies]
 # Async runtime
 tokio.workspace = true
+tokio-util.workspace = true
 
 # Serialization
 serde.workspace = true
@@ -27,6 +30,8 @@ uuid.workspace = true
 
 # Logging
 log.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 # Cryptography
 md5.workspace = true

@@ -20,6 +20,8 @@ const DENSITY_FUNCTIONS: &str = "density_functions";
 
 /// Main build script entry point that generates code from data files.
 pub fn main() {
+    println!("cargo:rerun-if-changed=build/");
+
     if !Path::new(OUT_DIR).exists() {
         fs::create_dir_all(OUT_DIR).expect("Failed to create output directory");
     }
