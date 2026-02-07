@@ -5,8 +5,6 @@
 
 #[allow(missing_docs)]
 pub mod density_function;
-#[allow(missing_docs)]
-pub mod evaluator;
 // noise_params is generated at build time from noise_parameters.json
 pub use crate::generated_noise_params as noise_params;
 
@@ -31,7 +29,6 @@ pub mod ore_sampler;
 #[allow(missing_docs)]
 pub mod surface_height_sampler;
 
-pub use evaluator::{NoisePos, NoiseRouterRuntime};
 pub use noise_params::*;
 
 // Re-export chunk noise router types

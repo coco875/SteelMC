@@ -309,7 +309,6 @@ fn build_noise_router_tokens(
 
 struct GeneratedEnvironment {
     stream: TokenStream,
-    router_name: String,
 }
 
 fn generate_environment(
@@ -365,10 +364,7 @@ fn generate_environment(
         };
     });
 
-    GeneratedEnvironment {
-        stream,
-        router_name: router_name.to_string(),
-    }
+    GeneratedEnvironment { stream }
 }
 
 pub(crate) fn build() -> TokenStream {
@@ -381,7 +377,7 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::noise_router::types::{
+        use crate::noise_router::component::base_noise_router::{
             BaseNoiseFunctionComponent, BaseNoiseRouter, BaseNoiseRouters, BaseSurfaceEstimator,
             BaseMultiNoiseRouter, NoiseData, ShiftedNoiseData, ClampedYGradientData,
             BinaryData, BinaryOperation, UnaryData, UnaryOperation,
