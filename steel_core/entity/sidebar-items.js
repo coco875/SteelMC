@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["LivingEntity"]};
+window.SIDEBAR_ITEMS = {"enum":["RemovalReason"],"fn":["init_entities","next_entity_id"],"mod":["base","cache","callback","entities","registry","storage","tracker"],"static":["ENTITIES","ENTITY_COUNTER"],"struct":["EntityBase","EntityCache","EntityChunkCallback","EntityRegistry","EntityStorage","EntityTracker","NullEntityCallback","PlayerEntityCallback"],"trait":["Entity","EntityLevelCallback","LivingEntity"],"type":["SharedEntity","WeakEntity"]};

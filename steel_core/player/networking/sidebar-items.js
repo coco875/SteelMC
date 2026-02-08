@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["JavaConnection","KeepAliveTracker"]};
+window.SIDEBAR_ITEMS = {"struct":["BundleBuilder","JavaConnection","KeepAliveTracker"]};

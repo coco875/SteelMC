@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["player_area_map","player_map","world_entities"],"struct":["PlayerAreaMap","PlayerMap","World"]};
+window.SIDEBAR_ITEMS = {"constant":["SEND_PLAYER_INFO_INTERVAL"],"fn":["triangle_random"],"mod":["player_area_map","player_map","world_entities"],"struct":["PlayerAreaMap","PlayerMap","World","WorldConfig","WorldTickTimings"]};

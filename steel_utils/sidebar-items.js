@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["codec","front_vec","locks","math","random","serial","text","translations","types"],"struct":["FrontVec"]};
+window.SIDEBAR_ITEMS = {"macro":["chat","command","console"],"mod":["codec","direction","front_vec","hash","locks","logger","math","random","registry","serial","text","translations","translations_registry","types","uuid_ext"],"struct":["FrontVec"]};
