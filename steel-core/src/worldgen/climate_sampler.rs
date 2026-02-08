@@ -11,12 +11,12 @@ use steel_registry::density_functions::{
     self, CubicSpline as GenCubicSpline, DensityFunction as GenDensityFunction,
     OVERWORLD_NOISE_ROUTER, RarityValueMapper as GenRarityValueMapper,
 };
+use steel_registry::noise_parameters::get_noise_parameters;
 use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::density::{
     CubicSpline, DensityContext, DensityEvaluator, DensityFunction, EvalCache, RarityValueMapper,
     SplinePoint, SplineValue,
 };
-use steel_registry::noise_parameters::get_noise_parameters;
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 
 /// Climate sampler that uses the extracted vanilla density functions.

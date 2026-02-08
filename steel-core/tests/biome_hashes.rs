@@ -35,8 +35,7 @@ fn chunk_biome_hash(sampler: &VanillaClimateSampler, chunk_x: i32, chunk_z: i32)
                     let quart_y = section_y * 4 + y;
                     let quart_z = chunk_z * 4 + z;
 
-                    let target =
-                        sampler.sample(quart_x, quart_y, quart_z, &mut eval_cache);
+                    let target = sampler.sample(quart_x, quart_y, quart_z, &mut eval_cache);
                     let biome = get_overworld_biome_cached(&target, &mut biome_cache);
                     biomes.insert((section_y, x, y, z), biome);
                 }

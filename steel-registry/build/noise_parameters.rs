@@ -15,17 +15,19 @@ struct NoiseParamsJson {
 
 /// Generate noise parameters code from the vanilla datapack.
 pub(crate) fn build() -> TokenStream {
-    let noise_dir = Path::new(
-        "build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/noise",
-    );
+    let noise_dir =
+        Path::new("build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/noise");
 
     println!("cargo:rerun-if-changed={}", noise_dir.display());
 
     let mut noises: BTreeMap<String, NoiseParamsJson> = BTreeMap::new();
 
-    for entry in fs::read_dir(noise_dir)
-        .unwrap_or_else(|e| panic!("Failed to read noise directory {}: {e}", noise_dir.display()))
-    {
+    for entry in fs::read_dir(noise_dir).unwrap_or_else(|e| {
+        panic!(
+            "Failed to read noise directory {}: {e}",
+            noise_dir.display()
+        )
+    }) {
         let entry = entry.expect("Failed to read directory entry");
         let path = entry.path();
 
@@ -62,10 +64,7 @@ pub(crate) fn build() -> TokenStream {
     // Generate static amplitude arrays
     for (name, params) in &noises {
         let const_name = Ident::new(
-            &format!(
-                "{}_AMPLITUDES",
-                name.to_uppercase()
-            ),
+            &format!("{}_AMPLITUDES", name.to_uppercase()),
             Span::call_site(),
         );
         let amplitudes = &params.amplitudes;
@@ -80,10 +79,7 @@ pub(crate) fn build() -> TokenStream {
         .iter()
         .map(|(name, params)| {
             let amp_name = Ident::new(
-                &format!(
-                    "{}_AMPLITUDES",
-                    name.to_uppercase()
-                ),
+                &format!("{}_AMPLITUDES", name.to_uppercase()),
                 Span::call_site(),
             );
             let first_octave = params.first_octave;
