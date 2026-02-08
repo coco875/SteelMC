@@ -1,21 +1,55 @@
 //! Build-time code generator for noise parameters.
 
 use std::fs;
+use std::path::Path;
 
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use serde_json::Value;
+use serde::Deserialize;
 
-/// Generates noise parameter constants from the JSON file.
+/// Represents the structure of each noise parameter JSON file.
+#[derive(Deserialize)]
+struct NoiseParams {
+    #[serde(rename = "firstOctave")]
+    first_octave: i32,
+    amplitudes: Vec<f64>,
+}
+
+/// Generates noise parameter constants from datapack JSON files.
 pub(crate) fn build() -> TokenStream {
-    println!("cargo:rerun-if-changed=build_assets/noise_parameters.json");
+    let noise_dir = Path::new(
+        "../steel-registry/build_assets/builtin_datapacks/minecraft/data/minecraft/worldgen/noise",
+    );
 
-    let json_file = fs::read_to_string("build_assets/noise_parameters.json")
-        .expect("Failed to read noise_parameters.json");
+    println!("cargo:rerun-if-changed={}", noise_dir.display());
 
-    let params: serde_json::Map<String, Value> =
-        serde_json::from_str(&json_file).expect("Failed to parse noise_parameters.json");
+    // Collect all noise parameters from individual JSON files
+    let mut params: Vec<(String, NoiseParams)> = Vec::new();
+
+    for entry in fs::read_dir(noise_dir).expect("Failed to read noise directory") {
+        let entry = entry.expect("Failed to read directory entry");
+        let path = entry.path();
+
+        if path.extension().is_some_and(|ext| ext == "json") {
+            let file_name = path
+                .file_stem()
+                .expect("Failed to get file stem")
+                .to_str()
+                .expect("Failed to convert file stem to str")
+                .to_string();
+
+            let json_content =
+                fs::read_to_string(&path).expect("Failed to read noise parameter file");
+            let noise_params: NoiseParams =
+                serde_json::from_str(&json_content).expect("Failed to parse noise parameter file");
+
+            params.push((file_name, noise_params));
+        }
+    }
+
+    // Sort for deterministic output
+    params.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut stream = TokenStream::new();
 
@@ -48,36 +82,19 @@ pub(crate) fn build() -> TokenStream {
         }
     });
 
-    // Collect and sort parameter names for deterministic output
-    let mut params_vec: Vec<_> = params.iter().collect();
-    params_vec.sort_by_key(|(k, _)| *k);
-
     // Generate constants
     let mut const_names = Vec::new();
     let mut match_arms = Vec::new();
 
-    for (key, value) in &params_vec {
-        let obj = value.as_object().expect("Expected object");
-        let first_octave = obj
-            .get("firstOctave")
-            .expect("Missing firstOctave")
-            .as_i64()
-            .expect("firstOctave must be i64") as i32;
-        let amplitudes = obj
-            .get("amplitudes")
-            .expect("Missing amplitudes")
-            .as_array()
-            .expect("amplitudes must be array");
+    for (key, noise_params) in &params {
+        let first_octave = noise_params.first_octave;
+        let amplitudes = &noise_params.amplitudes;
 
         let const_name_str = key.to_shouty_snake_case();
         let const_name = Ident::new(&const_name_str, Span::call_site());
 
         // Generate the amplitudes array
-        let amps: Vec<_> = amplitudes
-            .iter()
-            .map(|v| v.as_f64().expect("amplitude must be f64"))
-            .collect();
-        let amps_tokens: Vec<_> = amps.iter().map(|a| quote! { #a }).collect();
+        let amps_tokens: Vec<_> = amplitudes.iter().map(|a| quote! { #a }).collect();
 
         // The minecraft: prefix for the id
         let id = format!("minecraft:{key}");
@@ -89,7 +106,7 @@ pub(crate) fn build() -> TokenStream {
         });
 
         const_names.push(const_name.clone());
-        match_arms.push(((*key).clone(), const_name));
+        match_arms.push((key.clone(), const_name));
     }
 
     // Generate id_to_parameters function
