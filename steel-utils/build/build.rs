@@ -36,11 +36,9 @@ pub fn main() {
     .expect("Failed to write translations registry file");
 
     // Format generated files
-    if FMT {
-        if let Ok(entries) = fs::read_dir(TRANSLATIONS_OUT_DIR) {
-            for entry in entries.flatten() {
-                let _ = Command::new("rustfmt").arg(entry.path()).output();
-            }
+    if FMT && let Ok(entries) = fs::read_dir(TRANSLATIONS_OUT_DIR) {
+        for entry in entries.flatten() {
+            let _ = Command::new("rustfmt").arg(entry.path()).output();
         }
     }
 }
