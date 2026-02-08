@@ -74,5 +74,8 @@ proc-macro2.workspace = true
 quote.workspace = true
 heck.workspace = true
 
+[dev-dependencies]
+md5.workspace = true
+
 [lints]
 workspace = true

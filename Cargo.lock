@@ -2814,6 +2814,7 @@ dependencies = [
  "futures",
  "heck",
  "log",
+ "md5",
  "parking_lot",
  "proc-macro2",
  "quote",

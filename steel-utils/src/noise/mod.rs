@@ -1,0 +1,15 @@
+//! Noise generation utilities matching vanilla Minecraft's noise system.
+//!
+//! This module provides the noise generation primitives used for world generation:
+//!
+//! - [`ImprovedNoise`] - Base Perlin noise implementation
+//! - [`PerlinNoise`] - Octave-based Perlin noise
+//! - [`NormalNoise`] - Double Perlin noise (used for biome climate parameters)
+
+mod improved_noise;
+mod normal_noise;
+mod perlin_noise;
+
+pub use improved_noise::ImprovedNoise;
+pub use normal_noise::NormalNoise;
+pub use perlin_noise::PerlinNoise;

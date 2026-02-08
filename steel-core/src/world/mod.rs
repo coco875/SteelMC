@@ -163,6 +163,7 @@ impl World {
                 &dimension,
                 storage,
                 config.generator,
+                seed,
             )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
