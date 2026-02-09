@@ -429,7 +429,7 @@ mod tests {
         let RandomSource::Xoroshiro(mut rand1) = splitter.with_hash_of("TEST STRING") else {
             panic!("Expected Xoroshiro variant");
         };
-        let _ = rand1.next_i32(); // value depends on correct MD5 byte order
+        assert_eq!(rand1.next_i32(), -641435713);
 
         let RandomSource::Xoroshiro(mut rand2) = splitter.with_seed(42069) else {
             panic!("Expected Xoroshiro variant");

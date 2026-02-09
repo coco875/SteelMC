@@ -42,10 +42,12 @@ pub enum DensityFunction {
         y_scale: f64,
     },
 
-    /// Sample from a shifted noise generator (2D noise with shift).
+    /// Sample from a shifted noise generator.
     ShiftedNoise {
         /// X coordinate shift
         shift_x: Arc<DensityFunction>,
+        /// Y coordinate shift
+        shift_y: Arc<DensityFunction>,
         /// Z coordinate shift
         shift_z: Arc<DensityFunction>,
         /// XZ scale factor
@@ -210,7 +212,7 @@ impl RarityValueMapper {
                     2.0
                 }
             }
-            // Type 2: getSphaghettiRarity2D (caves)
+            // Type 2: getSpaghettiRarity2D (caves)
             Self::Caves => {
                 if rarity < -0.75 {
                     0.5
@@ -307,8 +309,8 @@ pub struct NoiseRouter {
     pub depth: Arc<DensityFunction>,
     /// Ridges/weirdness (for biome selection)
     pub ridges: Arc<DensityFunction>,
-    /// Initial density without caves
-    pub initial_density_without_jaggedness: Arc<DensityFunction>,
+    /// Preliminary surface level (for aquifers and surface rules)
+    pub preliminary_surface_level: Arc<DensityFunction>,
     /// Final density (for terrain generation)
     pub final_density: Arc<DensityFunction>,
     /// Vein toggle
@@ -346,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_rarity_value_mapper_caves() {
-        // getSphaghettiRarity2D from vanilla
+        // getSpaghettiRarity2D from vanilla
         let mapper = RarityValueMapper::Caves;
         assert!((mapper.get_values(-0.8) - 0.5).abs() < 0.01); // < -0.75
         assert!((mapper.get_values(-0.6) - 0.75).abs() < 0.01); // >= -0.75, < -0.5

@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use super::{PARAMETER_COUNT, quantize_coord};
+use super::{PARAMETER_COUNT, QUANTIZATION_FACTOR, quantize_coord};
 
 /// A target point representing sampled climate values.
 ///
@@ -112,14 +112,15 @@ impl Parameter {
     pub fn span(min: f32, max: f32) -> Self {
         debug_assert!(min <= max, "min > max: {min} > {max}");
         Self {
-            min: (min * 10000.0) as i64,
-            max: (max * 10000.0) as i64,
+            min: (min * QUANTIZATION_FACTOR) as i64,
+            max: (max * QUANTIZATION_FACTOR) as i64,
         }
     }
 
     /// Create a parameter span from two parameters.
     #[must_use]
     pub const fn span_params(min: &Parameter, max: &Parameter) -> Self {
+        debug_assert!(min.min <= max.max, "span_params: min > max");
         Self {
             min: min.min,
             max: max.max,
@@ -176,7 +177,7 @@ impl Parameter {
 ///
 /// Contains ranges for all 6 climate parameters plus an offset value
 /// used as a tiebreaker in biome selection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ParameterPoint {
     /// Temperature range
     pub temperature: Parameter,
@@ -399,7 +400,7 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
     let mut best_dim = 0;
 
     for d in 0..PARAMETER_COUNT {
-        sort_entries(entries, d, false);
+        sort_entries(entries, d);
         let bucket_cost = compute_bucket_cost(entries);
         if min_cost > bucket_cost {
             min_cost = bucket_cost;
@@ -408,7 +409,7 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
     }
 
     // Sort by the best dimension and bucketize
-    sort_entries(entries, best_dim, false);
+    sort_entries(entries, best_dim);
     let bucket_ranges = compute_bucket_ranges(entries.len());
 
     // Build subtrees for each bucket
@@ -441,27 +442,6 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
 
     // Sort the bucket subtrees by the best dimension (absolute=true)
     sort_subtrees(&mut bucket_subtrees, best_dim);
-
-    // Recursively build from the bucket subtrees
-    let mut sub_entries: Vec<BuildEntry> = Vec::new();
-    for (i, (_, ps)) in bucket_subtrees.iter().enumerate() {
-        sub_entries.push(BuildEntry {
-            parameter_space: *ps,
-            index: i,
-        });
-    }
-
-    // Actually, vanilla recurses by converting bucket subtrees into nodes and building again.
-    // The recursive step takes the children of each bucket subtree and builds a new tree.
-    // Let me re-examine the vanilla algorithm...
-    //
-    // Vanilla: sort(minBuckets, dimensions, minDimension, true);
-    //          return new SubTree(minBuckets.stream().map(b -> build(dimensions, Arrays.asList(b.children))).collect());
-    //
-    // So it sorts the buckets, then for each bucket, takes its children and recursively builds a node.
-
-    // Sort bucket_subtrees by best_dim with absolute=true
-    // Already done above.
 
     // For each bucket subtree, take its children and recursively build
     let mut final_children: Vec<RTreeNode> = Vec::new();
@@ -497,19 +477,13 @@ fn build_tree(entries: &mut [BuildEntry]) -> RTreeNode {
 }
 
 /// Sort entries by a dimension, with tiebreaking by subsequent dimensions.
-fn sort_entries(entries: &mut [BuildEntry], dimension: usize, absolute: bool) {
+fn sort_entries(entries: &mut [BuildEntry], dimension: usize) {
     entries.sort_by(|a, b| {
         for offset in 0..PARAMETER_COUNT {
             let d = (dimension + offset) % PARAMETER_COUNT;
-            let abs = absolute;
             let center_a = i64::midpoint(a.parameter_space[d].min, a.parameter_space[d].max);
             let center_b = i64::midpoint(b.parameter_space[d].min, b.parameter_space[d].max);
-            let (va, vb) = if abs {
-                (center_a.abs(), center_b.abs())
-            } else {
-                (center_a, center_b)
-            };
-            let cmp = va.cmp(&vb);
+            let cmp = center_a.cmp(&center_b);
             if cmp != Ordering::Equal {
                 return cmp;
             }

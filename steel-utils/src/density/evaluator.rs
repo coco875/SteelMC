@@ -143,19 +143,20 @@ impl DensityEvaluator {
 
             DensityFunction::ShiftedNoise {
                 shift_x,
+                shift_y,
                 shift_z,
                 xz_scale,
                 y_scale,
                 noise_id,
             } => {
                 // Vanilla: x = blockX * xzScale + shiftX.compute(ctx)
-                // Scale first, then add shift (shift is NOT scaled by xz_scale)
                 let dx = self.evaluate(shift_x, ctx);
+                let dy = self.evaluate(shift_y, ctx);
                 let dz = self.evaluate(shift_z, ctx);
                 if let Some(noise) = self.noises.get(noise_id) {
                     noise.get_value(
                         f64::from(ctx.x) * xz_scale + dx,
-                        f64::from(ctx.y) * y_scale,
+                        f64::from(ctx.y) * y_scale + dy,
                         f64::from(ctx.z) * xz_scale + dz,
                     )
                 } else {
@@ -371,17 +372,19 @@ impl DensityEvaluator {
 
             DensityFunction::ShiftedNoise {
                 shift_x,
+                shift_y,
                 shift_z,
                 xz_scale,
                 y_scale,
                 noise_id,
             } => {
                 let dx = self.evaluate_cached(shift_x, ctx, cache);
+                let dy = self.evaluate_cached(shift_y, ctx, cache);
                 let dz = self.evaluate_cached(shift_z, ctx, cache);
                 if let Some(noise) = self.noises.get(noise_id) {
                     noise.get_value(
                         f64::from(ctx.x) * xz_scale + dx,
-                        f64::from(ctx.y) * y_scale,
+                        f64::from(ctx.y) * y_scale + dy,
                         f64::from(ctx.z) * xz_scale + dz,
                     )
                 } else {

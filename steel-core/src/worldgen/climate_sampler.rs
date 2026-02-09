@@ -180,13 +180,14 @@ fn convert_density_function(df: &GenDensityFunction) -> Arc<DensityFunction> {
 
         GenDensityFunction::ShiftedNoise {
             shift_x,
-            shift_y: _, // Vanilla ShiftedNoise ignores shift_y (always uses 0)
+            shift_y,
             shift_z,
             xz_scale,
             y_scale,
             noise_id,
         } => DensityFunction::ShiftedNoise {
             shift_x: convert_density_function(shift_x),
+            shift_y: convert_density_function(shift_y),
             shift_z: convert_density_function(shift_z),
             xz_scale: *xz_scale,
             y_scale: *y_scale,
