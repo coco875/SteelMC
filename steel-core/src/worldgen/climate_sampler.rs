@@ -9,10 +9,10 @@ use rustc_hash::FxHashMap;
 
 use steel_registry::density_functions::{
     self, CubicSpline as GenCubicSpline, DensityFunction as GenDensityFunction,
-    RarityValueMapper as GenRarityValueMapper, OVERWORLD_NOISE_ROUTER,
+    OVERWORLD_NOISE_ROUTER, RarityValueMapper as GenRarityValueMapper,
 };
 use steel_registry::noise_parameters::get_noise_parameters;
-use steel_utils::climate::{quantize_coord, TargetPoint};
+use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::density::{
     BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
     DensityContext, DensityFunction, DensityFunctionOps, EndIslands, EvalCache, Mapped, MappedType,
@@ -21,7 +21,7 @@ use steel_utils::density::{
     WeirdScaledSampler, YClampedGradient,
 };
 use steel_utils::noise::NormalNoise;
-use steel_utils::random::{xoroshiro::Xoroshiro, Random};
+use steel_utils::random::{Random, xoroshiro::Xoroshiro};
 
 /// Climate sampler that uses the extracted vanilla density functions.
 pub struct VanillaClimateSampler {

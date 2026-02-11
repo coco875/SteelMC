@@ -650,12 +650,12 @@ impl DensityFunctionOps for Spline {
 /// End islands density function.
 ///
 /// Matches vanilla's `DensityFunctions.EndIslands`.
-/// TODO: Implement SimplexNoise + island generation algorithm.
+/// TODO: Implement `SimplexNoise` + island generation algorithm.
 #[derive(Debug, Clone, Copy)]
 pub struct EndIslands;
 
 impl DensityFunctionOps for EndIslands {
-    // TODO: Implement SimplexNoise + island generation algorithm.
+    // TODO: Implement `SimplexNoise` + island generation algorithm.
     fn compute(&self, _ctx: &DensityContext) -> f64 {
         0.0
     }
@@ -810,9 +810,11 @@ impl DensityFunction {
         noises: &FxHashMap<String, NormalNoise>,
     ) -> Self {
         match self {
-            Self::Constant(_) | Self::EndIslands(_) | Self::BlendAlpha(_) | Self::BlendOffset(_) => {
-                self.clone()
-            }
+            Self::Constant(_)
+            | Self::EndIslands(_)
+            | Self::BlendAlpha(_)
+            | Self::BlendOffset(_)
+            | Self::YClampedGradient(_) => self.clone(),
 
             Self::Reference(r) => {
                 let resolved = registry
@@ -823,8 +825,6 @@ impl DensityFunction {
                     resolved,
                 })
             }
-
-            Self::YClampedGradient(_) => self.clone(),
 
             Self::Noise(n) => Self::Noise(Noise {
                 noise_id: n.noise_id.clone(),
@@ -883,11 +883,9 @@ impl DensityFunction {
                 when_out_of_range: Arc::new(rc.when_out_of_range.resolve_inner(registry, noises)),
             }),
 
-            Self::Spline(s) => {
-                Self::Spline(Spline {
-                    spline: Arc::new(resolve_spline(&s.spline, registry, noises)),
-                })
-            }
+            Self::Spline(s) => Self::Spline(Spline {
+                spline: Arc::new(resolve_spline(&s.spline, registry, noises)),
+            }),
 
             Self::BlendedNoise(bn) => Self::BlendedNoise(BlendedNoise {
                 xz_scale: bn.xz_scale,
