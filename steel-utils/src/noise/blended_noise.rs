@@ -112,17 +112,13 @@ impl BlendedNoise {
             let wz = wrap(limit_z * pow);
             let y_scale_pow = limit_smear * pow;
 
-            if !is_max
-                && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
-                    blend_min +=
-                        noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
-                }
+            if !is_max && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
+                blend_min += noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
+            }
 
-            if !is_min
-                && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
-                    blend_max +=
-                        noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
-                }
+            if !is_min && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
+                blend_max += noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
+            }
 
             pow /= 2.0;
         }

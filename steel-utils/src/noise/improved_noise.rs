@@ -175,6 +175,7 @@ impl ImprovedNoise {
     /// Sample noise at grid point, interpolate, and accumulate derivatives.
     #[allow(
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         clippy::many_single_char_names,
         clippy::similar_names
     )]

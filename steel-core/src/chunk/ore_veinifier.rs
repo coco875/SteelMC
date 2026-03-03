@@ -4,9 +4,9 @@
 //! (`vein_toggle`, `vein_ridged`, `vein_gap`) per solid block to decide whether
 //! to replace stone with copper/iron ore, raw ore blocks, or filler (granite/tuff).
 
-use steel_registry::density_functions::{self, OverworldColumnCache, OverworldNoises};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
+use steel_utils::density::{ColumnCache, DimensionNoises};
 use steel_utils::math::map_clamped;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
@@ -91,18 +91,17 @@ impl OreVeinifier {
     ///
     /// Returns `Some(block_id)` if the block should be ore/raw ore/filler,
     /// or `None` if it should remain stone.
-    pub fn compute(
+    pub fn compute<N: DimensionNoises>(
         &self,
-        noises: &OverworldNoises,
-        cache: &mut OverworldColumnCache,
+        noises: &N,
+        cache: &mut N::ColumnCache,
         world_x: i32,
         world_y: i32,
         world_z: i32,
     ) -> Option<BlockStateId> {
         cache.ensure(world_x, world_z, noises);
 
-        let vein_toggle =
-            density_functions::router_vein_toggle(noises, cache, world_x, world_y, world_z);
+        let vein_toggle = noises.router_vein_toggle(cache, world_x, world_y, world_z);
 
         // Select vein type based on sign of vein_toggle
         let vein_type = if vein_toggle > 0.0 {
@@ -143,8 +142,7 @@ impl OreVeinifier {
         }
 
         // Ridged noise must be negative for ore placement
-        let vein_ridged =
-            density_functions::router_vein_ridged(noises, cache, world_x, world_y, world_z);
+        let vein_ridged = noises.router_vein_ridged(cache, world_x, world_y, world_z);
         if vein_ridged >= 0.0 {
             return None;
         }
@@ -160,8 +158,7 @@ impl OreVeinifier {
 
         if (f64::from(rng.next_f32())) < richness {
             // Check gap noise
-            let vein_gap =
-                density_functions::router_vein_gap(noises, cache, world_x, world_y, world_z);
+            let vein_gap = noises.router_vein_gap(cache, world_x, world_y, world_z);
             if vein_gap > SKIP_ORE_IF_GAP_BELOW {
                 // Place ore (2% chance of raw ore block)
                 if rng.next_f32() < CHANCE_OF_RAW_ORE_BLOCK {

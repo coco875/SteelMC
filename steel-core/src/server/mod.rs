@@ -567,14 +567,13 @@ impl Server {
                 let useed = seed as u64;
                 if ptr::eq(dimension, OVERWORLD) {
                     let source = BiomeSourceKind::overworld(useed);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source, useed))
+                    ChunkGeneratorType::Overworld(VanillaGenerator::new(source, useed))
                 } else if ptr::eq(dimension, THE_NETHER) {
                     let source = BiomeSourceKind::nether(useed);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source, useed))
+                    ChunkGeneratorType::Nether(VanillaGenerator::new(source, useed))
                 } else {
-                    // TODO: Handle custom dimensions for modding support
                     let source = BiomeSourceKind::end(useed);
-                    ChunkGeneratorType::Vanilla(VanillaGenerator::new(source, useed))
+                    ChunkGeneratorType::End(VanillaGenerator::new(source, useed))
                 }
             }
             WorldGeneratorTypes::Flat => {

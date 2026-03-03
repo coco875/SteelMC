@@ -1,7 +1,9 @@
-use steel_registry::density_functions::{OverworldColumnCache, OverworldNoises};
+use std::marker::PhantomData;
+
+use steel_registry::REGISTRY;
 use steel_registry::noise_parameters::get_noise_parameters;
-use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
+use steel_utils::density::{DimensionNoises, NoiseSettings};
 use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult};
@@ -11,50 +13,57 @@ use crate::chunk::noise_chunk::NoiseChunk;
 use crate::chunk::ore_veinifier::OreVeinifier;
 use crate::worldgen::BiomeSourceKind;
 
-/// Overworld minimum Y coordinate.
-const MIN_Y: i32 = -64;
-
 /// A chunk generator for vanilla (normal) world generation.
 ///
 /// Matches vanilla's `NoiseBasedChunkGenerator`. The biome source is pluggable
 /// per-dimension — overworld, nether, and end each provide a different
 /// [`BiomeSourceKind`] variant.
-pub struct VanillaGenerator {
+///
+/// Generic over `N: DimensionNoises` to support different dimensions with
+/// their own transpiled density functions and noise settings.
+pub struct VanillaGenerator<N: DimensionNoises> {
     /// Biome source for this dimension. Determines biomes at each quart position.
     biome_source: BiomeSourceKind,
-    /// Noise generators for the overworld density functions.
-    /// Boxed because `OverworldNoises` is ~5600 bytes.
-    noises: Box<OverworldNoises>,
+    /// Noise generators for this dimension's density functions.
+    /// Boxed because noise structs can be large.
+    noises: Box<N>,
     /// Seed positional splitter for per-chunk construction of aquifers.
     splitter: RandomSplitter,
     /// Ore vein generator for replacing stone with ore blocks.
-    ore_veinifier: OreVeinifier,
-    /// Block state ID for stone, cached at construction time.
-    stone_id: BlockStateId,
+    ore_veinifier: Option<OreVeinifier>,
+    /// Block state ID for the default block, cached at construction time.
+    default_block_id: BlockStateId,
+    _phantom: PhantomData<N>,
 }
 
-impl VanillaGenerator {
+impl<N: DimensionNoises> VanillaGenerator<N> {
     /// Creates a new `VanillaGenerator` with the given biome source and seed.
     #[must_use]
     pub fn new(biome_source: BiomeSourceKind, seed: u64) -> Self {
         let mut rng = Xoroshiro::from_seed(seed);
         let splitter = rng.next_positional();
         let noise_params = get_noise_parameters();
-        let noises = OverworldNoises::create(&splitter, &noise_params);
+        let noises = N::create(seed, &splitter, &noise_params);
 
-        let ore_veinifier = OreVeinifier::new(&splitter);
+        // Only create ore veinifier if ore veins are enabled in the datapack
+        let ore_veinifier = if N::Settings::ORE_VEINS_ENABLED {
+            Some(OreVeinifier::new(&splitter))
+        } else {
+            None
+        };
 
         Self {
             biome_source,
             noises: Box::new(noises),
             splitter,
             ore_veinifier,
-            stone_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::STONE),
+            default_block_id: N::Settings::default_block_id(),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl ChunkGenerator for VanillaGenerator {
+impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
@@ -106,18 +115,21 @@ impl ChunkGenerator for VanillaGenerator {
         let chunk_min_x = pos.0.x * 16;
         let chunk_min_z = pos.0.y * 16;
 
-        let mut noise_chunk = NoiseChunk::new(chunk_min_x, chunk_min_z);
-        let mut column_cache = OverworldColumnCache::new();
+        let min_y = N::Settings::MIN_Y;
+        let height = N::Settings::HEIGHT;
+
+        let mut noise_chunk = NoiseChunk::<N>::new(chunk_min_x, chunk_min_z);
+        let mut column_cache = N::ColumnCache::default();
 
         let noises = &*self.noises;
-        let stone_id = self.stone_id;
+        let default_block_id = self.default_block_id;
         let ore_veinifier = &self.ore_veinifier;
-        let mut ore_cache = OverworldColumnCache::new();
-        let mut aquifer = Aquifer::new(
+        let mut ore_cache = N::ColumnCache::default();
+        let mut aquifer = Aquifer::<N>::new(
             chunk_min_x,
             chunk_min_z,
-            MIN_Y,
-            384, // overworld height
+            min_y,
+            height,
             &self.splitter,
             noises,
         );
@@ -126,15 +138,19 @@ impl ChunkGenerator for VanillaGenerator {
             noises,
             &mut column_cache,
             |local_x, world_y, local_z, density| {
-                let relative_y = (world_y - MIN_Y) as usize;
+                let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
 
                 match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
                     AquiferResult::Solid => {
+                        // Use ore veinifier if enabled, otherwise use default block
                         let block = ore_veinifier
-                            .compute(noises, &mut ore_cache, world_x, world_y, world_z)
-                            .unwrap_or(stone_id);
+                            .as_ref()
+                            .and_then(|ov| {
+                                ov.compute(noises, &mut ore_cache, world_x, world_y, world_z)
+                            })
+                            .unwrap_or(default_block_id);
                         chunk.set_relative_block(local_x, relative_y, local_z, block);
                     }
                     AquiferResult::Fluid(id) => {

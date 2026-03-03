@@ -7,9 +7,11 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
-use steel_registry::density_functions::{self, OverworldColumnCache, OverworldNoises};
+use std::marker::PhantomData;
+
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
+use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::{clamp, map, map_clamped};
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
 
@@ -26,9 +28,6 @@ const SAMPLE_OFFSET_X: i32 = -5;
 const SAMPLE_OFFSET_Y: i32 = 1;
 const SAMPLE_OFFSET_Z: i32 = -5;
 
-/// Sea level for the overworld.
-const SEA_LEVEL: i32 = 63;
-/// Lava replaces water below this Y level.
 const LAVA_LEVEL: i32 = -54;
 /// Sentinel for "no fluid" — well below any real Y coordinate.
 const WAY_BELOW_MIN_Y: i32 = -32512;
@@ -63,7 +62,7 @@ struct FluidStatus {
 impl FluidStatus {
     /// What block is at `block_y`? Returns the fluid ID if below the surface,
     /// or `None` for air above the surface.
-    fn at(
+    const fn at(
         self,
         block_y: i32,
         water_id: BlockStateId,
@@ -90,16 +89,16 @@ pub enum AquiferResult {
 /// Noise-based aquifer for a single chunk.
 ///
 /// Constructed once per chunk, used throughout the fill loop.
-pub struct Aquifer {
+pub struct Aquifer<N: DimensionNoises> {
     /// Packed (x, y, z) locations of aquifer cell centers.
     /// `i64::MAX` = not yet computed.
     location_cache: Vec<i64>,
     /// Lazily computed fluid statuses per grid cell.
     status_cache: Vec<Option<FluidStatus>>,
     /// Positional random for grid cell jitter.
-    aquifer_splitter: RandomSplitter,
+    splitter: RandomSplitter,
     /// Column cache owned by the aquifer for density function evaluation.
-    cache: OverworldColumnCache,
+    cache: N::ColumnCache,
     /// Grid bounds.
     min_grid_x: i32,
     min_grid_y: i32,
@@ -108,34 +107,37 @@ pub struct Aquifer {
     grid_size_z: i32,
     /// Skip aquifer sampling above this Y (optimization).
     skip_sampling_above_y: i32,
+    /// Sea level for this dimension.
+    sea_level: i32,
     /// Block state IDs.
     water_id: BlockStateId,
     lava_id: BlockStateId,
+    _phantom: PhantomData<N>,
 }
 
 // Grid coordinate conversions
 #[inline]
-fn grid_x(block: i32) -> i32 {
+const fn grid_x(block: i32) -> i32 {
     block >> 4
 }
 #[inline]
-fn grid_z(block: i32) -> i32 {
+const fn grid_z(block: i32) -> i32 {
     block >> 4
 }
 #[inline]
-fn grid_y(block: i32) -> i32 {
+const fn grid_y(block: i32) -> i32 {
     block.div_euclid(Y_SPACING)
 }
 #[inline]
-fn from_grid_x(grid: i32, offset: i32) -> i32 {
+const fn from_grid_x(grid: i32, offset: i32) -> i32 {
     (grid << 4) + offset
 }
 #[inline]
-fn from_grid_y(grid: i32, offset: i32) -> i32 {
+const fn from_grid_y(grid: i32, offset: i32) -> i32 {
     grid * Y_SPACING + offset
 }
 #[inline]
-fn from_grid_z(grid: i32, offset: i32) -> i32 {
+const fn from_grid_z(grid: i32, offset: i32) -> i32 {
     (grid << 4) + offset
 }
 
@@ -154,17 +156,17 @@ fn pack_pos(x: i32, y: i32, z: i32) -> i64 {
 }
 
 #[inline]
-fn unpack_x(packed: i64) -> i32 {
+const fn unpack_x(packed: i64) -> i32 {
     (packed >> X_OFFSET) as i32
 }
 
 #[inline]
-fn unpack_y(packed: i64) -> i32 {
+const fn unpack_y(packed: i64) -> i32 {
     ((packed << 52) >> 52) as i32
 }
 
 #[inline]
-fn unpack_z(packed: i64) -> i32 {
+const fn unpack_z(packed: i64) -> i32 {
     ((packed << 26) >> X_OFFSET) as i32
 }
 
@@ -176,35 +178,35 @@ fn similarity(dist_sq1: i32, dist_sq2: i32) -> f64 {
 }
 
 /// Deep dark region check matching `OverworldBiomeBuilder.isDeepDarkRegion`.
-fn is_deep_dark_region(
-    noises: &OverworldNoises,
-    cache: &mut OverworldColumnCache,
+fn is_deep_dark_region<N: DimensionNoises>(
+    noises: &N,
+    cache: &mut N::ColumnCache,
     x: i32,
     y: i32,
     z: i32,
 ) -> bool {
     cache.ensure(x, z, noises);
-    let erosion = density_functions::router_erosion(noises, cache, x, y, z);
-    let depth = density_functions::router_depth(noises, cache, x, y, z);
+    let erosion = noises.router_erosion(cache, x, y, z);
+    let depth = noises.router_depth(cache, x, y, z);
     erosion < -0.225 && depth > 0.9
 }
 
-/// Global fluid picker: below min(-54, sea_level) → lava at -54, else water at sea level.
-fn global_fluid(y: i32) -> FluidStatus {
-    if y < LAVA_LEVEL.min(SEA_LEVEL) {
+/// Global fluid picker: below min(-54, `sea_level`) → lava at -54, else water at sea level.
+fn global_fluid(y: i32, sea_level: i32) -> FluidStatus {
+    if y < LAVA_LEVEL.min(sea_level) {
         FluidStatus {
             fluid_level: LAVA_LEVEL,
             is_lava: true,
         }
     } else {
         FluidStatus {
-            fluid_level: SEA_LEVEL,
+            fluid_level: sea_level,
             is_lava: false,
         }
     }
 }
 
-impl Aquifer {
+impl<N: DimensionNoises> Aquifer<N> {
     /// Create a new aquifer for a chunk.
     ///
     /// `chunk_min_x/z` are the block coordinates of the chunk's NW corner.
@@ -217,10 +219,12 @@ impl Aquifer {
         min_block_y: i32,
         y_block_size: i32,
         splitter: &RandomSplitter,
-        noises: &OverworldNoises,
+        noises: &N,
     ) -> Self {
+        let sea_level = N::Settings::SEA_LEVEL;
+
         let mut aquifer_rng = splitter.with_hash_of("minecraft:aquifer");
-        let aquifer_splitter = aquifer_rng.next_positional();
+        let splitter = aquifer_rng.next_positional();
 
         let chunk_max_x = chunk_min_x + 15;
         let chunk_max_z = chunk_min_z + 15;
@@ -242,7 +246,7 @@ impl Aquifer {
         let status_cache = vec![None; total];
 
         // Compute skip_sampling_above_y from max preliminary surface level
-        let mut cache = OverworldColumnCache::new();
+        let mut cache = N::ColumnCache::default();
         let max_surface = Self::max_preliminary_surface_level(
             noises,
             &mut cache,
@@ -258,7 +262,7 @@ impl Aquifer {
         Self {
             location_cache,
             status_cache,
-            aquifer_splitter,
+            splitter,
             cache,
             min_grid_x,
             min_grid_y,
@@ -266,14 +270,16 @@ impl Aquifer {
             grid_size_x,
             grid_size_z,
             skip_sampling_above_y,
+            sea_level,
             water_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER),
             lava_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA),
+            _phantom: PhantomData,
         }
     }
 
     fn max_preliminary_surface_level(
-        noises: &OverworldNoises,
-        cache: &mut OverworldColumnCache,
+        noises: &N,
+        cache: &mut N::ColumnCache,
         min_x: i32,
         min_z: i32,
         max_x: i32,
@@ -286,7 +292,7 @@ impl Aquifer {
             let mut x = min_x;
             while x <= max_x {
                 cache.ensure(x, z, noises);
-                let level = cache.router_preliminary_surface_level as i32;
+                let level = noises.router_preliminary_surface_level(cache, x, 0, z) as i32;
                 if level > max_level {
                     max_level = level;
                 }
@@ -298,7 +304,7 @@ impl Aquifer {
     }
 
     #[inline]
-    fn get_index(&self, gx: i32, gy: i32, gz: i32) -> usize {
+    const fn get_index(&self, gx: i32, gy: i32, gz: i32) -> usize {
         let x = gx - self.min_grid_x;
         let y = gy - self.min_grid_y;
         let z = gz - self.min_grid_z;
@@ -306,9 +312,10 @@ impl Aquifer {
     }
 
     /// Compute what block to place at this position given the interpolated density.
+    #[allow(clippy::too_many_lines)]
     pub fn compute_substance(
         &mut self,
-        noises: &OverworldNoises,
+        noises: &N,
         world_x: i32,
         world_y: i32,
         world_z: i32,
@@ -319,7 +326,7 @@ impl Aquifer {
             return AquiferResult::Solid;
         }
 
-        let gf = global_fluid(world_y);
+        let gf = global_fluid(world_y, self.sea_level);
 
         // Above the skip threshold: use global fluid directly
         if world_y > self.skip_sampling_above_y {
@@ -352,10 +359,8 @@ impl Aquifer {
 
                     // Get or compute cell center location
                     let loc = self.location_cache[index];
-                    let loc = if loc != i64::MAX {
-                        loc
-                    } else {
-                        let mut rng = self.aquifer_splitter.at(gx, gy, gz);
+                    let loc = if loc == i64::MAX {
+                        let mut rng = self.splitter.at(gx, gy, gz);
                         let packed = pack_pos(
                             from_grid_x(gx, rng.next_i32_bounded(X_RANGE)),
                             from_grid_y(gy, rng.next_i32_bounded(Y_RANGE)),
@@ -363,6 +368,8 @@ impl Aquifer {
                         );
                         self.location_cache[index] = packed;
                         packed
+                    } else {
+                        loc
                     };
 
                     let dx = unpack_x(loc) - world_x;
@@ -414,12 +421,12 @@ impl Aquifer {
         }
 
         // Water adjacent to global lava below → return water
-        if let Some(id) = fluid_at {
-            if id == self.water_id {
-                let below = global_fluid(world_y - 1);
-                if below.is_lava && (world_y - 1) < below.fluid_level {
-                    return AquiferResult::Fluid(id);
-                }
+        if let Some(id) = fluid_at
+            && id == self.water_id
+        {
+            let below = global_fluid(world_y - 1, self.sea_level);
+            if below.is_lava && (world_y - 1) < below.fluid_level {
+                return AquiferResult::Fluid(id);
             }
         }
 
@@ -485,7 +492,7 @@ impl Aquifer {
     }
 
     /// Get or compute the fluid status for the aquifer cell at the given cache index.
-    fn get_aquifer_status(&mut self, index: usize, noises: &OverworldNoises) -> FluidStatus {
+    fn get_aquifer_status(&mut self, index: usize, noises: &N) -> FluidStatus {
         if let Some(status) = self.status_cache[index] {
             return status;
         }
@@ -500,8 +507,8 @@ impl Aquifer {
     }
 
     /// Compute the fluid status for an aquifer cell centered at (x, y, z).
-    fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &OverworldNoises) -> FluidStatus {
-        let gf = global_fluid(y);
+    fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &N) -> FluidStatus {
+        let gf = global_fluid(y, self.sea_level);
         let mut lowest_surface = i32::MAX;
         let top_of_cell = y + Y_SPACING;
         let bottom_of_cell = y - Y_SPACING;
@@ -512,7 +519,8 @@ impl Aquifer {
             let sz = z + offset[1] * 16;
 
             self.cache.ensure(sx, sz, noises);
-            let preliminary = self.cache.router_preliminary_surface_level as i32;
+            let preliminary =
+                noises.router_preliminary_surface_level(&mut self.cache, sx, 0, sz) as i32;
             let adjusted = preliminary + 8;
 
             let is_center = offset[0] == 0 && offset[1] == 0;
@@ -523,7 +531,7 @@ impl Aquifer {
 
             let top_pokes_above = top_of_cell > adjusted;
             if top_pokes_above || is_center {
-                let gf_at_surface = global_fluid(adjusted);
+                let gf_at_surface = global_fluid(adjusted, self.sea_level);
                 // Check if global fluid exists at the adjusted surface level
                 let has_fluid = adjusted < gf_at_surface.fluid_level;
                 if has_fluid {
@@ -550,12 +558,13 @@ impl Aquifer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_surface_level(
         &mut self,
         x: i32,
         y: i32,
         z: i32,
-        noises: &OverworldNoises,
+        noises: &N,
         gf: FluidStatus,
         lowest_surface: i32,
         surface_under_global: bool,
@@ -573,7 +582,7 @@ impl Aquifer {
 
                 self.cache.ensure(x, z, noises);
                 let floodedness_noise = clamp(
-                    density_functions::router_fluid_level_floodedness(noises, &self.cache, x, y, z),
+                    noises.router_fluid_level_floodedness(&mut self.cache, x, y, z),
                     -1.0,
                     1.0,
                 );
@@ -601,7 +610,7 @@ impl Aquifer {
         x: i32,
         y: i32,
         z: i32,
-        noises: &OverworldNoises,
+        noises: &N,
         lowest_surface: i32,
     ) -> i32 {
         let cell_x = x.div_euclid(16);
@@ -611,13 +620,8 @@ impl Aquifer {
 
         // fluid_level_spread is evaluated at grid coordinates (not block coordinates)
         self.cache.ensure(cell_x, cell_z, noises);
-        let spread = density_functions::router_fluid_level_spread(
-            noises,
-            &self.cache,
-            cell_x,
-            cell_y,
-            cell_z,
-        ) * 10.0;
+        let spread =
+            noises.router_fluid_level_spread(&mut self.cache, cell_x, cell_y, cell_z) * 10.0;
         let spread_quantized = quantize(spread, 3);
         let target = cell_middle_y + spread_quantized;
 
@@ -629,7 +633,7 @@ impl Aquifer {
         x: i32,
         y: i32,
         z: i32,
-        noises: &OverworldNoises,
+        noises: &N,
         gf: FluidStatus,
         fluid_level: i32,
     ) -> bool {
@@ -638,8 +642,7 @@ impl Aquifer {
             let cell_y = y.div_euclid(40);
             let cell_z = z.div_euclid(64);
             self.cache.ensure(cell_x, cell_z, noises);
-            let lava_noise =
-                density_functions::router_lava(noises, &self.cache, cell_x, cell_y, cell_z);
+            let lava_noise = noises.router_lava(&mut self.cache, cell_x, cell_y, cell_z);
             if lava_noise.abs() > 0.3 {
                 return true; // lava
             }
@@ -648,9 +651,10 @@ impl Aquifer {
     }
 
     /// Calculate barrier pressure between two aquifer cells.
+    #[allow(clippy::too_many_arguments)]
     fn calculate_pressure(
         &mut self,
-        noises: &OverworldNoises,
+        noises: &N,
         x: i32,
         y: i32,
         z: i32,
@@ -695,11 +699,11 @@ impl Aquifer {
             }
         };
 
-        let noise_val = if gradient < -2.0 || gradient > 2.0 {
+        let noise_val = if !(-2.0..=2.0).contains(&gradient) {
             0.0
         } else if barrier_noise.is_nan() {
             self.cache.ensure(x, z, noises);
-            let n = density_functions::router_barrier(noises, &self.cache, x, y, z);
+            let n = noises.router_barrier(&mut self.cache, x, y, z);
             *barrier_noise = n;
             n
         } else {

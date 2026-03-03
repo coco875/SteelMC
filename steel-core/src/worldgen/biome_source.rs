@@ -14,8 +14,8 @@ use steel_registry::density_functions::nether::NetherColumnCache;
 use steel_registry::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
 use steel_registry::vanilla_biomes;
 
-use super::end_islands::EndIslands;
 use super::{NetherClimateSampler, OverworldClimateSampler};
+use steel_utils::noise::EndIslands;
 
 /// Dimension-specific biome source.
 ///

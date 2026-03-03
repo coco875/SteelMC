@@ -10,13 +10,17 @@
 //! - [`NoiseRouter`] - Collection of all density functions for world generation
 //! - [`CubicSpline`] - Cubic spline interpolation for smooth terrain transitions
 //! - [`RarityValueMapper`] - Used at runtime by transpiled cave generation code
+//! - [`DimensionNoises`] - Trait for dimension-specific noise generators
+//! - [`NoiseSettings`] - Trait for dimension-specific settings from datapack
 
 pub mod spline_eval;
+mod traits;
 mod types;
 
 #[cfg(feature = "codegen")]
 pub mod transpiler;
 
+pub use traits::{ColumnCache, DimensionNoises, NoiseSettings};
 pub use types::{
     BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
     DensityFunction, FindTopSurface, Mapped, MappedType, Marker, MarkerType, Noise,

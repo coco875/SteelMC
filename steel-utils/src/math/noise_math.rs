@@ -1,5 +1,7 @@
 //! Math utilities for noise generation, matching vanilla Minecraft's Mth.java
 
+use std::f64::consts::PI;
+
 /// Smoothstep - quintic Hermite interpolation (NOT cubic!)
 ///
 /// Formula: 6x^5 - 15x^4 + 10x^3
@@ -192,7 +194,7 @@ pub fn cube(x: f64) -> f64 {
 #[inline]
 #[must_use]
 pub fn bias_towards_extreme(noise: f64, factor: f64) -> f64 {
-    noise + (std::f64::consts::PI * noise).sin() * factor / std::f64::consts::PI
+    noise + (PI * noise).sin() * factor / PI
 }
 
 #[cfg(test)]

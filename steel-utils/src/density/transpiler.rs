@@ -102,6 +102,8 @@ struct TranspileContext {
     cache_ident: Ident,
     /// `BlendedNoise` configuration (if any density function uses it).
     blended_noise_config: Option<BlendedNoiseConfig>,
+    /// Whether any density function uses `EndIslands`.
+    uses_end_islands: bool,
 }
 
 impl TranspileContext {
@@ -117,6 +119,7 @@ impl TranspileContext {
             noises_ident: format_ident!("{prefix}Noises"),
             cache_ident: format_ident!("{prefix}ColumnCache"),
             blended_noise_config: None,
+            uses_end_islands: false,
         }
     }
 
@@ -186,8 +189,11 @@ impl TranspileContext {
             DensityFunction::Constant(_)
             | DensityFunction::BlendAlpha(_)
             | DensityFunction::BlendOffset(_)
-            | DensityFunction::EndIslands
             | DensityFunction::YClampedGradient(_) => {}
+
+            DensityFunction::EndIslands => {
+                self.uses_end_islands = true;
+            }
 
             DensityFunction::Noise(n) => {
                 self.noise_ids.insert(n.noise_id.clone());
@@ -295,8 +301,14 @@ impl TranspileContext {
             .collect();
 
         let blended_field = self.blended_noise_config.as_ref().map(|_| {
-            quote! { pub blended_noise: steel_utils::noise::BlendedNoise }
+            quote! { pub blended_noise: steel_utils::noise::BlendedNoise, }
         });
+
+        let end_islands_field = if self.uses_end_islands {
+            Some(quote! { pub end_islands: steel_utils::noise::EndIslands, })
+        } else {
+            None
+        };
 
         let noises = &self.noises_ident;
         quote! {
@@ -306,6 +318,7 @@ impl TranspileContext {
             pub struct #noises {
                 #(#fields,)*
                 #blended_field
+                #end_islands_field
             }
         }
     }
@@ -340,21 +353,32 @@ impl TranspileContext {
                         &mut terrain_random,
                         #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,
                     )
-                }
+                },
             }
         });
+
+        let end_islands_init = if self.uses_end_islands {
+            Some(quote! {
+                end_islands: steel_utils::noise::EndIslands::new(seed),
+            })
+        } else {
+            None
+        };
 
         let noises = &self.noises_ident;
         quote! {
             impl #noises {
-                /// Create all noise generators from a seed's positional splitter and noise parameters.
+                /// Create all noise generators from a world seed, positional splitter, and noise parameters.
                 pub fn create(
+                    seed: u64,
                     splitter: &RandomSplitter,
                     params: &rustc_hash::FxHashMap<String, steel_utils::density::NoiseParameters>,
                 ) -> Self {
+                    let _ = seed; // Suppress unused warning when EndIslands is not used
                     Self {
                         #(#field_inits,)*
                         #blended_init
+                        #end_islands_init
                     }
                 }
             }
@@ -761,9 +785,15 @@ impl TranspileContext {
             }
 
             DensityFunction::BlendAlpha(_) => quote! { 1.0 },
-            // TODO: Transpile EndIslands properly if End terrain is ever transpiled.
-            // Currently only used via direct `EndIslands` in `EndBiomeSource`.
-            DensityFunction::BlendOffset(_) | DensityFunction::EndIslands => quote! { 0.0 },
+            DensityFunction::BlendOffset(_) => quote! { 0.0 },
+            // EndIslands ignores y internally, so we can pass 0 in flat contexts
+            DensityFunction::EndIslands => {
+                if is_flat {
+                    quote! { noises.end_islands.sample(x, 0, z) }
+                } else {
+                    quote! { noises.end_islands.sample(x, y, z) }
+                }
+            }
             DensityFunction::BlendDensity(bd) => self.gen_expr(&bd.input, input, is_flat),
             DensityFunction::Marker(m) => self.gen_expr(&m.wrapped, input, is_flat),
 
@@ -917,12 +947,12 @@ fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::BlendDensity(bd) => uses_y(&bd.input),
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
-        // FindTopSurface output is Y-independent: it scans Y internally but
-        // the result only depends on (x, z).
-        DensityFunction::FindTopSurface(_) => false,
-        // References are handled at the analysis level, not here.
-        // Constants and shift-a/b/blend/end-islands don't use y.
-        DensityFunction::Reference(_)
+        // These don't use Y:
+        // - FindTopSurface scans Y internally but result only depends on (x, z)
+        // - References are handled at the analysis level
+        // - Constants, shifts, blend, and end-islands are Y-independent
+        DensityFunction::FindTopSurface(_)
+        | DensityFunction::Reference(_)
         | DensityFunction::Constant(_)
         | DensityFunction::ShiftA(_)
         | DensityFunction::ShiftB(_)

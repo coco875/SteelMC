@@ -68,9 +68,9 @@ fn noise_stage_hashes() {
     use steel_core::chunk::chunk_generator::ChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
-    use steel_core::chunk::vanilla_generator::VanillaGenerator;
+    use steel_core::chunk::world_gen_context::OverworldGenerator;
     use steel_core::worldgen::BiomeSourceKind;
-    use steel_registry::{REGISTRY, Registry, RegistryExt};
+    use steel_registry::{REGISTRY, Registry};
     use steel_utils::ChunkPos;
 
     let mut registry = Registry::new_vanilla();
@@ -92,7 +92,7 @@ fn noise_stage_hashes() {
         .collect();
 
     let source = BiomeSourceKind::overworld(seed);
-    let generator = VanillaGenerator::new(source, seed);
+    let generator = OverworldGenerator::new(source, seed);
 
     let mut mismatches = Vec::new();
     let section_count = 24;
