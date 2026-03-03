@@ -497,7 +497,7 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             upper_bound: Arc::new(json_to_df(upper_bound)),
             lower_bound: *lower_bound,
             cell_height: *cell_height,
-        })
+        }),
     }
 }
 

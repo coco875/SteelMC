@@ -9,9 +9,9 @@
 
 use steel_registry::density_functions::{self, OverworldColumnCache, OverworldNoises};
 use steel_registry::{REGISTRY, vanilla_blocks};
+use steel_utils::BlockStateId;
 use steel_utils::math::{clamp, map, map_clamped};
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
-use steel_utils::BlockStateId;
 
 // Grid spacing
 const Y_SPACING: i32 = 12;
@@ -63,7 +63,12 @@ struct FluidStatus {
 impl FluidStatus {
     /// What block is at `block_y`? Returns the fluid ID if below the surface,
     /// or `None` for air above the surface.
-    fn at(self, block_y: i32, water_id: BlockStateId, lava_id: BlockStateId) -> Option<BlockStateId> {
+    fn at(
+        self,
+        block_y: i32,
+        water_id: BlockStateId,
+        lava_id: BlockStateId,
+    ) -> Option<BlockStateId> {
         if block_y < self.fluid_level {
             Some(if self.is_lava { lava_id } else { water_id })
         } else {
@@ -261,12 +266,8 @@ impl Aquifer {
             grid_size_x,
             grid_size_z,
             skip_sampling_above_y,
-            water_id: REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::WATER),
-            lava_id: REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::LAVA),
+            water_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::WATER),
+            lava_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::LAVA),
         }
     }
 
@@ -426,7 +427,15 @@ impl Aquifer {
         let mut barrier_noise = f64::NAN;
         let status2 = self.get_aquifer_status(closest_idx[1], noises);
         let barrier12 = sim12
-            * self.calculate_pressure(noises, world_x, world_y, world_z, &mut barrier_noise, status1, status2);
+            * self.calculate_pressure(
+                noises,
+                world_x,
+                world_y,
+                world_z,
+                &mut barrier_noise,
+                status1,
+                status2,
+            );
         if density + barrier12 > 0.0 {
             return AquiferResult::Solid;
         }
@@ -436,7 +445,15 @@ impl Aquifer {
         if sim13 > 0.0 {
             let barrier13 = sim12
                 * sim13
-                * self.calculate_pressure(noises, world_x, world_y, world_z, &mut barrier_noise, status1, status3);
+                * self.calculate_pressure(
+                    noises,
+                    world_x,
+                    world_y,
+                    world_z,
+                    &mut barrier_noise,
+                    status1,
+                    status3,
+                );
             if density + barrier13 > 0.0 {
                 return AquiferResult::Solid;
             }
@@ -446,7 +463,15 @@ impl Aquifer {
         if sim23 > 0.0 {
             let barrier23 = sim12
                 * sim23
-                * self.calculate_pressure(noises, world_x, world_y, world_z, &mut barrier_noise, status2, status3);
+                * self.calculate_pressure(
+                    noises,
+                    world_x,
+                    world_y,
+                    world_z,
+                    &mut barrier_noise,
+                    status2,
+                    status3,
+                );
             if density + barrier23 > 0.0 {
                 return AquiferResult::Solid;
             }
@@ -475,13 +500,7 @@ impl Aquifer {
     }
 
     /// Compute the fluid status for an aquifer cell centered at (x, y, z).
-    fn compute_fluid(
-        &mut self,
-        x: i32,
-        y: i32,
-        z: i32,
-        noises: &OverworldNoises,
-    ) -> FluidStatus {
+    fn compute_fluid(&mut self, x: i32, y: i32, z: i32, noises: &OverworldNoises) -> FluidStatus {
         let gf = global_fluid(y);
         let mut lowest_surface = i32::MAX;
         let top_of_cell = y + Y_SPACING;
@@ -522,9 +541,8 @@ impl Aquifer {
             }
         }
 
-        let fluid_level = self.compute_surface_level(
-            x, y, z, noises, gf, lowest_surface, surface_under_global,
-        );
+        let fluid_level =
+            self.compute_surface_level(x, y, z, noises, gf, lowest_surface, surface_under_global);
         let is_lava = self.compute_fluid_type(x, y, z, noises, gf, fluid_level);
         FluidStatus {
             fluid_level,
@@ -555,9 +573,7 @@ impl Aquifer {
 
                 self.cache.ensure(x, z, noises);
                 let floodedness_noise = clamp(
-                    density_functions::router_fluid_level_floodedness(
-                        noises, &self.cache, x, y, z,
-                    ),
+                    density_functions::router_fluid_level_floodedness(noises, &self.cache, x, y, z),
                     -1.0,
                     1.0,
                 );
@@ -596,7 +612,11 @@ impl Aquifer {
         // fluid_level_spread is evaluated at grid coordinates (not block coordinates)
         self.cache.ensure(cell_x, cell_z, noises);
         let spread = density_functions::router_fluid_level_spread(
-            noises, &self.cache, cell_x, cell_y, cell_z,
+            noises,
+            &self.cache,
+            cell_x,
+            cell_y,
+            cell_z,
         ) * 10.0;
         let spread_quantized = quantize(spread, 3);
         let target = cell_middle_y + spread_quantized;
@@ -618,9 +638,8 @@ impl Aquifer {
             let cell_y = y.div_euclid(40);
             let cell_z = z.div_euclid(64);
             self.cache.ensure(cell_x, cell_z, noises);
-            let lava_noise = density_functions::router_lava(
-                noises, &self.cache, cell_x, cell_y, cell_z,
-            );
+            let lava_noise =
+                density_functions::router_lava(noises, &self.cache, cell_x, cell_y, cell_z);
             if lava_noise.abs() > 0.3 {
                 return true; // lava
             }

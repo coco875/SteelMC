@@ -234,13 +234,17 @@ impl PerlinNoise {
         self.max_value
     }
 
-    /// Calculate the maximum "broken" value for BlendedNoise.
+    /// Calculate the maximum "broken" value for `BlendedNoise`.
     ///
     /// Used by `BlendedNoise` to determine the theoretical max output.
     /// Java reference: `PerlinNoise.maxBrokenValue(double)`
     #[must_use]
     pub fn max_broken_value(&self, y_scale: f64) -> f64 {
-        Self::edge_value(&self.amplitudes, self.lowest_freq_value_factor, y_scale + 2.0)
+        Self::edge_value(
+            &self.amplitudes,
+            self.lowest_freq_value_factor,
+            y_scale + 2.0,
+        )
     }
 
     /// Get the noise generator for a specific octave (by index from highest frequency).

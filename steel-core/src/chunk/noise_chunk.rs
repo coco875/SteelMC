@@ -152,12 +152,9 @@ impl NoiseChunk {
                                 let density = lerp(factor_z, d0, d1);
 
                                 let world_y =
-                                    (self.cell_min_y + cell_y_idx as i32) * CELL_HEIGHT
-                                        + y_in_cell;
-                                let local_x =
-                                    (cell_x_idx as i32 * CELL_WIDTH + x_in_cell) as usize;
-                                let local_z =
-                                    (cell_z_idx as i32 * CELL_WIDTH + z_in_cell) as usize;
+                                    (self.cell_min_y + cell_y_idx as i32) * CELL_HEIGHT + y_in_cell;
+                                let local_x = (cell_x_idx as i32 * CELL_WIDTH + x_in_cell) as usize;
+                                let local_z = (cell_z_idx as i32 * CELL_WIDTH + z_in_cell) as usize;
 
                                 if density > 0.0 || world_y < SEA_LEVEL {
                                     place_block(local_x, world_y, local_z, density);

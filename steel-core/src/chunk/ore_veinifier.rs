@@ -6,9 +6,9 @@
 
 use steel_registry::density_functions::{self, OverworldColumnCache, OverworldNoises};
 use steel_registry::{REGISTRY, vanilla_blocks};
+use steel_utils::BlockStateId;
 use steel_utils::math::map_clamped;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
-use steel_utils::BlockStateId;
 
 /// Veininess magnitude must exceed this (after edge roundoff) to place any vein block.
 const VEININESS_THRESHOLD: f64 = 0.4;
@@ -75,9 +75,7 @@ impl OreVeinifier {
             raw_ore_block: REGISTRY
                 .blocks
                 .get_default_state_id(vanilla_blocks::RAW_IRON_BLOCK),
-            filler: REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::TUFF),
+            filler: REGISTRY.blocks.get_default_state_id(vanilla_blocks::TUFF),
             min_y: -60,
             max_y: -8,
         };
@@ -124,7 +122,13 @@ impl OreVeinifier {
 
         // Edge roundoff: tighten threshold near Y boundaries
         let dist_from_edge = dist_from_top.min(dist_from_bottom);
-        let edge_roundoff = map_clamped(f64::from(dist_from_edge), 0.0, EDGE_ROUNDOFF_BEGIN, MAX_EDGE_ROUNDOFF, 0.0);
+        let edge_roundoff = map_clamped(
+            f64::from(dist_from_edge),
+            0.0,
+            EDGE_ROUNDOFF_BEGIN,
+            MAX_EDGE_ROUNDOFF,
+            0.0,
+        );
 
         if veininess + edge_roundoff < VEININESS_THRESHOLD {
             return None;
@@ -146,7 +150,13 @@ impl OreVeinifier {
         }
 
         // Compute richness from veininess
-        let richness = map_clamped(veininess, VEININESS_THRESHOLD, 0.6, MIN_RICHNESS, MAX_RICHNESS);
+        let richness = map_clamped(
+            veininess,
+            VEININESS_THRESHOLD,
+            0.6,
+            MIN_RICHNESS,
+            MAX_RICHNESS,
+        );
 
         if (f64::from(rng.next_f32())) < richness {
             // Check gap noise

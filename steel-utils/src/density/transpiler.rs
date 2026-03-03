@@ -100,7 +100,7 @@ struct TranspileContext {
     noises_ident: Ident,
     /// Generated ident for the column cache struct (e.g., `OverworldColumnCache`).
     cache_ident: Ident,
-    /// BlendedNoise configuration (if any density function uses it).
+    /// `BlendedNoise` configuration (if any density function uses it).
     blended_noise_config: Option<BlendedNoiseConfig>,
 }
 

@@ -49,9 +49,7 @@ impl VanillaGenerator {
             noises: Box::new(noises),
             splitter,
             ore_veinifier,
-            stone_id: REGISTRY
-                .blocks
-                .get_default_state_id(vanilla_blocks::STONE),
+            stone_id: REGISTRY.blocks.get_default_state_id(vanilla_blocks::STONE),
         }
     }
 }
@@ -124,24 +122,28 @@ impl ChunkGenerator for VanillaGenerator {
             noises,
         );
 
-        noise_chunk.fill(noises, &mut column_cache, |local_x, world_y, local_z, density| {
-            let relative_y = (world_y - MIN_Y) as usize;
-            let world_x = chunk_min_x + local_x as i32;
-            let world_z = chunk_min_z + local_z as i32;
+        noise_chunk.fill(
+            noises,
+            &mut column_cache,
+            |local_x, world_y, local_z, density| {
+                let relative_y = (world_y - MIN_Y) as usize;
+                let world_x = chunk_min_x + local_x as i32;
+                let world_z = chunk_min_z + local_z as i32;
 
-            match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
-                AquiferResult::Solid => {
-                    let block = ore_veinifier
-                        .compute(noises, &mut ore_cache, world_x, world_y, world_z)
-                        .unwrap_or(stone_id);
-                    chunk.set_relative_block(local_x, relative_y, local_z, block);
+                match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
+                    AquiferResult::Solid => {
+                        let block = ore_veinifier
+                            .compute(noises, &mut ore_cache, world_x, world_y, world_z)
+                            .unwrap_or(stone_id);
+                        chunk.set_relative_block(local_x, relative_y, local_z, block);
+                    }
+                    AquiferResult::Fluid(id) => {
+                        chunk.set_relative_block(local_x, relative_y, local_z, id);
+                    }
+                    AquiferResult::Air => {}
                 }
-                AquiferResult::Fluid(id) => {
-                    chunk.set_relative_block(local_x, relative_y, local_z, id);
-                }
-                AquiferResult::Air => {}
-            }
-        });
+            },
+        );
     }
 
     fn build_surface(&self, _chunk: &ChunkAccess) {}

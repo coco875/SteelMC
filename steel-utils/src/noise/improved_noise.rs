@@ -173,7 +173,11 @@ impl ImprovedNoise {
     }
 
     /// Sample noise at grid point, interpolate, and accumulate derivatives.
-    #[allow(clippy::too_many_arguments, clippy::many_single_char_names, clippy::similar_names)]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::many_single_char_names,
+        clippy::similar_names
+    )]
     fn sample_with_derivative(
         &self,
         x: i32,
@@ -227,25 +231,70 @@ impl ImprovedNoise {
 
         // Interpolate gradient components for direct derivative contribution
         let d1x = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            f64::from(g000[0]), f64::from(g100[0]), f64::from(g010[0]), f64::from(g110[0]),
-            f64::from(g001[0]), f64::from(g101[0]), f64::from(g011[0]), f64::from(g111[0]),
+            x_alpha,
+            y_alpha,
+            z_alpha,
+            f64::from(g000[0]),
+            f64::from(g100[0]),
+            f64::from(g010[0]),
+            f64::from(g110[0]),
+            f64::from(g001[0]),
+            f64::from(g101[0]),
+            f64::from(g011[0]),
+            f64::from(g111[0]),
         );
         let d1y = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            f64::from(g000[1]), f64::from(g100[1]), f64::from(g010[1]), f64::from(g110[1]),
-            f64::from(g001[1]), f64::from(g101[1]), f64::from(g011[1]), f64::from(g111[1]),
+            x_alpha,
+            y_alpha,
+            z_alpha,
+            f64::from(g000[1]),
+            f64::from(g100[1]),
+            f64::from(g010[1]),
+            f64::from(g110[1]),
+            f64::from(g001[1]),
+            f64::from(g101[1]),
+            f64::from(g011[1]),
+            f64::from(g111[1]),
         );
         let d1z = lerp3(
-            x_alpha, y_alpha, z_alpha,
-            f64::from(g000[2]), f64::from(g100[2]), f64::from(g010[2]), f64::from(g110[2]),
-            f64::from(g001[2]), f64::from(g101[2]), f64::from(g011[2]), f64::from(g111[2]),
+            x_alpha,
+            y_alpha,
+            z_alpha,
+            f64::from(g000[2]),
+            f64::from(g100[2]),
+            f64::from(g010[2]),
+            f64::from(g110[2]),
+            f64::from(g001[2]),
+            f64::from(g101[2]),
+            f64::from(g011[2]),
+            f64::from(g111[2]),
         );
 
         // Smoothstep correction terms via differences
-        let d2x = lerp2(y_alpha, z_alpha, d100 - d000, d110 - d010, d101 - d001, d111 - d011);
-        let d2y = lerp2(z_alpha, x_alpha, d010 - d000, d011 - d001, d110 - d100, d111 - d101);
-        let d2z = lerp2(x_alpha, y_alpha, d001 - d000, d101 - d100, d011 - d010, d111 - d110);
+        let d2x = lerp2(
+            y_alpha,
+            z_alpha,
+            d100 - d000,
+            d110 - d010,
+            d101 - d001,
+            d111 - d011,
+        );
+        let d2y = lerp2(
+            z_alpha,
+            x_alpha,
+            d010 - d000,
+            d011 - d001,
+            d110 - d100,
+            d111 - d101,
+        );
+        let d2z = lerp2(
+            x_alpha,
+            y_alpha,
+            d001 - d000,
+            d101 - d100,
+            d011 - d010,
+            d111 - d110,
+        );
 
         let x_sd = smoothstep_derivative(xr);
         let y_sd = smoothstep_derivative(yr);
