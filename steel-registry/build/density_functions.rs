@@ -179,9 +179,13 @@ pub enum DensityFunctionData {
         y_factor: f64,
         smear_scale_multiplier: f64,
     },
-    /// find_top_surface is only used in preliminary_surface_level which is unused
     #[serde(rename = "minecraft:find_top_surface")]
-    FindTopSurface {},
+    FindTopSurface {
+        density: Box<DensityFunctionJson>,
+        upper_bound: Box<DensityFunctionJson>,
+        lower_bound: i32,
+        cell_height: i32,
+    },
 }
 /// Parsed spline from datapack JSON.
 ///
@@ -483,10 +487,17 @@ fn json_data_to_df(data: &DensityFunctionData) -> DensityFunction {
             noise: None,
         }),
 
-        DensityFunctionData::FindTopSurface {} => {
-            // find_top_surface is unused; treat as constant 0
-            DensityFunction::Constant(Constant { value: 0.0 })
-        }
+        DensityFunctionData::FindTopSurface {
+            density,
+            upper_bound,
+            lower_bound,
+            cell_height,
+        } => DensityFunction::FindTopSurface(steel_utils::density::FindTopSurface {
+            density: Arc::new(json_to_df(density)),
+            upper_bound: Arc::new(json_to_df(upper_bound)),
+            lower_bound: *lower_bound,
+            cell_height: *cell_height,
+        })
     }
 }
 

@@ -19,7 +19,8 @@ pub mod transpiler;
 
 pub use types::{
     BlendAlpha, BlendDensity, BlendOffset, BlendedNoise, Clamp, Constant, CubicSpline,
-    DensityFunction, Mapped, MappedType, Marker, MarkerType, Noise, NoiseParameters, NoiseRouter,
-    RangeChoice, RarityValueMapper, Reference, Shift, ShiftA, ShiftB, ShiftedNoise, Spline,
-    SplinePoint, SplineValue, TwoArgType, TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
+    DensityFunction, FindTopSurface, Mapped, MappedType, Marker, MarkerType, Noise,
+    NoiseParameters, NoiseRouter, RangeChoice, RarityValueMapper, Reference, Shift, ShiftA, ShiftB,
+    ShiftedNoise, Spline, SplinePoint, SplineValue, TwoArgType, TwoArgumentSimple,
+    WeirdScaledSampler, YClampedGradient,
 };

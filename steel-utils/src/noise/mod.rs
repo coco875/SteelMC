@@ -7,14 +7,16 @@
 //! - [`NormalNoise`] - Double Perlin noise (used for biome climate parameters)
 //! - [`SimplexNoise`] - Simplex noise (used for End island generation)
 
+mod blended_noise;
 mod improved_noise;
 mod normal_noise;
 mod perlin_noise;
 mod simplex_noise;
 
+pub use blended_noise::BlendedNoise;
 pub use improved_noise::ImprovedNoise;
 pub use normal_noise::NormalNoise;
-pub use perlin_noise::PerlinNoise;
+pub use perlin_noise::{wrap as perlin_wrap, PerlinNoise};
 pub use simplex_noise::SimplexNoise;
 
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).

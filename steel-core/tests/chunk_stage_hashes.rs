@@ -41,7 +41,7 @@ fn compute_block_hash(sections: &Sections) -> String {
 
     for section_holder in &sections.sections {
         let section = section_holder.read();
-        if section.is_empty() {
+        if section.states.has_only_air() {
             ctx.consume([0u8]);
         } else {
             for y in 0..16 {
@@ -63,17 +63,23 @@ fn compute_block_hash(sections: &Sections) -> String {
 }
 
 #[test]
-#[ignore = "noise generation not implemented"]
 fn noise_stage_hashes() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;
-    use steel_core::chunk::flat_chunk_generator::FlatChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
     use steel_core::chunk::section::ChunkSection;
-    use steel_utils::{BlockStateId, ChunkPos};
+    use steel_core::chunk::vanilla_generator::VanillaGenerator;
+    use steel_core::worldgen::BiomeSourceKind;
+    use steel_registry::{REGISTRY, Registry, RegistryExt};
+    use steel_utils::ChunkPos;
+
+    let mut registry = Registry::new_vanilla();
+    registry.freeze();
+    let _ = REGISTRY.init(registry);
 
     let expected = load_expected_hashes();
-    assert_eq!(expected.seed, 13579, "Expected seed 13579");
+    let seed = expected.seed;
+    assert_eq!(seed, 13579, "Expected seed 13579");
 
     let noise_chunks: Vec<_> = expected
         .chunks
@@ -85,7 +91,8 @@ fn noise_stage_hashes() {
         })
         .collect();
 
-    let generator = FlatChunkGenerator::new(BlockStateId(1), BlockStateId(10), BlockStateId(9));
+    let source = BiomeSourceKind::overworld(seed);
+    let generator = VanillaGenerator::new(source, seed);
 
     let mut mismatches = Vec::new();
     let section_count = 24;

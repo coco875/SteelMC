@@ -25,8 +25,8 @@ use proc_macro2::{Ident, Literal, TokenStream};
 use quote::{format_ident, quote};
 
 use super::{
-    CubicSpline, DensityFunction, MappedType, MarkerType, RarityValueMapper, SplineValue,
-    TwoArgType,
+    BlendedNoise as BlendedNoiseConfig, CubicSpline, DensityFunction, MappedType, MarkerType,
+    RarityValueMapper, SplineValue, TwoArgType,
 };
 
 /// Input to the transpiler.
@@ -67,7 +67,7 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
         use steel_utils::density::RarityValueMapper;
         use steel_utils::math::{clamp, map_clamped};
         use steel_utils::noise::NormalNoise;
-        use steel_utils::random::RandomSplitter;
+        use steel_utils::random::{PositionalRandom, RandomSplitter};
 
         #noises_struct
         #noises_impl
@@ -100,6 +100,8 @@ struct TranspileContext {
     noises_ident: Ident,
     /// Generated ident for the column cache struct (e.g., `OverworldColumnCache`).
     cache_ident: Ident,
+    /// BlendedNoise configuration (if any density function uses it).
+    blended_noise_config: Option<BlendedNoiseConfig>,
 }
 
 impl TranspileContext {
@@ -114,6 +116,7 @@ impl TranspileContext {
             spline_fns: Vec::new(),
             noises_ident: format_ident!("{prefix}Noises"),
             cache_ident: format_ident!("{prefix}ColumnCache"),
+            blended_noise_config: None,
         }
     }
 
@@ -216,8 +219,8 @@ impl TranspileContext {
                 self.walk_df(&rc.when_out_of_range, input);
             }
             DensityFunction::Spline(s) => self.walk_spline(&s.spline, input),
-            DensityFunction::BlendedNoise(_) => {
-                self.noise_ids.insert("minecraft:offset".to_string());
+            DensityFunction::BlendedNoise(bn) => {
+                self.blended_noise_config = Some(bn.clone());
             }
             DensityFunction::WeirdScaledSampler(ws) => {
                 self.walk_df(&ws.input, input);
@@ -225,6 +228,10 @@ impl TranspileContext {
             }
             DensityFunction::BlendDensity(bd) => self.walk_df(&bd.input, input),
             DensityFunction::Marker(m) => self.walk_df(&m.wrapped, input),
+            DensityFunction::FindTopSurface(fts) => {
+                self.walk_df(&fts.density, input);
+                self.walk_df(&fts.upper_bound, input);
+            }
             DensityFunction::Reference(r) => {
                 if !self.used_names.contains(&r.id) {
                     self.used_names.insert(r.id.clone());
@@ -287,13 +294,18 @@ impl TranspileContext {
             })
             .collect();
 
+        let blended_field = self.blended_noise_config.as_ref().map(|_| {
+            quote! { pub blended_noise: steel_utils::noise::BlendedNoise }
+        });
+
         let noises = &self.noises_ident;
         quote! {
             /// All noise generators needed by this dimension's density functions.
             ///
             /// Created at runtime from a seed via the `create` method.
             pub struct #noises {
-                #(#fields),*
+                #(#fields,)*
+                #blended_field
             }
         }
     }
@@ -314,6 +326,24 @@ impl TranspileContext {
             })
             .collect();
 
+        let blended_init = self.blended_noise_config.as_ref().map(|bn| {
+            let xz_scale = Literal::f64_unsuffixed(bn.xz_scale);
+            let y_scale = Literal::f64_unsuffixed(bn.y_scale);
+            let xz_factor = Literal::f64_unsuffixed(bn.xz_factor);
+            let y_factor = Literal::f64_unsuffixed(bn.y_factor);
+            let smear = Literal::f64_unsuffixed(bn.smear_scale_multiplier);
+            quote! {
+                blended_noise: {
+                    use steel_utils::random::PositionalRandom;
+                    let mut terrain_random = splitter.with_hash_of("minecraft:terrain");
+                    steel_utils::noise::BlendedNoise::new(
+                        &mut terrain_random,
+                        #xz_scale, #y_scale, #xz_factor, #y_factor, #smear,
+                    )
+                }
+            }
+        });
+
         let noises = &self.noises_ident;
         quote! {
             impl #noises {
@@ -323,7 +353,8 @@ impl TranspileContext {
                     params: &rustc_hash::FxHashMap<String, steel_utils::density::NoiseParameters>,
                 ) -> Self {
                     Self {
-                        #(#field_inits),*
+                        #(#field_inits,)*
+                        #blended_init
                     }
                 }
             }
@@ -709,15 +740,8 @@ impl TranspileContext {
 
             DensityFunction::Spline(s) => self.gen_spline_expr(&s.spline, input, is_flat),
 
-            // TODO: BlendedNoise requires three PerlinNoise generators (min_limit, max_limit, main)
-            // with cell-based trilinear interpolation. This single-noise approximation produces
-            // incorrect terrain shapes. Implement full BlendedNoise before terrain generation.
-            DensityFunction::BlendedNoise(bn) => {
-                let field = noise_field_ident("minecraft:offset");
-                let xz = Literal::f64_unsuffixed(bn.xz_scale / bn.xz_factor);
-                let ys = Literal::f64_unsuffixed(bn.y_scale / bn.y_factor);
-                let smear = Literal::f64_unsuffixed(bn.smear_scale_multiplier);
-                quote! { noises.#field.get_value(f64::from(x) * #xz, f64::from(y) * #ys, f64::from(z) * #xz) * #smear }
+            DensityFunction::BlendedNoise(_) => {
+                quote! { noises.blended_noise.compute(x, y, z) }
             }
 
             DensityFunction::WeirdScaledSampler(ws) => {
@@ -742,6 +766,34 @@ impl TranspileContext {
             DensityFunction::BlendOffset(_) | DensityFunction::EndIslands => quote! { 0.0 },
             DensityFunction::BlendDensity(bd) => self.gen_expr(&bd.input, input, is_flat),
             DensityFunction::Marker(m) => self.gen_expr(&m.wrapped, input, is_flat),
+
+            DensityFunction::FindTopSurface(fts) => {
+                // upper_bound is flat (xz-only)
+                let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
+                // density uses y — generate with is_flat=false so it references our loop var
+                let density_expr = self.gen_expr(&fts.density, input, false);
+                let cell_height = Literal::i32_unsuffixed(fts.cell_height);
+                let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);
+                quote! {{
+                    let __upper = #upper_expr;
+                    let __top_y = ((__upper / f64::from(#cell_height)).floor() as i32) * #cell_height;
+                    if __top_y <= #lower_bound {
+                        f64::from(#lower_bound)
+                    } else {
+                        let mut __result = f64::from(#lower_bound);
+                        let mut y = __top_y;
+                        while y >= #lower_bound {
+                            let __d = #density_expr;
+                            if __d > 0.0 {
+                                __result = f64::from(y);
+                                break;
+                            }
+                            y -= #cell_height;
+                        }
+                        __result
+                    }
+                }}
+            }
 
             DensityFunction::Reference(r) => {
                 if self.flat_cached.contains(&r.id) {
@@ -865,6 +917,9 @@ fn uses_y(df: &DensityFunction) -> bool {
         DensityFunction::BlendDensity(bd) => uses_y(&bd.input),
         DensityFunction::Marker(m) => uses_y(&m.wrapped),
         DensityFunction::Spline(s) => uses_y_spline(&s.spline),
+        // FindTopSurface output is Y-independent: it scans Y internally but
+        // the result only depends on (x, z).
+        DensityFunction::FindTopSurface(_) => false,
         // References are handled at the analysis level, not here.
         // Constants and shift-a/b/blend/end-islands don't use y.
         DensityFunction::Reference(_)
@@ -935,6 +990,10 @@ fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
         DensityFunction::BlendDensity(bd) => collect_refs_inner(&bd.input, refs),
         DensityFunction::WeirdScaledSampler(ws) => collect_refs_inner(&ws.input, refs),
         DensityFunction::Spline(s) => collect_spline_refs(&s.spline, refs),
+        DensityFunction::FindTopSurface(fts) => {
+            collect_refs_inner(&fts.density, refs);
+            collect_refs_inner(&fts.upper_bound, refs);
+        }
         _ => {}
     }
 }
