@@ -291,8 +291,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         while z <= max_z {
             let mut x = min_x;
             while x <= max_x {
-                cache.ensure(x, z, noises);
-                let level = noises.router_preliminary_surface_level(cache, x, 0, z) as i32;
+                let level = preliminary_surface_level(noises, cache, x, z);
                 if level > max_level {
                     max_level = level;
                 }
@@ -518,9 +517,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             let sx = x + offset[0] * 16; // sectionToBlockCoord
             let sz = z + offset[1] * 16;
 
-            self.cache.ensure(sx, sz, noises);
-            let preliminary =
-                noises.router_preliminary_surface_level(&mut self.cache, sx, 0, sz) as i32;
+            let preliminary = preliminary_surface_level(noises, &mut self.cache, sx, sz);
             let adjusted = preliminary + 8;
 
             let is_center = offset[0] == 0 && offset[1] == 0;
@@ -719,4 +716,22 @@ impl<N: DimensionNoises> Aquifer<N> {
 fn quantize(value: f64, quantum: i32) -> i32 {
     let q = f64::from(quantum);
     (value / q).floor() as i32 * quantum
+}
+
+/// Evaluate preliminary surface level at quart-quantized coordinates.
+///
+/// Vanilla's `NoiseChunk.preliminarySurfaceLevel()` quantizes X/Z to quart
+/// positions before lookup, matching FlatCache's 4-block grid.
+fn preliminary_surface_level<N: DimensionNoises>(
+    noises: &N,
+    cache: &mut N::ColumnCache,
+    x: i32,
+    z: i32,
+) -> i32 {
+    // Quantize to quart positions: (x >> 2) << 2
+    let qx = (x >> 2) << 2;
+    let qz = (z >> 2) << 2;
+    cache.ensure(qx, qz, noises);
+    // Vanilla uses Mth.floor(), not truncation
+    noises.router_preliminary_surface_level(cache, qx, 0, qz).floor() as i32
 }

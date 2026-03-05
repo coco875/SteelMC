@@ -25,7 +25,7 @@ struct ChunkStageHashesJson {
 }
 
 const BLOCK_MODIFYING_STAGES: &[&str] = &[
-    // "minecraft:noise",
+    "minecraft:noise",
     // "minecraft:surface",
     // "minecraft:carvers",
     // "minecraft:features",
@@ -122,12 +122,23 @@ fn noise_stage_hashes() {
         }
     }
 
+    let total = noise_chunks.len();
+    let failed = mismatches.len();
+    let passed = total - failed;
+
+    // Show passing chunks for debugging
+    let passing: Vec<_> = noise_chunks.iter()
+        .filter(|(x, z, _)| !mismatches.iter().any(|(mx, mz, _, _)| *mx == *x && *mz == *z))
+        .collect();
+    eprintln!("Passing chunks ({passed}/{total}):");
+    for (x, z, _) in &passing {
+        eprintln!("  ({x:3}, {z:3})");
+    }
+
     if mismatches.is_empty() {
         return;
     }
 
-    let total = noise_chunks.len();
-    let failed = mismatches.len();
     let mut msg = format!("Noise stage: {failed}/{total} chunks do not match vanilla\n");
     for (x, z, expected, actual) in mismatches.iter().take(5) {
         let _ = writeln!(msg, "  ({x:3},{z:3}): expected {expected}, got {actual}");

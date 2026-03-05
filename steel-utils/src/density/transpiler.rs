@@ -104,6 +104,14 @@ struct TranspileContext {
     blended_noise_config: Option<BlendedNoiseConfig>,
     /// Whether any density function uses `EndIslands`.
     uses_end_islands: bool,
+    /// When true, `Interpolated` markers emit `interpolated[i]` parameter references
+    /// instead of recursing into the wrapped function.
+    interpolated_param_mode: bool,
+    /// Counter for assigning indices to `Interpolated` markers in param mode.
+    interpolated_param_counter: usize,
+    /// Named functions that (transitively) contain `Interpolated` markers.
+    /// In param mode, these are inlined instead of called as functions.
+    interpolated_refs: BTreeSet<String>,
 }
 
 impl TranspileContext {
@@ -120,6 +128,9 @@ impl TranspileContext {
             cache_ident: format_ident!("{prefix}ColumnCache"),
             blended_noise_config: None,
             uses_end_islands: false,
+            interpolated_param_mode: false,
+            interpolated_param_counter: 0,
+            interpolated_refs: BTreeSet::new(),
         }
     }
 
@@ -178,6 +189,17 @@ impl TranspileContext {
                         .all(|dep| self.flat_cached.contains(dep)))
             {
                 self.flat_routers.insert(name.clone());
+            }
+        }
+
+        // Compute which named functions transitively contain Interpolated markers.
+        // These must be inlined (not called) when generating combine_interpolated.
+        for name in &self.used_names {
+            if let Some(df) = input.registry.get(name) {
+                let mut visited = BTreeSet::new();
+                if has_interpolated_markers(df, &input.registry, &mut visited) {
+                    self.interpolated_refs.insert(name.clone());
+                }
             }
         }
 
@@ -618,10 +640,188 @@ impl TranspileContext {
             }
         }
 
+        // Generate interpolation functions for all router entries with Interpolated markers.
+        let interp_fns = self.gen_all_interpolation_functions(input);
+        fns.push(interp_fns);
+
         let spline_fns = mem::take(&mut self.spline_fns);
         quote! {
             #(#fns)*
             #(#spline_fns)*
+        }
+    }
+
+    /// Generate interpolation functions for ALL router entries that contain
+    /// `Interpolated` markers: `fill_cell_corner_densities`, `combine_interpolated`,
+    /// and per-entry combine functions for vein_toggle/vein_ridged.
+    ///
+    /// All entries share a single contiguous channel array. Channel indices are
+    /// assigned in order: final_density channels first, then vein_toggle, then
+    /// vein_ridged.
+    fn gen_all_interpolation_functions(&mut self, input: &TranspilerInput) -> TokenStream {
+        let noises = self.noises_ident.clone();
+        let cache = self.cache_ident.clone();
+
+        // Entries that may contain Interpolated markers.
+        // Order matters: final_density first, then vein functions.
+        let entry_names = ["final_density", "vein_toggle", "vein_ridged"];
+
+        // Phase 1: Collect ALL interpolated inners across all entries
+        struct EntryInfo {
+            start: usize,
+            df: DensityFunction,
+        }
+        let mut all_inners: Vec<DensityFunction> = Vec::new();
+        let mut entries: BTreeMap<String, EntryInfo> = BTreeMap::new();
+
+        for name in entry_names {
+            if let Some(df) = input.router_entries.get(name) {
+                let start = all_inners.len();
+                let inners = collect_interpolated_inners(df, &input.registry);
+                if !inners.is_empty() {
+                    all_inners.extend(inners);
+                    entries.insert(
+                        name.to_owned(),
+                        EntryInfo {
+                            start,
+                            df: df.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
+        let total_count = all_inners.len();
+        let total_count_lit = Literal::usize_unsuffixed(total_count);
+
+        // Phase 2: Generate fill_cell_corner_densities with ALL channels
+        let mut inner_stmts = Vec::with_capacity(total_count);
+        for (i, inner_df) in all_inners.iter().enumerate() {
+            let idx = Literal::usize_unsuffixed(i);
+            let inner = unwrap_markers(inner_df);
+            let expr = self.gen_expr(inner, input, false);
+            inner_stmts.push(quote! { out[#idx] = #expr; });
+        }
+        let fill_spline_fns = mem::take(&mut self.spline_fns);
+
+        // Phase 3: Generate combine_interpolated for final_density
+        let combine_fd_body = if let Some(info) = entries.get("final_density") {
+            self.interpolated_param_mode = true;
+            self.interpolated_param_counter = info.start;
+            let body = self.gen_expr(&info.df, input, false);
+            self.interpolated_param_mode = false;
+            body
+        } else {
+            quote! { 0.0 }
+        };
+        let combine_fd_splines = mem::take(&mut self.spline_fns);
+
+        // Phase 4: Generate combine functions for vein entries
+        let combine_vein_toggle_body = if let Some(info) = entries.get("vein_toggle") {
+            self.interpolated_param_mode = true;
+            self.interpolated_param_counter = info.start;
+            let body = self.gen_expr(&info.df, input, false);
+            self.interpolated_param_mode = false;
+            body
+        } else {
+            // No interpolated markers in vein_toggle — fall back to direct eval
+            quote! { 0.0 }
+        };
+        let combine_vt_splines = mem::take(&mut self.spline_fns);
+
+        let combine_vein_ridged_body = if let Some(info) = entries.get("vein_ridged") {
+            self.interpolated_param_mode = true;
+            self.interpolated_param_counter = info.start;
+            let body = self.gen_expr(&info.df, input, false);
+            self.interpolated_param_mode = false;
+            body
+        } else {
+            quote! { 0.0 }
+        };
+        let combine_vr_splines = mem::take(&mut self.spline_fns);
+
+        // Determine whether vein interpolation is present
+        let has_vein_interp = entries.contains_key("vein_toggle")
+            || entries.contains_key("vein_ridged");
+        let has_vein_interp_tok: TokenStream = if has_vein_interp {
+            quote! { true }
+        } else {
+            quote! { false }
+        };
+
+        quote! {
+            /// Total number of independently interpolated channels across all
+            /// router entries (final_density + vein_toggle + vein_ridged).
+            pub const INTERPOLATED_COUNT: usize = #total_count_lit;
+
+            /// Whether vein functions have interpolation channels.
+            pub const VEIN_INTERP_ENABLED: bool = #has_vein_interp_tok;
+
+            /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
+            ///
+            /// `out` must have length `INTERPOLATED_COUNT`.
+            pub fn fill_cell_corner_densities(
+                noises: &#noises,
+                cache: &#cache,
+                x: i32,
+                y: i32,
+                z: i32,
+                out: &mut [f64],
+            ) {
+                let x = cache.x;
+                let z = cache.z;
+                #(#inner_stmts)*
+            }
+
+            /// Combine interpolated values for `final_density`.
+            #[allow(unused_variables)]
+            pub fn combine_interpolated(
+                noises: &#noises,
+                cache: &#cache,
+                interpolated: &[f64],
+                _x: i32,
+                y: i32,
+                _z: i32,
+            ) -> f64 {
+                let x = cache.x;
+                let z = cache.z;
+                #combine_fd_body
+            }
+
+            /// Combine interpolated values for `vein_toggle`.
+            #[allow(unused_variables)]
+            pub fn combine_vein_toggle(
+                noises: &#noises,
+                cache: &#cache,
+                interpolated: &[f64],
+                _x: i32,
+                y: i32,
+                _z: i32,
+            ) -> f64 {
+                let x = cache.x;
+                let z = cache.z;
+                #combine_vein_toggle_body
+            }
+
+            /// Combine interpolated values for `vein_ridged`.
+            #[allow(unused_variables)]
+            pub fn combine_vein_ridged(
+                noises: &#noises,
+                cache: &#cache,
+                interpolated: &[f64],
+                _x: i32,
+                y: i32,
+                _z: i32,
+            ) -> f64 {
+                let x = cache.x;
+                let z = cache.z;
+                #combine_vein_ridged_body
+            }
+
+            #(#fill_spline_fns)*
+            #(#combine_fd_splines)*
+            #(#combine_vt_splines)*
+            #(#combine_vr_splines)*
         }
     }
 
@@ -795,7 +995,15 @@ impl TranspileContext {
                 }
             }
             DensityFunction::BlendDensity(bd) => self.gen_expr(&bd.input, input, is_flat),
-            DensityFunction::Marker(m) => self.gen_expr(&m.wrapped, input, is_flat),
+            DensityFunction::Marker(m) => {
+                if self.interpolated_param_mode && m.kind == MarkerType::Interpolated {
+                    let idx = Literal::usize_unsuffixed(self.interpolated_param_counter);
+                    self.interpolated_param_counter += 1;
+                    quote! { interpolated[#idx] }
+                } else {
+                    self.gen_expr(&m.wrapped, input, is_flat)
+                }
+            }
 
             DensityFunction::FindTopSurface(fts) => {
                 // upper_bound is flat (xz-only)
@@ -826,7 +1034,15 @@ impl TranspileContext {
             }
 
             DensityFunction::Reference(r) => {
-                if self.flat_cached.contains(&r.id) {
+                if self.interpolated_param_mode && self.interpolated_refs.contains(&r.id) {
+                    // In param mode, inline references that contain Interpolated markers
+                    // so that the markers within are replaced with interpolated[i].
+                    if let Some(ref_df) = input.registry.get(&r.id) {
+                        self.gen_expr(ref_df, input, is_flat)
+                    } else {
+                        quote! { 0.0 }
+                    }
+                } else if self.flat_cached.contains(&r.id) {
                     // Flat-cached references are always read from the column cache
                     let field = named_fn_field_ident(&r.id);
                     quote! { cache.#field }
@@ -1035,6 +1251,149 @@ fn collect_spline_refs(spline: &CubicSpline, refs: &mut Vec<String>) {
             collect_spline_refs(nested, refs);
         }
     }
+}
+
+/// Collect the inner functions of all `Interpolated` markers in DFS order,
+/// resolving references through the registry.
+///
+/// The DFS order must match `gen_expr` with `interpolated_param_mode` so that
+/// the indices align between `fill_cell_corner_densities` and `combine_interpolated`.
+fn collect_interpolated_inners(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+) -> Vec<DensityFunction> {
+    let mut inners = Vec::new();
+    collect_interpolated_walk(df, registry, &mut inners);
+    inners
+}
+
+fn collect_interpolated_walk(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+    inners: &mut Vec<DensityFunction>,
+) {
+    match df {
+        DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated => {
+            // Collect the inner function; do NOT recurse into it
+            inners.push((*m.wrapped).clone());
+        }
+        DensityFunction::Marker(m) => collect_interpolated_walk(&m.wrapped, registry, inners),
+        DensityFunction::TwoArgumentSimple(t) => {
+            collect_interpolated_walk(&t.argument1, registry, inners);
+            collect_interpolated_walk(&t.argument2, registry, inners);
+        }
+        DensityFunction::Mapped(m) => collect_interpolated_walk(&m.input, registry, inners),
+        DensityFunction::Clamp(c) => collect_interpolated_walk(&c.input, registry, inners),
+        DensityFunction::RangeChoice(rc) => {
+            collect_interpolated_walk(&rc.input, registry, inners);
+            collect_interpolated_walk(&rc.when_in_range, registry, inners);
+            collect_interpolated_walk(&rc.when_out_of_range, registry, inners);
+        }
+        DensityFunction::BlendDensity(bd) => {
+            collect_interpolated_walk(&bd.input, registry, inners);
+        }
+        DensityFunction::WeirdScaledSampler(ws) => {
+            collect_interpolated_walk(&ws.input, registry, inners);
+        }
+        DensityFunction::Spline(s) => {
+            collect_interpolated_spline_walk(&s.spline, registry, inners);
+        }
+        DensityFunction::ShiftedNoise(sn) => {
+            collect_interpolated_walk(&sn.shift_x, registry, inners);
+            collect_interpolated_walk(&sn.shift_y, registry, inners);
+            collect_interpolated_walk(&sn.shift_z, registry, inners);
+        }
+        DensityFunction::FindTopSurface(fts) => {
+            collect_interpolated_walk(&fts.density, registry, inners);
+            collect_interpolated_walk(&fts.upper_bound, registry, inners);
+        }
+        DensityFunction::Reference(r) => {
+            if let Some(ref_df) = registry.get(&r.id) {
+                collect_interpolated_walk(ref_df, registry, inners);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_interpolated_spline_walk(
+    spline: &CubicSpline,
+    registry: &BTreeMap<String, DensityFunction>,
+    inners: &mut Vec<DensityFunction>,
+) {
+    collect_interpolated_walk(&spline.coordinate, registry, inners);
+    for point in &spline.points {
+        if let SplineValue::Spline(nested) = &point.value {
+            collect_interpolated_spline_walk(nested, registry, inners);
+        }
+    }
+}
+
+/// Check if a named function (transitively) contains `Interpolated` markers.
+fn has_interpolated_markers(
+    df: &DensityFunction,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    match df {
+        DensityFunction::Marker(m) if m.kind == MarkerType::Interpolated => true,
+        DensityFunction::Marker(m) => has_interpolated_markers(&m.wrapped, registry, visited),
+        DensityFunction::TwoArgumentSimple(t) => {
+            has_interpolated_markers(&t.argument1, registry, visited)
+                || has_interpolated_markers(&t.argument2, registry, visited)
+        }
+        DensityFunction::Mapped(m) => has_interpolated_markers(&m.input, registry, visited),
+        DensityFunction::Clamp(c) => has_interpolated_markers(&c.input, registry, visited),
+        DensityFunction::RangeChoice(rc) => {
+            has_interpolated_markers(&rc.input, registry, visited)
+                || has_interpolated_markers(&rc.when_in_range, registry, visited)
+                || has_interpolated_markers(&rc.when_out_of_range, registry, visited)
+        }
+        DensityFunction::BlendDensity(bd) => {
+            has_interpolated_markers(&bd.input, registry, visited)
+        }
+        DensityFunction::WeirdScaledSampler(ws) => {
+            has_interpolated_markers(&ws.input, registry, visited)
+        }
+        DensityFunction::ShiftedNoise(sn) => {
+            has_interpolated_markers(&sn.shift_x, registry, visited)
+                || has_interpolated_markers(&sn.shift_y, registry, visited)
+                || has_interpolated_markers(&sn.shift_z, registry, visited)
+        }
+        DensityFunction::FindTopSurface(fts) => {
+            has_interpolated_markers(&fts.density, registry, visited)
+                || has_interpolated_markers(&fts.upper_bound, registry, visited)
+        }
+        DensityFunction::Reference(r) => {
+            if visited.contains(&r.id) {
+                return false;
+            }
+            visited.insert(r.id.clone());
+            registry
+                .get(&r.id)
+                .is_some_and(|ref_df| has_interpolated_markers(ref_df, registry, visited))
+        }
+        // Splines could contain interpolated markers in theory
+        DensityFunction::Spline(s) => has_interpolated_spline(&s.spline, registry, visited),
+        _ => false,
+    }
+}
+
+fn has_interpolated_spline(
+    spline: &CubicSpline,
+    registry: &BTreeMap<String, DensityFunction>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if has_interpolated_markers(&spline.coordinate, registry, visited) {
+        return true;
+    }
+    spline.points.iter().any(|p| {
+        if let SplineValue::Spline(nested) = &p.value {
+            has_interpolated_spline(nested, registry, visited)
+        } else {
+            false
+        }
+    })
 }
 
 fn noise_field_ident(noise_id: &str) -> Ident {

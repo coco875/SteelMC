@@ -2,6 +2,8 @@
 
 /// Noise-based aquifer for underground fluid placement.
 pub mod aquifer;
+/// Terrain density modification around structure pieces.
+pub mod beardifier;
 pub mod chunk_access;
 pub mod chunk_generation_task;
 pub mod chunk_generator;

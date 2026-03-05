@@ -7,6 +7,7 @@ use steel_utils::density::{DimensionNoises, NoiseSettings};
 use steel_utils::random::{Random, RandomSplitter, xoroshiro::Xoroshiro};
 
 use crate::chunk::aquifer::{Aquifer, AquiferResult};
+use crate::chunk::beardifier::Beardifier;
 use crate::chunk::chunk_access::ChunkAccess;
 use crate::chunk::chunk_generator::ChunkGenerator;
 use crate::chunk::noise_chunk::NoiseChunk;
@@ -45,7 +46,6 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
         let noise_params = get_noise_parameters();
         let noises = N::create(seed, &splitter, &noise_params);
 
-        // Only create ore veinifier if ore veins are enabled in the datapack
         let ore_veinifier = if N::Settings::ORE_VEINS_ENABLED {
             Some(OreVeinifier::new(&splitter))
         } else {
@@ -134,21 +134,40 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
             noises,
         );
 
+        let structure_starts = chunk.structure_starts();
+        let beardifier = Beardifier::for_structures_in_chunk(
+            &structure_starts,
+            pos.0.x,
+            pos.0.y,
+        );
+        let beard_opt = if beardifier.is_empty() {
+            None
+        } else {
+            Some(&beardifier)
+        };
+
         noise_chunk.fill(
             noises,
             &mut column_cache,
-            |local_x, world_y, local_z, density| {
+            beard_opt,
+            |local_x, world_y, local_z, density, interpolated| {
                 let relative_y = (world_y - min_y) as usize;
                 let world_x = chunk_min_x + local_x as i32;
                 let world_z = chunk_min_z + local_z as i32;
 
                 match aquifer.compute_substance(noises, world_x, world_y, world_z, density) {
                     AquiferResult::Solid => {
-                        // Use ore veinifier if enabled, otherwise use default block
                         let block = ore_veinifier
                             .as_ref()
                             .and_then(|ov| {
-                                ov.compute(noises, &mut ore_cache, world_x, world_y, world_z)
+                                ov.compute_interpolated(
+                                    noises,
+                                    &mut ore_cache,
+                                    interpolated,
+                                    world_x,
+                                    world_y,
+                                    world_z,
+                                )
                             })
                             .unwrap_or(default_block_id);
                         chunk.set_relative_block(local_x, relative_y, local_z, block);

@@ -829,6 +829,35 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
                 router_preliminary_surface_level(self, cache, x, y, z)
             }
+
+            #[inline]
+            fn interpolated_count() -> usize {
+                INTERPOLATED_COUNT
+            }
+
+            fn vein_interp_enabled() -> bool {
+                VEIN_INTERP_ENABLED
+            }
+
+            #[inline]
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, out: &mut [f64]) {
+                fill_cell_corner_densities(self, cache, x, y, z, out)
+            }
+
+            #[inline]
+            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_interpolated(self, cache, interpolated, x, y, z)
+            }
+
+            #[inline]
+            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_vein_toggle(self, cache, interpolated, x, y, z)
+            }
+
+            #[inline]
+            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+                combine_vein_ridged(self, cache, interpolated, x, y, z)
+            }
         }
     }
 }

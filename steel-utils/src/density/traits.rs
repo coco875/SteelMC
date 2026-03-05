@@ -136,4 +136,56 @@ pub trait DimensionNoises: Sized + Send + Sync {
         y: i32,
         z: i32,
     ) -> f64;
+
+    // ── Interpolation functions ─────────────────────────────────────────────
+
+    /// Total number of independently interpolated channels across all router
+    /// entries (final_density + vein_toggle + vein_ridged).
+    fn interpolated_count() -> usize;
+
+    /// Whether vein functions have interpolation channels.
+    fn vein_interp_enabled() -> bool;
+
+    /// Evaluate the inner functions of all `Interpolated` markers at a cell corner.
+    ///
+    /// `out` must have length [`interpolated_count()`]. Each element receives
+    /// the value of one `Interpolated` marker's inner function at `(x, y, z)`.
+    fn fill_cell_corner_densities(
+        &self,
+        cache: &mut Self::ColumnCache,
+        x: i32,
+        y: i32,
+        z: i32,
+        out: &mut [f64],
+    );
+
+    /// Combine trilinearly interpolated values for `final_density`.
+    fn combine_interpolated(
+        &self,
+        cache: &mut Self::ColumnCache,
+        interpolated: &[f64],
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> f64;
+
+    /// Combine trilinearly interpolated values for `vein_toggle`.
+    fn combine_vein_toggle(
+        &self,
+        cache: &mut Self::ColumnCache,
+        interpolated: &[f64],
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> f64;
+
+    /// Combine trilinearly interpolated values for `vein_ridged`.
+    fn combine_vein_ridged(
+        &self,
+        cache: &mut Self::ColumnCache,
+        interpolated: &[f64],
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> f64;
 }

@@ -1,8 +1,11 @@
 //! NoiseChunk: cell-based terrain density evaluation with trilinear interpolation.
 //!
 //! Matches vanilla's `NoiseChunk` + `NoiseBasedChunkGenerator.doFill()` flow.
-//! Samples the `final_density` function at cell corners, then interpolates
-//! between corners for each individual block position.
+//!
+//! Vanilla wraps density functions with `Interpolated` markers. Only the inner
+//! functions (arguments to `Interpolated`) are evaluated at cell corners; the
+//! outer operations (squeeze, min, etc.) are applied per-block after trilinear
+//! interpolation. Each `Interpolated` marker gets its own independent channel.
 //!
 //! Cell dimensions depend on the dimension's noise settings.
 
@@ -12,13 +15,24 @@ use std::mem;
 use steel_utils::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_utils::math::lerp;
 
+use crate::chunk::beardifier::Beardifier;
+
+/// Maximum number of interpolation channels supported.
+/// Overworld uses 5 (1 terrain + 4 noodle caves), nether/end use 1.
+const MAX_INTERP: usize = 16;
+
 /// Stores density values at cell corners for a single chunk and provides
 /// trilinear interpolation between corners for block-level resolution.
+///
+/// Supports multiple interpolation channels matching vanilla's multi-interpolator
+/// system. Each `Interpolated` marker in the density function tree gets its own
+/// channel, filled at cell corners and interpolated independently.
 pub struct NoiseChunk<N: DimensionNoises> {
-    /// Density values at cell corners.
-    /// Layout: `[cell_z_corner][cell_y_corner]` for the current and next X slices.
-    slice0: Vec<Vec<f64>>,
-    slice1: Vec<Vec<f64>>,
+    /// Density values at cell corners per interpolation channel.
+    /// Layout: `channels[ch].slice[z_corner][y_corner]` for current and next X.
+    channels: Vec<ChannelSlices>,
+    /// Number of active interpolation channels.
+    interp_count: usize,
 
     /// First cell X/Z in world coordinates (cell index, not block).
     first_cell_x: i32,
@@ -31,6 +45,12 @@ pub struct NoiseChunk<N: DimensionNoises> {
     cell_count_xz: usize,
 
     _phantom: PhantomData<N>,
+}
+
+/// Two slices (current X and next X) for one interpolation channel.
+struct ChannelSlices {
+    slice0: Vec<Vec<f64>>,
+    slice1: Vec<Vec<f64>>,
 }
 
 impl<N: DimensionNoises> NoiseChunk<N> {
@@ -54,9 +74,17 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         let corners_y = cell_count_y + 1;
         let z_corners = cell_count_xz + 1;
 
+        let interp_count = N::interpolated_count();
+        let channels = (0..interp_count)
+            .map(|_| ChannelSlices {
+                slice0: vec![vec![0.0; corners_y]; z_corners],
+                slice1: vec![vec![0.0; corners_y]; z_corners],
+            })
+            .collect();
+
         Self {
-            slice0: vec![vec![0.0; corners_y]; z_corners],
-            slice1: vec![vec![0.0; corners_y]; z_corners],
+            channels,
+            interp_count,
             first_cell_x,
             first_cell_z,
             cell_min_y,
@@ -66,7 +94,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         }
     }
 
-    /// Fill a density slice at the given cell X coordinate.
+    /// Fill all interpolation channel slices at the given cell X coordinate.
     #[allow(clippy::needless_range_loop)]
     fn fill_slice(
         &mut self,
@@ -74,17 +102,16 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         cell_x: i32,
         noises: &N,
         cache: &mut N::ColumnCache,
+        beardifier: Option<&Beardifier>,
     ) {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
         let corners_y = self.cell_count_y + 1;
+        let interp_count = self.interp_count;
 
         let block_x = cell_x * cell_width;
-        let slice = if use_slice0 {
-            &mut self.slice0
-        } else {
-            &mut self.slice1
-        };
+
+        let mut values = [0.0f64; MAX_INTERP];
 
         for cz in 0..=self.cell_count_xz {
             let cell_z = self.first_cell_z + cz as i32;
@@ -95,29 +122,57 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
             for cy in 0..corners_y {
                 let block_y = (cy as i32 + self.cell_min_y) * cell_height;
-                let density = noises.router_final_density(cache, block_x, block_y, block_z);
-                slice[cz][cy] = density;
+
+                // Evaluate all inner functions at this cell corner
+                noises.fill_cell_corner_densities(
+                    cache,
+                    block_x,
+                    block_y,
+                    block_z,
+                    &mut values[..interp_count],
+                );
+
+                // Beardifier contributes to channel 0 (main terrain density)
+                if let Some(beard) = beardifier {
+                    values[0] += beard.compute(block_x, block_y, block_z);
+                }
+
+                // Store in each channel's slice
+                for ch in 0..interp_count {
+                    let slice = if use_slice0 {
+                        &mut self.channels[ch].slice0
+                    } else {
+                        &mut self.channels[ch].slice1
+                    };
+                    slice[cz][cy] = values[ch];
+                }
             }
         }
     }
 
-    /// Fill the chunk with terrain blocks using trilinear interpolation.
+    /// Fill the chunk with terrain blocks using multi-channel trilinear interpolation.
     ///
-    /// Calls `place_block` for each block position with the interpolated density.
-    /// The callback receives `(local_x, world_y, local_z, density)` where
-    /// density > 0 means solid, <= 0 means air/fluid.
-    pub fn fill<F>(&mut self, noises: &N, cache: &mut N::ColumnCache, mut place_block: F)
-    where
-        F: FnMut(usize, i32, usize, f64),
+    /// For each block position:
+    /// 1. Trilinearly interpolate each channel independently from cell corners
+    /// 2. Apply outer operations (squeeze, min, etc.) via `combine_interpolated`
+    /// 3. Call `place_block` with the final density
+    pub fn fill<F>(
+        &mut self,
+        noises: &N,
+        cache: &mut N::ColumnCache,
+        beardifier: Option<&Beardifier>,
+        mut place_block: F,
+    ) where
+        F: FnMut(usize, i32, usize, f64, &[f64]),
     {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
-        let sea_level = N::Settings::SEA_LEVEL;
         let cell_count_xz = self.cell_count_xz;
         let cell_count_y = self.cell_count_y;
+        let interp_count = self.interp_count;
 
         // Fill initial X slice (slice0)
-        self.fill_slice(true, self.first_cell_x, noises, cache);
+        self.fill_slice(true, self.first_cell_x, noises, cache, beardifier);
 
         for cell_x_idx in 0..cell_count_xz {
             // Fill next X slice (slice1)
@@ -126,48 +181,66 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                 self.first_cell_x + cell_x_idx as i32 + 1,
                 noises,
                 cache,
+                beardifier,
             );
 
             for cell_z_idx in 0..cell_count_xz {
-                for cell_y_idx in (0..cell_count_y).rev() {
-                    // Get 8 corner values for this cell
-                    let n000 = self.slice0[cell_z_idx][cell_y_idx];
-                    let n001 = self.slice0[cell_z_idx + 1][cell_y_idx];
-                    let n100 = self.slice1[cell_z_idx][cell_y_idx];
-                    let n101 = self.slice1[cell_z_idx + 1][cell_y_idx];
-                    let n010 = self.slice0[cell_z_idx][cell_y_idx + 1];
-                    let n011 = self.slice0[cell_z_idx + 1][cell_y_idx + 1];
-                    let n110 = self.slice1[cell_z_idx][cell_y_idx + 1];
-                    let n111 = self.slice1[cell_z_idx + 1][cell_y_idx + 1];
+                for x_in_cell in 0..cell_width {
+                    let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
+                    let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
 
-                    for y_in_cell in (0..cell_height).rev() {
-                        let factor_y = f64::from(y_in_cell) / f64::from(cell_height);
-                        // Lerp in Y for 4 XZ corners
-                        let d00 = lerp(factor_y, n000, n010);
-                        let d10 = lerp(factor_y, n100, n110);
-                        let d01 = lerp(factor_y, n001, n011);
-                        let d11 = lerp(factor_y, n101, n111);
+                    for z_in_cell in 0..cell_width {
+                        let factor_z = f64::from(z_in_cell) / f64::from(cell_width);
+                        let local_z = (cell_z_idx as i32 * cell_width + z_in_cell) as usize;
 
-                        for x_in_cell in 0..cell_width {
-                            let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
-                            // Lerp in X
-                            let d0 = lerp(factor_x, d00, d10);
-                            let d1 = lerp(factor_x, d01, d11);
+                        // Process entire Y column at this (x, z)
+                        for cell_y_idx in (0..cell_count_y).rev() {
+                            for y_in_cell in (0..cell_height).rev() {
+                                let factor_y =
+                                    f64::from(y_in_cell) / f64::from(cell_height);
 
-                            for z_in_cell in 0..cell_width {
-                                let factor_z = f64::from(z_in_cell) / f64::from(cell_width);
-                                // Lerp in Z
-                                let density = lerp(factor_z, d0, d1);
+                                // Trilinearly interpolate each channel independently
+                                let mut interpolated = [0.0f64; MAX_INTERP];
+                                for ch in 0..interp_count {
+                                    let s0 = &self.channels[ch].slice0;
+                                    let s1 = &self.channels[ch].slice1;
 
-                                let world_y =
-                                    (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
-                                let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
-                                let local_z = (cell_z_idx as i32 * cell_width + z_in_cell) as usize;
+                                    let n000 = s0[cell_z_idx][cell_y_idx];
+                                    let n001 = s0[cell_z_idx + 1][cell_y_idx];
+                                    let n100 = s1[cell_z_idx][cell_y_idx];
+                                    let n101 = s1[cell_z_idx + 1][cell_y_idx];
+                                    let n010 = s0[cell_z_idx][cell_y_idx + 1];
+                                    let n011 = s0[cell_z_idx + 1][cell_y_idx + 1];
+                                    let n110 = s1[cell_z_idx][cell_y_idx + 1];
+                                    let n111 = s1[cell_z_idx + 1][cell_y_idx + 1];
 
-                                if density > 0.0 || world_y < sea_level {
-                                    place_block(local_x, world_y, local_z, density);
+                                    let d00 = lerp(factor_y, n000, n010);
+                                    let d10 = lerp(factor_y, n100, n110);
+                                    let d01 = lerp(factor_y, n001, n011);
+                                    let d11 = lerp(factor_y, n101, n111);
+                                    let d0 = lerp(factor_x, d00, d10);
+                                    let d1 = lerp(factor_x, d01, d11);
+                                    interpolated[ch] = lerp(factor_z, d0, d1);
                                 }
-                                // else: air above sea level (don't place anything)
+
+                                let world_y = (self.cell_min_y + cell_y_idx as i32)
+                                    * cell_height
+                                    + y_in_cell;
+
+                                // Apply outer operations per-block
+                                let density = noises.combine_interpolated(
+                                    cache,
+                                    &interpolated[..interp_count],
+                                    0, world_y, 0,
+                                );
+
+                                place_block(
+                                    local_x,
+                                    world_y,
+                                    local_z,
+                                    density,
+                                    &interpolated[..interp_count],
+                                );
                             }
                         }
                     }
@@ -175,7 +248,9 @@ impl<N: DimensionNoises> NoiseChunk<N> {
             }
 
             // Swap slices: current next becomes current for the next iteration
-            mem::swap(&mut self.slice0, &mut self.slice1);
+            for ch in &mut self.channels {
+                mem::swap(&mut ch.slice0, &mut ch.slice1);
+            }
         }
     }
 }
