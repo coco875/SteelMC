@@ -564,16 +564,16 @@ impl Server {
         match STEEL_CONFIG.world_generator {
             WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
             WorldGeneratorTypes::Vanilla => {
-                let useed = seed as u64;
+                let seed_u64 = seed as u64;
                 if ptr::eq(dimension, OVERWORLD) {
-                    let source = BiomeSourceKind::overworld(useed);
-                    ChunkGeneratorType::Overworld(VanillaGenerator::new(source, useed))
+                    let source = BiomeSourceKind::overworld(seed_u64);
+                    ChunkGeneratorType::Overworld(VanillaGenerator::new(source, seed_u64))
                 } else if ptr::eq(dimension, THE_NETHER) {
-                    let source = BiomeSourceKind::nether(useed);
-                    ChunkGeneratorType::Nether(VanillaGenerator::new(source, useed))
+                    let source = BiomeSourceKind::nether(seed_u64);
+                    ChunkGeneratorType::Nether(VanillaGenerator::new(source, seed_u64))
                 } else {
-                    let source = BiomeSourceKind::end(useed);
-                    ChunkGeneratorType::End(VanillaGenerator::new(source, useed))
+                    let source = BiomeSourceKind::end(seed_u64);
+                    ChunkGeneratorType::End(VanillaGenerator::new(source, seed_u64))
                 }
             }
             WorldGeneratorTypes::Flat => {
