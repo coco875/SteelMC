@@ -140,7 +140,7 @@ pub trait DimensionNoises: Sized + Send + Sync {
     // ── Interpolation functions ─────────────────────────────────────────────
 
     /// Total number of independently interpolated channels across all router
-    /// entries (final_density + vein_toggle + vein_ridged).
+    /// entries (`final_density` + `vein_toggle` + `vein_ridged`).
     fn interpolated_count() -> usize;
 
     /// Whether vein functions have interpolation channels.

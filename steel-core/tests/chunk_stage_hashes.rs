@@ -1,7 +1,8 @@
 //! Chunk generation stage regression test.
 //!
 //! Verifies that Steel's chunk generation matches vanilla Minecraft at each stage
-//! by comparing MD5 hashes of block data.
+//! by comparing MD5 hashes of block data. Enable stages one at a time as they
+//! are implemented.
 
 use std::fmt::Write;
 
@@ -24,7 +25,8 @@ struct ChunkStageHashesJson {
     chunk_count: usize,
 }
 
-const BLOCK_MODIFYING_STAGES: &[&str] = &[
+/// Stages to verify. Uncomment as each stage is implemented.
+const STAGES: &[&str] = &[
     "minecraft:noise",
     // "minecraft:surface",
     // "minecraft:carvers",
@@ -63,7 +65,7 @@ fn compute_block_hash(sections: &Sections) -> String {
 }
 
 #[test]
-fn noise_stage_hashes() {
+fn chunk_stage_hashes() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
@@ -81,87 +83,59 @@ fn noise_stage_hashes() {
     let seed = expected.seed;
     assert_eq!(seed, 13579, "Expected seed 13579");
 
-    let noise_chunks: Vec<_> = expected
-        .chunks
-        .iter()
-        .filter_map(|c| {
-            c.stages
-                .get("minecraft:noise")
-                .map(|hash| (c.x, c.z, hash.clone()))
-        })
-        .collect();
-
     let source = BiomeSourceKind::overworld(seed);
     let generator = OverworldGenerator::new(source, seed);
 
-    let mut mismatches = Vec::new();
     let section_count = 24;
     let min_y = -64;
     let height = 384;
 
-    for (chunk_x, chunk_z, expected_hash) in &noise_chunks {
-        let sections: Box<[ChunkSection]> = (0..section_count)
-            .map(|_| ChunkSection::new_empty())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-
-        let proto = ProtoChunk::new(
-            Sections::from_owned(sections),
-            ChunkPos::new(*chunk_x, *chunk_z),
-            min_y,
-            height,
-        );
-
-        let chunk = ChunkAccess::Proto(proto);
-        generator.fill_from_noise(&chunk);
-
-        let actual_hash = compute_block_hash(chunk.sections());
-
-        if actual_hash != *expected_hash {
-            mismatches.push((*chunk_x, *chunk_z, expected_hash.clone(), actual_hash));
-        }
-    }
-
-    let total = noise_chunks.len();
-    let failed = mismatches.len();
-    let passed = total - failed;
-
-    // Show passing chunks for debugging
-    let passing: Vec<_> = noise_chunks.iter()
-        .filter(|(x, z, _)| !mismatches.iter().any(|(mx, mz, _, _)| *mx == *x && *mz == *z))
-        .collect();
-    eprintln!("Passing chunks ({passed}/{total}):");
-    for (x, z, _) in &passing {
-        eprintln!("  ({x:3}, {z:3})");
-    }
-
-    if mismatches.is_empty() {
-        return;
-    }
-
-    let mut msg = format!("Noise stage: {failed}/{total} chunks do not match vanilla\n");
-    for (x, z, expected, actual) in mismatches.iter().take(5) {
-        let _ = writeln!(msg, "  ({x:3},{z:3}): expected {expected}, got {actual}");
-    }
-    if failed > 5 {
-        let _ = writeln!(msg, "  ... and {} more", failed - 5);
-    }
-
-    panic!("{msg}");
-}
-
-#[test]
-fn chunk_stage_hashes_json_loads() {
-    let expected = load_expected_hashes();
-
-    assert_eq!(expected.seed, 13579);
-
-    for stage in BLOCK_MODIFYING_STAGES {
-        let count = expected
+    for &stage in STAGES {
+        let stage_chunks: Vec<_> = expected
             .chunks
             .iter()
-            .filter(|c| c.stages.contains_key(*stage))
-            .count();
-        assert!(count > 0, "No chunks with {stage} stage");
+            .filter_map(|c| c.stages.get(stage).map(|hash| (c.x, c.z, hash.clone())))
+            .collect();
+
+        let mut mismatches = Vec::new();
+
+        for (chunk_x, chunk_z, expected_hash) in &stage_chunks {
+            let sections: Box<[ChunkSection]> = (0..section_count)
+                .map(|_| ChunkSection::new_empty())
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+
+            let proto = ProtoChunk::new(
+                Sections::from_owned(sections),
+                ChunkPos::new(*chunk_x, *chunk_z),
+                min_y,
+                height,
+            );
+
+            let chunk = ChunkAccess::Proto(proto);
+            generator.fill_from_noise(&chunk);
+
+            let actual_hash = compute_block_hash(chunk.sections());
+
+            if actual_hash != *expected_hash {
+                mismatches.push((*chunk_x, *chunk_z, expected_hash.clone(), actual_hash));
+            }
+        }
+
+        if mismatches.is_empty() {
+            continue;
+        }
+
+        let total = stage_chunks.len();
+        let failed = mismatches.len();
+        let mut msg = format!("{stage}: {failed}/{total} chunks do not match vanilla\n");
+        for (x, z, expected, actual) in mismatches.iter().take(5) {
+            let _ = writeln!(msg, "  ({x:3},{z:3}): expected {expected}, got {actual}");
+        }
+        if failed > 5 {
+            let _ = writeln!(msg, "  ... and {} more", failed - 5);
+        }
+
+        panic!("{msg}");
     }
 }

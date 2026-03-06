@@ -135,11 +135,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         );
 
         let structure_starts = chunk.structure_starts();
-        let beardifier = Beardifier::for_structures_in_chunk(
-            &structure_starts,
-            pos.0.x,
-            pos.0.y,
-        );
+        let beardifier = Beardifier::for_structures_in_chunk(&structure_starts, pos.0.x, pos.0.y);
         let beard_opt = if beardifier.is_empty() {
             None
         } else {

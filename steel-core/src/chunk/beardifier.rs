@@ -49,9 +49,9 @@ impl TerrainAdjustment {
             "minecraft:bastion_remnant" => Self::BeardBox,
 
             // Bury
-            "minecraft:ancient_city"
-            | "minecraft:trail_ruins"
-            | "minecraft:ocean_monument" => Self::Bury,
+            "minecraft:ancient_city" | "minecraft:trail_ruins" | "minecraft:ocean_monument" => {
+                Self::Bury
+            }
 
             // Encapsulate
             "minecraft:trial_chambers" => Self::Encapsulate,
@@ -97,8 +97,7 @@ static BEARD_KERNEL: LazyLock<[f32; KERNEL_TOTAL]> = LazyLock::new(|| {
                 let dy = yi as i32 - KERNEL_RADIUS;
                 // dy + 0.5 matches vanilla's computeBeardContribution(int, int, int)
                 let dy_f = f64::from(dy) + 0.5;
-                let dist_sq =
-                    f64::from(dx * dx) + dy_f * dy_f + f64::from(dz * dz);
+                let dist_sq = f64::from(dx * dx) + dy_f * dy_f + f64::from(dz * dz);
                 let value = (-dist_sq / 16.0).exp();
                 kernel[zi * KERNEL_SIZE * KERNEL_SIZE + xi * KERNEL_SIZE + yi] = value as f32;
             }
@@ -222,7 +221,7 @@ impl Beardifier {
 
     /// Returns true if there are no pieces or junctions affecting terrain.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.rigids.is_empty() && self.junctions.is_empty()
     }
 
@@ -284,7 +283,7 @@ impl Beardifier {
 /// Check if a bounding box is within `margin` blocks of a chunk.
 ///
 /// Matches vanilla's `StructurePiece.isCloseToChunk(ChunkPos, int)`.
-fn is_close_to_chunk(bb: &BoundingBox, chunk_x: i32, chunk_z: i32, margin: i32) -> bool {
+const fn is_close_to_chunk(bb: &BoundingBox, chunk_x: i32, chunk_z: i32, margin: i32) -> bool {
     let chunk_start_x = chunk_x * 16;
     let chunk_start_z = chunk_z * 16;
     let chunk_end_x = chunk_start_x + 15;

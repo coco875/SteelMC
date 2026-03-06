@@ -196,11 +196,11 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                         // Process entire Y column at this (x, z)
                         for cell_y_idx in (0..cell_count_y).rev() {
                             for y_in_cell in (0..cell_height).rev() {
-                                let factor_y =
-                                    f64::from(y_in_cell) / f64::from(cell_height);
+                                let factor_y = f64::from(y_in_cell) / f64::from(cell_height);
 
                                 // Trilinearly interpolate each channel independently
                                 let mut interpolated = [0.0f64; MAX_INTERP];
+                                #[allow(clippy::needless_range_loop)]
                                 for ch in 0..interp_count {
                                     let s0 = &self.channels[ch].slice0;
                                     let s1 = &self.channels[ch].slice1;
@@ -223,15 +223,16 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                                     interpolated[ch] = lerp(factor_z, d0, d1);
                                 }
 
-                                let world_y = (self.cell_min_y + cell_y_idx as i32)
-                                    * cell_height
-                                    + y_in_cell;
+                                let world_y =
+                                    (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;
 
                                 // Apply outer operations per-block
                                 let density = noises.combine_interpolated(
                                     cache,
                                     &interpolated[..interp_count],
-                                    0, world_y, 0,
+                                    0,
+                                    world_y,
+                                    0,
                                 );
 
                                 place_block(

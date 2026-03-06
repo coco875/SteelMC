@@ -69,5 +69,9 @@ fn bench_fill_from_noise_grid(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_fill_from_noise_single, bench_fill_from_noise_grid);
+criterion_group!(
+    benches,
+    bench_fill_from_noise_single,
+    bench_fill_from_noise_grid
+);
 criterion_main!(benches);

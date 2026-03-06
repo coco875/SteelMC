@@ -484,12 +484,22 @@ impl TranspileContext {
             /// Column-level cache for flat-cached (xz-only) density function results.
             ///
             /// Call [`ensure`](Self::ensure) before reading values. Values are recomputed
-            /// only when `(x, z)` changes.
+            /// only when the quart-quantized `(x, z)` changes.
+            ///
+            /// Vanilla's `FlatCache` quantizes coordinates to quart positions
+            /// (`(x >> 2) << 2`) before evaluating. The cache stores **raw**
+            /// coordinates in `x`/`z` (for non-flat router functions that read
+            /// `cache.x`/`cache.z`), while flat-cached values are computed at
+            /// the **quantized** position.
             pub struct #cache {
-                /// Cached x block coordinate.
+                /// Raw x block coordinate (for non-flat router functions).
                 pub x: i32,
-                /// Cached z block coordinate.
+                /// Raw z block coordinate (for non-flat router functions).
                 pub z: i32,
+                /// Quart-quantized x used to key the flat cache.
+                qx: i32,
+                /// Quart-quantized z used to key the flat cache.
+                qz: i32,
                 valid: bool,
                 #(#cache_fields,)*
                 #(#router_fields),*
@@ -502,6 +512,8 @@ impl TranspileContext {
                     Self {
                         x: 0,
                         z: 0,
+                        qx: i32::MIN,
+                        qz: i32::MIN,
                         valid: false,
                         #(#default_fields,)*
                         #(#router_default_fields),*
@@ -510,15 +522,23 @@ impl TranspileContext {
 
                 /// Ensure the cache is populated for the given `(x, z)` block coordinates.
                 ///
-                /// If the cache already holds values for this column, this is a no-op.
-                /// Computes all flat-cached density functions in topological order,
-                /// then any Y-independent router entries.
+                /// Flat-cached density functions are evaluated at quart-quantized
+                /// positions (`(x >> 2) << 2`), matching vanilla's `FlatCache`.
+                /// The raw `(x, z)` is stored in `self.x`/`self.z` for non-flat
+                /// router functions that reference `cache.x`/`cache.z`.
                 pub fn ensure(&mut self, x: i32, z: i32, noises: &#noises) {
-                    if self.valid && self.x == x && self.z == z {
-                        return;
-                    }
+                    // Always update the raw coordinates so non-flat router
+                    // functions see the caller's actual position.
                     self.x = x;
                     self.z = z;
+                    // Quantize to quart positions for flat-cached values.
+                    let x = (x >> 2) << 2;
+                    let z = (z >> 2) << 2;
+                    if self.valid && self.qx == x && self.qz == z {
+                        return;
+                    }
+                    self.qx = x;
+                    self.qz = z;
                     #(#ensure_stmts)*
                     #(#router_ensure_stmts)*
                     self.valid = true;
@@ -653,11 +673,12 @@ impl TranspileContext {
 
     /// Generate interpolation functions for ALL router entries that contain
     /// `Interpolated` markers: `fill_cell_corner_densities`, `combine_interpolated`,
-    /// and per-entry combine functions for vein_toggle/vein_ridged.
+    /// and per-entry combine functions for `vein_toggle`/`vein_ridged`.
     ///
     /// All entries share a single contiguous channel array. Channel indices are
-    /// assigned in order: final_density channels first, then vein_toggle, then
-    /// vein_ridged.
+    /// assigned in order: `final_density` channels first, then `vein_toggle`, then
+    /// `vein_ridged`.
+    #[allow(clippy::too_many_lines)]
     fn gen_all_interpolation_functions(&mut self, input: &TranspilerInput) -> TokenStream {
         let noises = self.noises_ident.clone();
         let cache = self.cache_ident.clone();
@@ -667,6 +688,7 @@ impl TranspileContext {
         let entry_names = ["final_density", "vein_toggle", "vein_ridged"];
 
         // Phase 1: Collect ALL interpolated inners across all entries
+        #[allow(clippy::items_after_statements)]
         struct EntryInfo {
             start: usize,
             df: DensityFunction,
@@ -727,7 +749,7 @@ impl TranspileContext {
             // No interpolated markers in vein_toggle — fall back to direct eval
             quote! { 0.0 }
         };
-        let combine_vt_splines = mem::take(&mut self.spline_fns);
+        let combine_vein_toggle_splines = mem::take(&mut self.spline_fns);
 
         let combine_vein_ridged_body = if let Some(info) = entries.get("vein_ridged") {
             self.interpolated_param_mode = true;
@@ -738,11 +760,11 @@ impl TranspileContext {
         } else {
             quote! { 0.0 }
         };
-        let combine_vr_splines = mem::take(&mut self.spline_fns);
+        let combine_vein_ridged_splines = mem::take(&mut self.spline_fns);
 
         // Determine whether vein interpolation is present
-        let has_vein_interp = entries.contains_key("vein_toggle")
-            || entries.contains_key("vein_ridged");
+        let has_vein_interp =
+            entries.contains_key("vein_toggle") || entries.contains_key("vein_ridged");
         let has_vein_interp_tok: TokenStream = if has_vein_interp {
             quote! { true }
         } else {
@@ -820,8 +842,8 @@ impl TranspileContext {
 
             #(#fill_spline_fns)*
             #(#combine_fd_splines)*
-            #(#combine_vt_splines)*
-            #(#combine_vr_splines)*
+            #(#combine_vein_toggle_splines)*
+            #(#combine_vein_ridged_splines)*
         }
     }
 
@@ -1349,9 +1371,7 @@ fn has_interpolated_markers(
                 || has_interpolated_markers(&rc.when_in_range, registry, visited)
                 || has_interpolated_markers(&rc.when_out_of_range, registry, visited)
         }
-        DensityFunction::BlendDensity(bd) => {
-            has_interpolated_markers(&bd.input, registry, visited)
-        }
+        DensityFunction::BlendDensity(bd) => has_interpolated_markers(&bd.input, registry, visited),
         DensityFunction::WeirdScaledSampler(ws) => {
             has_interpolated_markers(&ws.input, registry, visited)
         }
