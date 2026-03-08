@@ -28,7 +28,7 @@ struct ChunkStageHashesJson {
 /// Stages to verify. Uncomment as each stage is implemented.
 const STAGES: &[&str] = &[
     "minecraft:noise",
-    // "minecraft:surface",
+    "minecraft:surface",
     // "minecraft:carvers",
     // "minecraft:features",
 ];
@@ -113,7 +113,13 @@ fn chunk_stage_hashes() {
             );
 
             let chunk = ChunkAccess::Proto(proto);
+
+            // Apply prerequisite stages up to the target
+            generator.create_biomes(&chunk);
             generator.fill_from_noise(&chunk);
+            if stage != "minecraft:noise" {
+                generator.build_surface(&chunk);
+            }
 
             let actual_hash = compute_block_hash(chunk.sections());
 

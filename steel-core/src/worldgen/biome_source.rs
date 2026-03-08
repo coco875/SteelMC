@@ -8,6 +8,8 @@
 //! calls `chunk_sampler()` per chunk to get a `ChunkBiomeSampler` that holds per-chunk
 //! caches (column cache, `RTree` warm-start index).
 
+use std::cell::Cell;
+
 use steel_registry::biome::BiomeRef;
 use steel_registry::density_functions::OverworldColumnCache;
 use steel_registry::density_functions::nether::NetherColumnCache;
@@ -16,6 +18,17 @@ use steel_registry::vanilla_biomes;
 
 use super::{NetherClimateSampler, OverworldClimateSampler};
 use steel_utils::noise::EndIslands;
+
+thread_local! {
+    /// Per-thread R-tree warm-start cache for overworld biome lookups.
+    ///
+    /// Matches vanilla's `ThreadLocal<Leaf>` on `MultiNoiseBiomeSource`.
+    /// `usize::MAX` is the sentinel for "no cached value".
+    static OVERWORLD_BIOME_CACHE: Cell<usize> = const { Cell::new(usize::MAX) };
+
+    /// Per-thread R-tree warm-start cache for nether biome lookups.
+    static NETHER_BIOME_CACHE: Cell<usize> = const { Cell::new(usize::MAX) };
+}
 
 /// Dimension-specific biome source.
 ///
@@ -69,9 +82,10 @@ impl BiomeSourceKind {
 
 /// Per-chunk biome sampler with internal caches.
 ///
-/// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds caches like
-/// column-level density function values and `RTree` warm-start indices that persist
-/// across positions within a single chunk.
+/// Created by [`BiomeSourceKind::chunk_sampler`] for each chunk. Holds per-chunk
+/// caches like column-level density function values. The `RTree` warm-start cache
+/// is stored in thread-local storage (matching vanilla's `ThreadLocal<Leaf>`) and
+/// persists across all lookups on the same thread.
 ///
 /// Uses enum dispatch instead of `dyn` to avoid vtable overhead on the hot
 /// per-quart sampling path (1536 calls per overworld chunk).
@@ -125,7 +139,6 @@ impl OverworldBiomeSource {
         ChunkBiomeSampler::Overworld(OverworldChunkBiomeSampler {
             source: self,
             column_cache: OverworldColumnCache::new(),
-            biome_cache: None,
         })
     }
 }
@@ -133,7 +146,6 @@ impl OverworldBiomeSource {
 pub struct OverworldChunkBiomeSampler<'a> {
     source: &'a OverworldBiomeSource,
     column_cache: OverworldColumnCache,
-    biome_cache: Option<usize>,
 }
 
 impl OverworldChunkBiomeSampler<'_> {
@@ -142,7 +154,17 @@ impl OverworldChunkBiomeSampler<'_> {
             self.source
                 .climate_sampler
                 .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
-        get_overworld_biome_cached(&target, &mut self.biome_cache)
+        OVERWORLD_BIOME_CACHE.with(|cell| {
+            let cached = cell.get();
+            let mut cache = if cached == usize::MAX {
+                None
+            } else {
+                Some(cached)
+            };
+            let biome = get_overworld_biome_cached(&target, &mut cache);
+            cell.set(cache.unwrap_or(usize::MAX));
+            biome
+        })
     }
 }
 
@@ -171,7 +193,6 @@ impl NetherBiomeSource {
         ChunkBiomeSampler::Nether(NetherChunkBiomeSampler {
             source: self,
             column_cache: NetherColumnCache::new(),
-            biome_cache: None,
         })
     }
 }
@@ -179,7 +200,6 @@ impl NetherBiomeSource {
 pub struct NetherChunkBiomeSampler<'a> {
     source: &'a NetherBiomeSource,
     column_cache: NetherColumnCache,
-    biome_cache: Option<usize>,
 }
 
 impl NetherChunkBiomeSampler<'_> {
@@ -188,7 +208,17 @@ impl NetherChunkBiomeSampler<'_> {
             self.source
                 .climate_sampler
                 .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
-        get_nether_biome_cached(&target, &mut self.biome_cache)
+        NETHER_BIOME_CACHE.with(|cell| {
+            let cached = cell.get();
+            let mut cache = if cached == usize::MAX {
+                None
+            } else {
+                Some(cached)
+            };
+            let biome = get_nether_biome_cached(&target, &mut cache);
+            cell.set(cache.unwrap_or(usize::MAX));
+            biome
+        })
     }
 }
 

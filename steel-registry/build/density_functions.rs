@@ -256,6 +256,8 @@ struct NoiseSettingsJson {
     default_fluid: BlockStateJson,
     noise: NoiseConfigJson,
     noise_router: NoiseRouterJson,
+    #[serde(default)]
+    surface_rule: Option<crate::surface_rules::SurfaceRuleJson>,
 }
 
 // ── Datapack file reading ───────────────────────────────────────────────────
@@ -639,11 +641,34 @@ fn transpile_dimension(
 
 /// Generate noise settings constants and trait impls for a dimension.
 fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
-    let settings = read_noise_settings(dimension);
+    let mut settings = read_noise_settings(dimension);
 
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
     let cache_struct = Ident::new(&format!("{prefix}ColumnCache"), Span::call_site());
+
+    // Generate surface rule function and noise IDs
+    let (surface_rule_body, surface_noise_ids_tokens) =
+        if let Some(rule) = settings.surface_rule.take() {
+            let (func, noise_ids) = crate::surface_rules::generate_surface_rule_function(
+                &rule,
+                settings.noise.min_y,
+                settings.noise.height,
+            );
+            let noise_id_lits: Vec<_> = noise_ids.iter().map(|s| s.as_str()).collect();
+            (func, quote! { &[#(#noise_id_lits),*] })
+        } else {
+            let empty_func = quote! {
+                /// No surface rule for this dimension.
+                #[allow(clippy::needless_return)]
+                fn apply_surface_rule_impl(
+                    _ctx: &steel_utils::surface::SurfaceRuleContext<'_>,
+                ) -> Option<steel_utils::BlockStateId> {
+                    None
+                }
+            };
+            (empty_func, quote! { &[] })
+        };
 
     let min_y = settings.noise.min_y;
     let height = settings.noise.height;
@@ -858,6 +883,20 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
                 combine_vein_ridged(self, cache, interpolated, x, y, z)
             }
+
+            fn surface_noise_ids() -> &'static [&'static str] {
+                #surface_noise_ids_tokens
+            }
+
+            fn try_apply_surface_rule(
+                ctx: &steel_utils::surface::SurfaceRuleContext<'_>,
+            ) -> Option<steel_utils::BlockStateId> {
+                Self::apply_surface_rule_impl(ctx)
+            }
+        }
+
+        impl #noises_struct {
+            #surface_rule_body
         }
     }
 }

@@ -105,13 +105,18 @@ impl ChunkStatusTasks {
         Ok(())
     }
 
-    // TODO: Wire up to context.generator.build_surface() once surface generation is implemented
+    /// # Panics
+    /// Panics if the chunk has not reached `ChunkStatus::Noise`.
     pub fn generate_surface(
-        _context: Arc<WorldGenContext>,
+        context: Arc<WorldGenContext>,
         _step: &ChunkStep,
         _cache: &Arc<StaticCache2D<Arc<ChunkHolder>>>,
-        _holder: Arc<ChunkHolder>,
+        holder: Arc<ChunkHolder>,
     ) -> Result<(), anyhow::Error> {
+        let chunk = holder
+            .try_chunk(ChunkStatus::Noise)
+            .expect("Chunk not found at status Noise");
+        context.generator.build_surface(&chunk);
         Ok(())
     }
 

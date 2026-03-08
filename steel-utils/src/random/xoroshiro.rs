@@ -15,6 +15,7 @@ pub struct Xoroshiro {
 }
 
 /// A splitter for the Xoroshiro128++ random number generator.
+#[derive(Clone)]
 pub struct XoroshiroSplitter {
     seed_lo: u64,
     seed_hi: u64,

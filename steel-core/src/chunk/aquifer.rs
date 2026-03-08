@@ -722,7 +722,7 @@ fn quantize(value: f64, quantum: i32) -> i32 {
 ///
 /// Vanilla's `NoiseChunk.preliminarySurfaceLevel()` quantizes X/Z to quart
 /// positions before lookup, matching `FlatCache`'s 4-block grid.
-fn preliminary_surface_level<N: DimensionNoises>(
+pub(crate) fn preliminary_surface_level<N: DimensionNoises>(
     noises: &N,
     cache: &mut N::ColumnCache,
     x: i32,
