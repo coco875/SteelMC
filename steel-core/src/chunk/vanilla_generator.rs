@@ -20,7 +20,7 @@ use crate::chunk::noise_chunk::NoiseChunk;
 use crate::chunk::ore_veinifier::OreVeinifier;
 use crate::chunk::section::Sections;
 use crate::chunk::surface_system::SurfaceSystem;
-use crate::worldgen::{BiomeSourceKind, ChunkBiomeSampler};
+use crate::worldgen::BiomeSourceKind;
 
 /// A chunk generator for vanilla (normal) world generation.
 ///
@@ -214,7 +214,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn build_surface(&self, chunk: &ChunkAccess) {
+    fn build_surface(&self, chunk: &ChunkAccess, neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16) {
         let min_y = N::Settings::MIN_Y;
         let pos = chunk.pos();
         let chunk_min_x = pos.0.x * 16;
@@ -223,7 +223,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let noises = &*self.noises;
         let chunk_quart_x = pos.0.x * 4;
         let chunk_quart_z = pos.0.y * 4;
-        let mut biome_sampler = self.biome_source.chunk_sampler();
 
         // Ensure worldgen heightmaps are primed (fill_from_noise uses set_relative_block
         // which doesn't update heightmaps).
@@ -270,7 +269,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                     min_y,
                     chunk_quart_x,
                     chunk_quart_z,
-                    &mut biome_sampler,
+                    neighbor_biomes,
                 );
                 if surface_biome_id == eroded_badlands_id {
                     start_height = self.surface_system.eroded_badlands_extension(
@@ -379,7 +378,7 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                             min_y,
                             chunk_quart_x,
                             chunk_quart_z,
-                            &mut biome_sampler,
+                            neighbor_biomes,
                         );
 
                         let cold_enough_to_snow = self
@@ -458,7 +457,8 @@ fn get_fiddled_distance(seed: i64, x: i32, y: i32, z: i32, dx: f64, dy: f64, dz:
 ///
 /// Applies Voronoi-like fuzzing to biome boundaries so they're irregular
 /// rather than perfectly grid-aligned at 4-block intervals. When the fuzzed
-/// position falls outside the current chunk, falls back to the biome source.
+/// position falls outside the current chunk, reads from neighbor chunk
+/// palettes via `neighbor_biomes`.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
 fn get_fuzzed_biome(
     sections: &Sections,
@@ -469,7 +469,7 @@ fn get_fuzzed_biome(
     min_y: i32,
     chunk_quart_x: i32,
     chunk_quart_z: i32,
-    biome_sampler: &mut ChunkBiomeSampler<'_>,
+    neighbor_biomes: &dyn Fn(i32, i32, i32) -> u16,
 ) -> u16 {
     let abs_x = block_x - 2;
     let abs_y = block_y - 2;
@@ -539,9 +539,8 @@ fn get_fuzzed_biome(
             .biomes
             .get(local_qx, local_qy, local_qz)
     } else {
-        // Out of chunk bounds — sample from biome source directly.
-        // In vanilla, this reads from neighbor chunk palettes via WorldGenRegion.
-        let biome = biome_sampler.sample(biome_qx, biome_qy, biome_qz);
-        *REGISTRY.biomes.get_id(biome) as u16
+        // Out of chunk bounds — read from neighbor chunk palettes,
+        // matching vanilla's WorldGenRegion.getNoiseBiome().
+        neighbor_biomes(biome_qx, biome_qy, biome_qz)
     }
 }

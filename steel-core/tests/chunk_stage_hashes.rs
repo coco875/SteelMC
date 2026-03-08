@@ -66,6 +66,20 @@ fn compute_block_hash(sections: &Sections) -> String {
 
 #[test]
 fn chunk_stage_hashes() {
+    use std::thread;
+
+    // Run on a thread with a larger stack to avoid overflow in debug builds,
+    // since pre-generating biome data for neighbor lookups increases stack usage.
+    thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(chunk_stage_hashes_inner)
+        .expect("Failed to spawn test thread")
+        .join()
+        .expect("Test thread panicked");
+}
+
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn chunk_stage_hashes_inner() {
     use steel_core::chunk::chunk_access::ChunkAccess;
     use steel_core::chunk::chunk_generator::ChunkGenerator;
     use steel_core::chunk::proto_chunk::ProtoChunk;
@@ -89,6 +103,8 @@ fn chunk_stage_hashes() {
     let section_count = 24;
     let min_y = -64;
     let height = 384;
+    let min_qy = min_y >> 2;
+    let total_quarts_y = section_count * 4;
 
     for &stage in STAGES {
         let stage_chunks: Vec<_> = expected
@@ -96,6 +112,39 @@ fn chunk_stage_hashes() {
             .iter()
             .filter_map(|c| c.stages.get(stage).map(|hash| (c.x, c.z, hash.clone())))
             .collect();
+
+        // Pre-generate biomes for neighbor lookups (needed for surface and later stages).
+        // Vanilla reads out-of-chunk biomes from neighbor chunk palettes via WorldGenRegion;
+        // we replicate this by pre-populating biome data for the extended grid (±1 chunk).
+        let biome_chunks: FxHashMap<(i32, i32), ChunkAccess> = if stage == "minecraft:noise" {
+            FxHashMap::default()
+        } else {
+            let (min_cx, max_cx, min_cz, max_cz) = stage_chunks.iter().fold(
+                (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+                |(mnx, mxx, mnz, mxz), (x, z, _)| {
+                    (mnx.min(*x), mxx.max(*x), mnz.min(*z), mxz.max(*z))
+                },
+            );
+            let mut map = FxHashMap::default();
+            for x in (min_cx - 1)..=(max_cx + 1) {
+                for z in (min_cz - 1)..=(max_cz + 1) {
+                    let sections: Box<[ChunkSection]> = (0..section_count)
+                        .map(|_| ChunkSection::new_empty())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice();
+                    let proto = ProtoChunk::new(
+                        Sections::from_owned(sections),
+                        ChunkPos::new(x, z),
+                        min_y,
+                        height,
+                    );
+                    let chunk = ChunkAccess::Proto(proto);
+                    generator.create_biomes(&chunk);
+                    map.insert((x, z), chunk);
+                }
+            }
+            map
+        };
 
         let mut mismatches = Vec::new();
 
@@ -118,7 +167,22 @@ fn chunk_stage_hashes() {
             generator.create_biomes(&chunk);
             generator.fill_from_noise(&chunk);
             if stage != "minecraft:noise" {
-                generator.build_surface(&chunk);
+                let neighbor_biomes = |qx: i32, qy: i32, qz: i32| -> u16 {
+                    let cx = qx >> 2;
+                    let cz = qz >> 2;
+                    let neighbor = &biome_chunks[&(cx, cz)];
+                    let sections = neighbor.sections();
+                    let local_qx = (qx - cx * 4) as usize;
+                    let local_qz = (qz - cz * 4) as usize;
+                    let qy_clamped = (qy - min_qy).clamp(0, total_quarts_y - 1) as usize;
+                    let section_idx = qy_clamped / 4;
+                    let local_qy = qy_clamped % 4;
+                    sections.sections[section_idx]
+                        .read()
+                        .biomes
+                        .get(local_qx, local_qy, local_qz)
+                };
+                generator.build_surface(&chunk, &neighbor_biomes);
             }
 
             let actual_hash = compute_block_hash(chunk.sections());
