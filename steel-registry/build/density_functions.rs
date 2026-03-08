@@ -655,8 +655,8 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 settings.noise.min_y,
                 settings.noise.height,
             );
-            let noise_id_lits: Vec<_> = noise_ids.iter().map(|s| s.as_str()).collect();
-            (func, quote! { &[#(#noise_id_lits),*] })
+            let noise_id_literals: Vec<_> = noise_ids.iter().map(|s| s.as_str()).collect();
+            (func, quote! { &[#(#noise_id_literals),*] })
         } else {
             let empty_func = quote! {
                 /// No surface rule for this dimension.
