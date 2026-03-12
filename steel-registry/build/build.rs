@@ -165,9 +165,7 @@ pub fn main() {
     // Track which files we're generating this run
     let mut generated_files: Vec<std::path::PathBuf> = Vec::new();
 
-    let all_builds = vanilla_builds
-        .into_iter()
-        .chain(df_builds.into_iter().map(|(ts, name)| (ts, name)));
+    let all_builds = vanilla_builds.into_iter().chain(df_builds);
 
     for (content, file_name) in all_builds {
         let path = out_dir.join(format!("vanilla_{file_name}.rs"));
