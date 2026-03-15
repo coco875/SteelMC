@@ -917,24 +917,20 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
 use proc_macro2::{Ident, Span};
 
-/// Output of the density functions build step: one `TokenStream` per dimension file,
-/// plus a thin index file that re-exports them.
+/// Output of the density functions build step: one `TokenStream` per dimension,
+/// plus an index file that declares the submodules.
 pub(crate) struct DensityFunctionFiles {
-    /// Contents for `vanilla_density_functions_overworld.rs`.
+    /// Contents for `vanilla_density_functions/overworld.rs`.
     pub overworld: TokenStream,
-    /// Contents for `vanilla_density_functions_nether.rs`.
+    /// Contents for `vanilla_density_functions/nether.rs`.
     pub nether: TokenStream,
-    /// Contents for `vanilla_density_functions_end.rs`.
+    /// Contents for `vanilla_density_functions/end.rs`.
     pub end: TokenStream,
-    /// Contents for `vanilla_density_functions.rs` (index that includes the three above).
+    /// Contents for `vanilla_density_functions.rs` (declares the three submodules).
     pub index: TokenStream,
 }
 
 /// Generate density function code for all dimensions, split into one file per dimension.
-///
-/// Each dimension file is self-contained (no wrapping `mod` needed since each lives
-/// in its own `generated/` file).  The index file re-exports the dimension submodules
-/// under the same public API that callers already use.
 pub(crate) fn build() -> DensityFunctionFiles {
     let registry_json = read_density_function_registry();
 
@@ -967,19 +963,14 @@ pub(crate) fn build() -> DensityFunctionFiles {
         #end_settings
     };
 
-    // The index file re-exports per-dimension submodules using #[path] to point at
-    // the sibling generated files, preserving the existing public API.
     let index = quote! {
-        #[path = "vanilla_density_functions_overworld.rs"]
-        mod overworld_impl;
-        pub use overworld_impl::*;
+        /// Overworld density functions.
+        pub mod overworld;
 
         /// Nether density functions.
-        #[path = "vanilla_density_functions_nether.rs"]
         pub mod nether;
 
         /// End density functions.
-        #[path = "vanilla_density_functions_end.rs"]
         pub mod end;
     };
 
