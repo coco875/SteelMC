@@ -17,7 +17,9 @@
 //!
 //! Gated behind the `codegen` feature flag.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+
+use rustc_hash::FxHashMap;
 use std::mem;
 use std::sync::Arc;
 
@@ -129,7 +131,7 @@ struct TranspileContext {
     /// been hoisted into a `let` binding, subsequent occurrences emit the
     /// variable name instead of recomputing. Covers `Reference`, `Noise`,
     /// `ShiftedNoise`, and other expensive nodes.
-    cse_bindings: HashMap<String, Ident>,
+    cse_bindings: FxHashMap<String, Ident>,
     /// Counter for generating unique CSE variable names.
     cse_counter: usize,
     /// Inline `Noise` nodes with `y_scale == 0.0` found inside non-flat
@@ -157,7 +159,7 @@ impl TranspileContext {
             interpolated_param_mode: false,
             interpolated_param_counter: 0,
             interpolated_refs: BTreeSet::new(),
-            cse_bindings: HashMap::new(),
+            cse_bindings: FxHashMap::default(),
             cse_counter: 0,
             inline_flat_noises: BTreeMap::new(),
         }
@@ -1608,7 +1610,7 @@ impl TranspileContext {
         }
 
         // Collect expensive subexprs from each branch
-        let branch_exprs: Vec<HashMap<String, DensityFunction>> = branches
+        let branch_exprs: Vec<FxHashMap<String, DensityFunction>> = branches
             .iter()
             .map(|b| collect_expensive_subexprs(b))
             .collect();
@@ -1628,11 +1630,10 @@ impl TranspileContext {
             }
             let df = &branch_exprs[0][&fp];
             // Skip flat-cached references — they're already cheap cache reads
-            if let DensityFunction::Reference(r) = df {
-                if self.flat_cached.contains(&r.id) {
+            if let DensityFunction::Reference(r) = df
+                && self.flat_cached.contains(&r.id) {
                     continue;
                 }
-            }
             let var = format_ident!("__cse_{}", self.cse_counter);
             self.cse_counter += 1;
             let expr = self.gen_expr(df, input, is_flat);
@@ -1752,13 +1753,12 @@ fn collect_refs_inner(df: &DensityFunction, refs: &mut Vec<String>) {
 /// function tree. These are Y-independent computations that can be cached
 /// per (x, z) column. Keyed by fingerprint → `(noise_id, xz_scale)`.
 fn collect_inline_flat_noises(df: &DensityFunction, out: &mut BTreeMap<String, (String, f64)>) {
-    if let DensityFunction::Noise(n) = df {
-        if n.y_scale == 0.0 {
+    if let DensityFunction::Noise(n) = df
+        && n.y_scale == 0.0 {
             let fp = fingerprint(df);
             out.entry(fp)
                 .or_insert_with(|| (n.noise_id.clone(), n.xz_scale));
         }
-    }
     // Recurse into children (but NOT into References — those are separate functions)
     match df {
         DensityFunction::TwoArgumentSimple(t) => {
@@ -1785,7 +1785,7 @@ fn collect_inline_flat_noises(df: &DensityFunction, out: &mut BTreeMap<String, (
 }
 
 /// Whether a node is a CSE candidate (worth deduplicating).
-fn is_cse_candidate(df: &DensityFunction) -> bool {
+const fn is_cse_candidate(df: &DensityFunction) -> bool {
     matches!(
         df,
         DensityFunction::Reference(_)
@@ -1795,13 +1795,13 @@ fn is_cse_candidate(df: &DensityFunction) -> bool {
 }
 
 /// Collect CSE-candidate subexpressions with their fingerprints.
-fn collect_expensive_subexprs(df: &DensityFunction) -> HashMap<String, DensityFunction> {
-    let mut result = HashMap::new();
+fn collect_expensive_subexprs(df: &DensityFunction) -> FxHashMap<String, DensityFunction> {
+    let mut result = FxHashMap::default();
     collect_expensive_inner(df, &mut result);
     result
 }
 
-fn collect_expensive_inner(df: &DensityFunction, out: &mut HashMap<String, DensityFunction>) {
+fn collect_expensive_inner(df: &DensityFunction, out: &mut FxHashMap<String, DensityFunction>) {
     if is_cse_candidate(df) {
         let fp = fingerprint(df);
         out.entry(fp).or_insert_with(|| df.clone());
@@ -2028,6 +2028,7 @@ fn fingerprint(df: &DensityFunction) -> String {
     out
 }
 
+#[expect(clippy::unwrap_used, reason = "write! to String is infallible")]
 fn fingerprint_inner(df: &DensityFunction, out: &mut String) {
     use std::fmt::Write;
     match df {

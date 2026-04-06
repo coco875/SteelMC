@@ -194,7 +194,6 @@ impl ImprovedNoise {
     /// coordinate work (offset, floor, permutation) is done once and reused
     /// across all 4 lanes, while the y-dependent math is vectorized.
     #[must_use]
-    #[expect(clippy::similar_names)]
     pub fn noise_with_y_scale_4x(
         &self,
         x: f64,
@@ -217,15 +216,15 @@ impl ImprovedNoise {
         let yrs = ys - ys_floor;
 
         // Y fudge (per-lane)
-        let yr_fudge = if y_scale != 0.0 {
+        let yr_fudge = if y_scale == 0.0 {
+            f64x4::splat(0.0)
+        } else {
             let y_scale_v = f64x4::splat(y_scale);
             let zero = f64x4::splat(0.0);
             let mask = y_fudges.simd_ge(zero) & y_fudges.simd_lt(yrs);
             let fudge_limits = mask.select(y_fudges, yrs);
             let epsilon = f64x4::splat(f64::from(1.0e-7_f32));
             ((fudge_limits / y_scale_v) + epsilon).floor() * y_scale_v
-        } else {
-            f64x4::splat(0.0)
         };
 
         let yrs_adjusted = yrs - yr_fudge;
@@ -238,6 +237,10 @@ impl ImprovedNoise {
     /// `ys_floor` contains the floored y coordinates (as f64 for extraction),
     /// `yrs` are the adjusted fractional y parts, `yrs_original` are the
     /// un-fudged fractional parts (used for smoothstep).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors scalar sample_and_lerp with 4x SIMD y-batching"
+    )]
     fn sample_and_lerp_4x(
         &self,
         xf: i32,
@@ -440,7 +443,10 @@ fn lerp2_4x(a1: f64x4, a2: f64x4, x00: f64x4, x10: f64x4, x01: f64x4, x11: f64x4
 }
 
 #[inline]
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors lerp3 with SIMD vectors"
+)]
 fn lerp3_4x(
     a1: f64x4,
     a2: f64x4,
@@ -478,7 +484,8 @@ fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
 }
 
 /// Calculate the dot product of a gradient vector and the position vector.
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
     let g = &GRADIENT[hash & 15];
     g[0] * x + g[1] * y + g[2] * z
@@ -514,10 +521,10 @@ mod tests {
         for &(x, z) in test_x_zs {
             for ys in test_ys {
                 for &y_scale in &y_scales {
-                    let y_fudges: [f64; 4] = if y_scale != 0.0 {
-                        *ys // use ys as fudge values (matching BlendedNoise usage)
-                    } else {
+                    let y_fudges: [f64; 4] = if y_scale == 0.0 {
                         [0.0; 4]
+                    } else {
+                        *ys // use ys as fudge values (matching BlendedNoise usage)
                     };
 
                     let simd_result = noise.noise_with_y_scale_4x(

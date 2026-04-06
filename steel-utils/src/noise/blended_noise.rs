@@ -191,7 +191,7 @@ impl BlendedNoise {
     pub fn compute_4x(&self, block_x: i32, block_ys: [i32; 4], block_z: i32) -> [f64; 4] {
         let limit_x = f64::from(block_x) * self.xz_multiplier;
         let limit_ys =
-            f64x4::from_array(block_ys.map(|y| f64::from(y))) * f64x4::splat(self.y_multiplier);
+            f64x4::from_array(block_ys.map(f64::from)) * f64x4::splat(self.y_multiplier);
         let limit_z = f64::from(block_z) * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
         let main_ys = limit_ys / f64x4::splat(self.y_factor);
@@ -237,19 +237,17 @@ impl BlendedNoise {
             let wz = wrap(limit_z * pow);
             let y_scale_pow = limit_smear * pow;
 
-            if !all_max {
-                if let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
+            if !all_max
+                && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
                     blend_min +=
                         noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
                 }
-            }
 
-            if !all_min {
-                if let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
+            if !all_min
+                && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
                     blend_max +=
                         noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
                 }
-            }
 
             pow /= 2.0;
         }
@@ -287,8 +285,8 @@ impl BlendedNoise {
             }
 
             // Scalar remainder
-            for i in (full_chunks * 4)..count {
-                cache.results[i] = self.compute_scalar(block_x, ys[i], block_z);
+            for (i, &y) in ys.iter().enumerate().skip(full_chunks * 4).take(count - full_chunks * 4) {
+                cache.results[i] = self.compute_scalar(block_x, y, block_z);
             }
         });
     }
