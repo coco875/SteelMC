@@ -218,7 +218,12 @@ impl BlendedNoise {
         }
 
         // Scalar remainder
-        for (i, &y) in block_ys.iter().enumerate().skip(full_chunks * 4).take(count - full_chunks * 4) {
+        for (i, &y) in block_ys
+            .iter()
+            .enumerate()
+            .skip(full_chunks * 4)
+            .take(count - full_chunks * 4)
+        {
             out[i] = self.compute(block_x, y, block_z);
         }
     }
