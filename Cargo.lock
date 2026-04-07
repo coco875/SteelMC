@@ -3071,7 +3071,7 @@ dependencies = [
 [[package]]
 name = "text_components"
 version = "0.1.7"
-source = "git+https://github.com/Steel-Foundation/TextComponents.git#de77b33bda2e4cf15038dc52c183f802d7a49dd4"
+source = "git+https://github.com/Steel-Foundation/TextComponents.git#e058b936e66b496385ba162b2e20344d14572a6a"
 dependencies = [
  "colored",
  "heck",
