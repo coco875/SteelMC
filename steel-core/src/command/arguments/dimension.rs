@@ -41,7 +41,7 @@ impl CommandArgument for DimensionArgument {
         }
 
         // Fall back to path-only shorthand using the sender's current namespace
-        let ns = &context.world.dimension.key.namespace;
+        let ns = &context.world.key.namespace;
         let key = Identifier::new(ns.clone(), s.to_owned());
         let world = context.server.worlds.get(&key)?.clone();
 
@@ -53,7 +53,7 @@ impl CommandArgument for DimensionArgument {
     }
 
     fn suggest(&self, prefix: &str, suggestion_ctx: &SuggestionContext) -> Vec<SuggestionEntry> {
-        let player_ns = &suggestion_ctx.world.dimension.key.namespace;
+        let player_ns = &suggestion_ctx.world.key.namespace;
 
         let mut suggestions: Vec<SuggestionEntry> = suggestion_ctx
             .server

@@ -2,7 +2,7 @@ use crate::config::{LogConfig, LogTimeFormat};
 use chrono::Utc;
 use crossterm::{
     style::{Color::DarkGrey, ResetColor, SetForegroundColor},
-    terminal::{self, Clear, ClearType},
+    terminal::{self, Clear, ClearType, disable_raw_mode},
 };
 #[cfg(feature = "spawn_chunk_display")]
 use std::io::Result;
@@ -13,7 +13,7 @@ use std::{
 };
 use steel_utils::locks::AsyncRwLock;
 use steel_utils::logger::{Level, LogData, STEEL_LOGGER, SteelLogger};
-use tokio::{sync::mpsc, task};
+use tokio::{sync::mpsc, task, time::timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::Subscriber;
 use tracing_subscriber::Layer;
@@ -83,7 +83,13 @@ impl CommandLogger {
     /// Stops the logger and waits for cleanup to complete
     pub async fn stop(&self) {
         self.cancel_token.cancel();
-        self.stopped.cancelled().await;
+        if timeout(time::Duration::from_secs(1), self.stopped.cancelled())
+            .await
+            .is_err()
+        {
+            let _ = disable_raw_mode();
+            self.stopped.cancel();
+        }
     }
 
     async fn log_loop(self: Arc<Self>, mut receiver: mpsc::UnboundedReceiver<(Level, LogData)>) {

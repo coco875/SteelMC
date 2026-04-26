@@ -1008,8 +1008,6 @@ impl Player {
 
         // --- Send CRespawn (not needed on initial join — CLogin already sent) ---
         if reason != ResetReason::InitialJoin {
-            let is_flat = self.config.is_flat;
-
             // 0x01 = keep attributes, 0x02 = keep entity data
             let data_kept: i8 = match reason {
                 ResetReason::DimensionChange => 0x03,
@@ -1018,18 +1016,17 @@ impl Player {
 
             self.send_packet(CRespawn {
                 dimension_type: new_world.dimension.id() as i32,
-                dimension_name: new_world.dimension.key().to_owned(),
+                dimension_name: new_world.key.clone(),
                 hashed_seed: new_world.obfuscated_seed(),
                 gamemode: self.game_mode.load() as u8,
                 previous_gamemode: self.prev_game_mode.load() as i8,
                 is_debug: false,
-                is_flat,
+                is_flat: new_world.is_flat,
                 has_death_location: false,
                 death_dimension_name: None,
                 death_location: None,
                 portal_cooldown_ticks: 0,
-                // TODO: read from dimension's noise_settings (varies per dimension, e.g. nether=32, end=0)
-                sea_level: 63,
+                sea_level: new_world.sea_level,
                 data_kept,
             });
         }
@@ -1113,7 +1110,7 @@ impl Player {
                     log::info!(
                         "Player {} changed dimension to {}",
                         self.gameprofile.name,
-                        world.dimension.key
+                        world.key
                     );
                 }
                 world.add_player(self.clone(), reason);

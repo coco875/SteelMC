@@ -28,8 +28,18 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 |(((), targets), world): (((), Vec<Arc<Player>>), Arc<World>),
                  context: &mut CommandContext|
                  -> Result<(), CommandError> {
-                    let dim_name = &world.dimension.key;
+                    let dim_name = &world.key;
                     let count = targets.len();
+
+                    for target in &targets {
+                        if target.get_world().key.namespace != world.key.namespace {
+                            return Err(CommandError::CommandFailed(Box::new(
+                                TextComponent::plain(
+                                    "Cross-domain teleport requires /domain so player data is saved and loaded",
+                                ),
+                            )));
+                        }
+                    }
 
                     for target in &targets {
                         let pos = *target.position.lock();

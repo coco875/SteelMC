@@ -250,8 +250,8 @@ impl Player {
             }
         }
 
-        // Vanilla: difficulty is global across all dimensions
-        for w in self.server().worlds.values() {
+        let domain = self.get_world().key.namespace.to_string();
+        for w in self.server().worlds.worlds_in_domain(&domain) {
             let mut level_data = w.level_data.write();
             level_data.data_mut().difficulty = difficulty;
             let locked = level_data.data().difficulty_locked;

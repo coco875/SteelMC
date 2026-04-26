@@ -9,12 +9,8 @@ use crate::worldgen::generator::ChunkGenerator;
 /// Uses a fixed biome (plains) for all positions, matching vanilla's
 /// `FlatLevelSource` with `FixedBiomeSource`.
 pub struct FlatChunkGenerator {
-    /// The block state id for bedrock.
-    pub bedrock: BlockStateId,
-    /// The block state id for dirt.
-    pub dirt: BlockStateId,
-    /// The block state id for grass blocks.
-    pub grass: BlockStateId,
+    /// Block layers from world bottom upwards.
+    pub layers: Vec<BlockStateId>,
     /// The biome ID for plains (cached at construction).
     biome_id: u16,
 }
@@ -23,17 +19,18 @@ impl FlatChunkGenerator {
     /// Creates a new `FlatChunkGenerator`.
     #[must_use]
     pub fn new(bedrock: BlockStateId, dirt: BlockStateId, grass: BlockStateId) -> Self {
+        Self::new_layers(vec![bedrock, dirt, dirt, grass])
+    }
+
+    /// Creates a new flat generator with explicit block layers from bottom upwards.
+    #[must_use]
+    pub fn new_layers(layers: Vec<BlockStateId>) -> Self {
         let biome_id = REGISTRY
             .biomes
             .id_from_key(&Identifier::vanilla("plains".to_string()))
             .unwrap_or(0) as u16;
 
-        Self {
-            bedrock,
-            dirt,
-            grass,
-            biome_id,
-        }
+        Self { layers, biome_id }
     }
 }
 
@@ -66,26 +63,13 @@ impl ChunkGenerator for FlatChunkGenerator {
     }
 
     fn fill_from_noise(&self, chunk: &ChunkAccess) {
-        // Layers:
-        // 0: Bedrock
-        // 1-2: Dirt
-        // 3: Grass Block
-        // (Relative to bottom of chunk, assuming 0 is bottom)
-
-        // TODO: Get actual height from level/config?
-        // For now assuming standard height behavior where 0 is bottom of the chunk data.
+        let max_relative_y = chunk.sections().sections.len() * 16;
 
         for x in 0..16 {
             for z in 0..16 {
-                // Bedrock at bottom
-                chunk.set_relative_block(x, 0, z, self.bedrock);
-
-                // Dirt layers
-                chunk.set_relative_block(x, 1, z, self.dirt);
-                chunk.set_relative_block(x, 2, z, self.dirt);
-
-                // Grass block
-                chunk.set_relative_block(x, 3, z, self.grass);
+                for (relative_y, block) in self.layers.iter().enumerate().take(max_relative_y) {
+                    chunk.set_relative_block(x, relative_y, z, *block);
+                }
             }
         }
     }

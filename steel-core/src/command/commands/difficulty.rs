@@ -81,8 +81,8 @@ impl CommandExecutor<()> for SetExecutor {
             )));
         }
 
-        // Vanilla: difficulty is global across all dimensions
-        for world in context.server.worlds.values() {
+        let domain = context.world.key.namespace.to_string();
+        for world in context.server.worlds.worlds_in_domain(&domain) {
             let mut level_data = world.level_data.write();
             level_data.data_mut().difficulty = difficulty;
             let locked = level_data.data().difficulty_locked;

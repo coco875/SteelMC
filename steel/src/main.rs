@@ -140,10 +140,18 @@ async fn main_async(chunk_runtime: Arc<Runtime>) {
     let cancel_token = CancellationToken::new();
 
     // Load config once at startup
-    let steel_config = config::load_or_create(Path::new("config/config.toml"));
+    let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("Failed to load configuration: {error}");
+            return;
+        }
+    };
     let logger = init_tracing(cancel_token.clone(), steel_config.log.clone()).await;
 
-    run_server(chunk_runtime, cancel_token, &logger, steel_config).await;
+    if let Err(error) = run_server(chunk_runtime, cancel_token, &logger, steel_config).await {
+        log::error!("Server startup failed: {error}");
+    }
 
     logger.stop().await;
 }
@@ -153,7 +161,7 @@ async fn run_server(
     cancel_token: CancellationToken,
     logger: &Arc<CommandLogger>,
     steel_config: config::SteelConfig,
-) {
+) -> Result<(), String> {
     #[cfg(feature = "deadlock_detection")]
     {
         // only for #[cfg]
@@ -182,8 +190,9 @@ async fn run_server(
         });
     }
 
-    let mut steel =
-        SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config).await;
+    let mut steel = SteelServer::new(chunk_runtime.clone(), cancel_token.clone(), steel_config)
+        .await
+        .map_err(|e| e.to_string())?;
 
     generate_spawn_chunks(&steel.server, logger).await;
 
@@ -227,4 +236,5 @@ async fn run_server(
     }
 
     log::info!("Server stopped");
+    Ok(())
 }

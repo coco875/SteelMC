@@ -3,27 +3,30 @@
 pub mod registry_cache;
 /// The tick rate manager for the server.
 pub mod tick_rate_manager;
+/// Domain-aware loaded world map.
+pub mod worlds;
 
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::command::CommandDispatcher;
-use crate::config::{RuntimeConfig, WorldGeneratorTypes, WorldStorageConfig};
+use crate::config::{RuntimeConfig, WorldsConfig};
 use crate::entity::{SharedEntity, init_entities};
 
+use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::player::Player;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data_storage::PlayerDataStorage;
 use crate::portal::DimensionChangeRequest;
 use crate::server::registry_cache::RegistryCache;
+use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
-use crate::worldgen::{
-    BiomeSourceKind, ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
-};
+use crate::worldgen::WorldGeneratorRegistry;
+use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use small_map::FxSmallMap;
 use std::{
     mem,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -33,11 +36,9 @@ use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
     CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
-use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::game_rules::GameRuleValue;
-use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
-use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt, vanilla_blocks};
+use steel_registry::{REGISTRY, Registry, RegistryEntry};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
@@ -54,6 +55,19 @@ const CHUNK_SENDING_TPS: u64 = 20;
 /// Tick rate for the chunk scheduling loop.
 const CHUNK_SCHEDULING_TPS: u64 = 20;
 
+fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
+    let spawn = world.level_data.read().data().spawn.clone();
+    *player.position.lock() =
+        DVec3::new(f64::from(spawn.x), f64::from(spawn.y), f64::from(spawn.z));
+    player.rotation.store((spawn.angle, 0.0));
+    player.game_mode.store(world.default_gamemode);
+    player.prev_game_mode.store(world.default_gamemode);
+    player
+        .abilities
+        .lock()
+        .update_for_game_mode(world.default_gamemode);
+}
+
 /// The main server struct.
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
@@ -65,7 +79,7 @@ pub struct Server {
     /// The registry cache for the server.
     pub registry_cache: RegistryCache,
     /// A list of all the worlds on the server.
-    pub worlds: FxSmallMap<8, Identifier, Arc<World>>,
+    pub worlds: WorldMap,
     /// The tick rate manager for the server.
     pub tick_rate_manager: SyncRwLock<TickRateManager>,
     /// Saves and dispatches commands to appropriate handlers.
@@ -79,26 +93,21 @@ pub struct Server {
 impl Server {
     /// Creates a new server.
     ///
-    /// # Panics
-    ///
-    /// Panics if the global registry has already been initialized.
     pub async fn new(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,
         config: RuntimeConfig,
-        seed_str: &str,
-        world_generator: &WorldGeneratorTypes,
-        world_storage_config: &WorldStorageConfig,
-    ) -> Self {
+        worlds_config: WorldsConfig,
+    ) -> Result<Self, String> {
         let config = Arc::new(config);
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
         registry.freeze();
         log::info!("Vanilla registry loaded in {:?}", start.elapsed());
 
-        REGISTRY
-            .init(registry)
-            .expect("We should be the ones who init the REGISTRY");
+        if REGISTRY.init(registry).is_err() {
+            return Err("global registry has already been initialized".to_owned());
+        }
 
         // Initialize behavior registries after the main registry is frozen
         init_behaviors();
@@ -108,17 +117,13 @@ impl Server {
 
         let registry_cache = RegistryCache::new(config.compression);
 
-        let seed: i64 = if seed_str.is_empty() {
-            rand::random()
-        } else {
-            seed_str.parse().unwrap_or_else(|_| {
-                let mut hash: i64 = 0;
-                for byte in seed_str.bytes() {
-                    hash = hash.wrapping_mul(31).wrapping_add(i64::from(byte));
-                }
-                hash
-            })
-        };
+        let generator_registry = WorldGeneratorRegistry::new_with_builtins()
+            .map_err(|e| format!("failed to initialize world generator registry: {e}"))?;
+        let storage_registry = WorldStorageRegistry::new_with_builtins()
+            .map_err(|e| format!("failed to initialize world storage registry: {e}"))?;
+        let resolved_worlds = worlds_config
+            .validate_and_resolve(&generator_registry, &storage_registry)
+            .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
@@ -128,66 +133,67 @@ impl Server {
             }
             builder
                 .build()
-                .expect("Failed to create generation thread pool")
+                .map_err(|e| format!("failed to create generation thread pool: {e}"))?
         });
 
-        let overworld = World::new_with_config(
-            chunk_runtime.clone(),
-            &OVERWORLD,
-            seed,
-            Self::make_world_config(
-                &OVERWORLD,
-                seed,
-                world_generator,
-                world_storage_config,
-                &config,
-            ),
-            generation_pool.clone(),
+        let player_data_storage = PlayerDataStorage::new(
+            resolved_worlds.save_path.clone(),
+            resolved_worlds.player_storage.clone(),
         )
         .await
-        .expect("Failed to create overworld");
+        .map_err(|e| format!("failed to create player data storage: {e}"))?;
+        let mut worlds = WorldMap::new(
+            resolved_worlds.default_domain.clone(),
+            &resolved_worlds.domains,
+        );
 
-        let nether = World::new_with_config(
-            chunk_runtime.clone(),
-            &THE_NETHER,
-            seed,
-            Self::make_world_config(
-                &THE_NETHER,
-                seed,
-                world_generator,
-                world_storage_config,
-                &config,
-            ),
-            generation_pool.clone(),
-        )
-        .await
-        .expect("Failed to create nether");
-
-        let end = World::new_with_config(
-            chunk_runtime.clone(),
-            &THE_END,
-            seed,
-            Self::make_world_config(
-                &THE_END,
-                seed,
-                world_generator,
-                world_storage_config,
-                &config,
-            ),
-            generation_pool,
-        )
-        .await
-        .expect("Failed to create end");
-
-        let player_data_storage = PlayerDataStorage::new()
+        for world_entry in &resolved_worlds.worlds {
+            let generator_output = generator_registry
+                .create(
+                    &world_entry.generator,
+                    &world_entry.generator_config,
+                    world_entry.seed,
+                )
+                .map_err(|e| format!("failed to create generator for {}: {e}", world_entry.key))?;
+            let default_world_path = resolved_worlds
+                .save_path
+                .join(&world_entry.domain)
+                .join("worlds")
+                .join(&world_entry.name);
+            let storage_output = storage_registry
+                .create(
+                    &world_entry.storage,
+                    &resolved_worlds.save_path,
+                    Path::new(&default_world_path),
+                )
+                .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+            let world = World::new_with_config(
+                chunk_runtime.clone(),
+                world_entry.key.clone(),
+                generator_output.dimension,
+                world_entry.seed,
+                WorldConfig {
+                    storage: storage_output.storage,
+                    level_data_path: storage_output
+                        .level_data_path
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    generator: Arc::new(generator_output.generator),
+                    view_distance: config.view_distance,
+                    simulation_distance: config.simulation_distance,
+                    compression: config.compression,
+                    is_flat: generator_output.is_flat,
+                    sea_level: generator_output.sea_level,
+                    default_gamemode: world_entry.default_gamemode,
+                    difficulty: world_entry.difficulty,
+                },
+                generation_pool.clone(),
+            )
             .await
-            .expect("Failed to create player data storage");
-        let mut worlds: FxSmallMap<8, Identifier, Arc<World>> = FxSmallMap::default();
-        worlds.insert(OVERWORLD.key.clone(), overworld);
-        worlds.insert(THE_NETHER.key.clone(), nether);
-        worlds.insert(THE_END.key.clone(), end);
+            .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
+            worlds.insert(world_entry.key.clone(), world);
+        }
 
-        Server {
+        Ok(Server {
             config,
             cancel_token,
             key_store: KeyStore::create(),
@@ -197,7 +203,7 @@ impl Server {
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
             pending_dimension_changes: SyncMutex::new(vec![]),
-        }
+        })
     }
 
     /// Adds a player to the server.
@@ -207,28 +213,83 @@ impl Server {
     pub async fn add_player(&self, player: Arc<Player>) {
         use crate::player::ResetReason;
 
-        // Load saved player data if it exists
-        match self.player_data_storage.load(player.gameprofile.id).await {
+        let target_domain = match self
+            .player_data_storage
+            .load_global(player.gameprofile.id)
+            .await
+        {
+            Ok(Some(global)) if self.worlds.has_domain(&global.last_active_domain) => {
+                global.last_active_domain
+            }
+            Ok(Some(global)) => {
+                log::warn!(
+                    "Player {} last active domain {} no longer exists, using default domain",
+                    player.gameprofile.name,
+                    global.last_active_domain
+                );
+                self.worlds.default_domain().to_owned()
+            }
+            Ok(None) => self.worlds.default_domain().to_owned(),
+            Err(e) => {
+                log::error!(
+                    "Failed to load global player data for {}: {e}",
+                    player.gameprofile.name
+                );
+                player.disconnect("Failed to load player data");
+                return;
+            }
+        };
+
+        let mut world = self
+            .worlds
+            .default_world(&target_domain)
+            .cloned()
+            .unwrap_or_else(|| self.overworld().clone());
+
+        match self
+            .player_data_storage
+            .load_domain(&target_domain, player.gameprofile.id)
+            .await
+        {
             Ok(Some(saved_data)) => {
-                log::info!("Loaded saved data for player {}", player.gameprofile.name);
+                if let Ok(saved_world_key) = saved_data.dimension.parse::<Identifier>() {
+                    if saved_world_key.namespace.as_ref() == target_domain
+                        && let Some(saved_world) = self.worlds.get(&saved_world_key)
+                    {
+                        world = saved_world.clone();
+                    } else {
+                        log::warn!(
+                            "Saved world {} for player {} is missing, using domain default",
+                            saved_world_key,
+                            player.gameprofile.name
+                        );
+                    }
+                }
+                player.set_world(world.clone());
                 saved_data.apply_to_player(&player);
+                log::info!("Loaded saved data for player {}", player.gameprofile.name);
             }
             Ok(None) => {
+                player.set_world(world.clone());
+                apply_first_visit_defaults(&player, &world);
                 log::debug!(
-                    "No saved data for player {}, using defaults",
-                    player.gameprofile.name
+                    "No saved data for player {} in domain {}, using defaults",
+                    player.gameprofile.name,
+                    target_domain
                 );
             }
             Err(e) => {
                 log::error!(
-                    "Failed to load player data for {}: {e}",
-                    player.gameprofile.name
+                    "Failed to load domain player data for {} in domain {}: {e}",
+                    player.gameprofile.name,
+                    target_domain
                 );
+                player.disconnect("Failed to load player data");
+                return;
             }
         }
 
         player.reset_health_if_dead();
-        let world = self.overworld().clone();
 
         // Get gamerule values
         let reduced_debug_info =
@@ -240,12 +301,11 @@ impl Server {
 
         // Get world data
         let hashed_seed = world.obfuscated_seed();
-        let dimension_key = world.dimension.key.clone();
 
         player.send_packet(CLogin {
             player_id: player.id,
             hardcore: false,
-            levels: REGISTRY.dimension_types.get_ids(),
+            levels: self.worlds.keys().cloned().collect(),
             max_players: self.config.max_players as i32,
             chunk_radius: player.view_distance().into(),
             simulation_distance: self.config.simulation_distance.into(),
@@ -253,21 +313,16 @@ impl Server {
             show_death_screen: !immediate_respawn,
             do_limited_crafting,
             common_player_spawn_info: CommonPlayerSpawnInfo {
-                dimension_type: REGISTRY
-                    .dimension_types
-                    .by_key(&dimension_key)
-                    .expect("Should be registered")
-                    .id() as i32,
-                dimension: dimension_key,
+                dimension_type: world.dimension.id() as i32,
+                dimension: world.key.clone(),
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),
                 previous_game_type: Some(player.prev_game_mode.load()),
                 is_debug: false,
-                is_flat: self.config.is_flat,
+                is_flat: world.is_flat,
                 last_death_location: None,
                 portal_cooldown: 0,
-                // TODO: read from dimension's noise_settings (varies per dimension, e.g. nether=32, end=0)
-                sea_level: 63,
+                sea_level: world.sea_level,
             },
             enforces_secure_chat: self.config.enforce_secure_chat,
         });
@@ -380,11 +435,11 @@ impl Server {
         sample
     }
 
-    /// Returns the overworld or if not exists the first world.
+    /// Returns the server default world or if not exists the first world.
     /// # Panics
     /// if no world exists on this server crisis is there!
     pub fn overworld(&self) -> &Arc<World> {
-        self.worlds.get(&OVERWORLD.key).unwrap_or_else(|| {
+        self.worlds.server_default_world().unwrap_or_else(|| {
             self.worlds
                 .values()
                 .next()
@@ -392,14 +447,16 @@ impl Server {
         })
     }
 
-    /// Returns the nether or if not exists None.
+    /// Returns the default domain's conventional nether world, if present.
     pub fn nether(&self) -> Option<&Arc<World>> {
-        self.worlds.get(&THE_NETHER.key)
+        let key = Identifier::new(self.worlds.default_domain().to_owned(), "the_nether");
+        self.worlds.get(&key)
     }
 
-    /// Returns the end or if not exists None.
+    /// Returns the default domain's conventional end world, if present.
     pub fn the_end(&self) -> Option<&Arc<World>> {
-        self.worlds.get(&THE_END.key)
+        let key = Identifier::new(self.worlds.default_domain().to_owned(), "the_end");
+        self.worlds.get(&key)
     }
 
     /// Runs the three independent tick loops concurrently.
@@ -649,6 +706,72 @@ impl Server {
         }
     }
 
+    /// Switches a player to another domain, saving and loading domain-scoped data.
+    pub async fn switch_player_domain(
+        self: Arc<Self>,
+        player: Arc<Player>,
+        target_domain: String,
+    ) -> Result<(), String> {
+        if !self.worlds.has_domain(&target_domain) {
+            return Err(format!("unknown domain {target_domain}"));
+        }
+
+        let current_domain = player.get_world().key.namespace.to_string();
+        if current_domain == target_domain {
+            return Ok(());
+        }
+
+        self.player_data_storage
+            .save_domain(&current_domain, &player)
+            .await
+            .map_err(|e| format!("failed to save current domain data: {e}"))?;
+
+        let mut target_world = self
+            .worlds
+            .default_world(&target_domain)
+            .cloned()
+            .ok_or_else(|| format!("domain {target_domain} has no default world"))?;
+
+        match self
+            .player_data_storage
+            .load_domain(&target_domain, player.gameprofile.id)
+            .await
+            .map_err(|e| format!("failed to load target domain data: {e}"))?
+        {
+            Some(saved_data) => {
+                if let Ok(saved_world_key) = saved_data.dimension.parse::<Identifier>() {
+                    if saved_world_key.namespace.as_ref() == target_domain
+                        && let Some(saved_world) = self.worlds.get(&saved_world_key)
+                    {
+                        target_world = saved_world.clone();
+                    } else {
+                        log::warn!(
+                            "Saved world {} for player {} is missing, using domain default",
+                            saved_world_key,
+                            player.gameprofile.name
+                        );
+                    }
+                }
+                saved_data.apply_to_player(&player);
+            }
+            None => apply_first_visit_defaults(&player, &target_world),
+        }
+
+        let pos = *player.position.lock();
+        let rotation = player.rotation.load();
+        player.reset(target_world, crate::player::ResetReason::DimensionChange);
+        player.spawn(pos, rotation, crate::player::ResetReason::DimensionChange);
+        self.player_data_storage
+            .save_global(
+                player.gameprofile.id,
+                &crate::player::player_data_storage::GlobalPlayerData {
+                    last_active_domain: target_domain,
+                },
+            )
+            .await
+            .map_err(|e| format!("failed to save global player data: {e}"))
+    }
+
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
     async fn tick_worlds_game(&self, tick_count: u64, runs_normally: bool) {
         let mut tasks = Vec::with_capacity(self.worlds.len());
@@ -771,91 +894,6 @@ impl Server {
 
         player.send_packet(state_packet);
         player.send_packet(step_packet);
-    }
-    /// Selects the appropriate chunk generator for the given dimension type.
-    fn make_generator_for_dimension(
-        dimension: DimensionTypeRef,
-        seed: i64,
-        world_generator: &WorldGeneratorTypes,
-    ) -> ChunkGeneratorType {
-        match world_generator {
-            WorldGeneratorTypes::Empty => ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
-            WorldGeneratorTypes::Vanilla => {
-                let seed_u64 = seed as u64;
-                if dimension == &OVERWORLD {
-                    let source = BiomeSourceKind::overworld(seed_u64);
-                    ChunkGeneratorType::Overworld(VanillaGenerator::new(source, seed_u64))
-                } else if dimension == &THE_NETHER {
-                    let source = BiomeSourceKind::nether(seed_u64);
-                    ChunkGeneratorType::Nether(VanillaGenerator::new(source, seed_u64))
-                } else {
-                    let source = BiomeSourceKind::end(seed_u64);
-                    ChunkGeneratorType::End(VanillaGenerator::new(source, seed_u64))
-                }
-            }
-            WorldGeneratorTypes::Flat => {
-                if dimension == &THE_NETHER {
-                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::BEDROCK),
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::NETHER_BRICKS),
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::NETHERRACK),
-                    ))
-                } else if dimension == &THE_END {
-                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::BEDROCK),
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::END_STONE),
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::END_STONE),
-                    ))
-                } else {
-                    ChunkGeneratorType::Flat(FlatChunkGenerator::new(
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::BEDROCK),
-                        REGISTRY.blocks.get_default_state_id(&vanilla_blocks::DIRT),
-                        REGISTRY
-                            .blocks
-                            .get_default_state_id(&vanilla_blocks::GRASS_BLOCK),
-                    ))
-                }
-            }
-        }
-    }
-
-    fn make_world_config(
-        dimension: DimensionTypeRef,
-        seed: i64,
-        world_generator: &WorldGeneratorTypes,
-        world_storage_config: &WorldStorageConfig,
-        config: &RuntimeConfig,
-    ) -> WorldConfig {
-        WorldConfig {
-            storage: match world_storage_config {
-                WorldStorageConfig::Disk { path } => WorldStorageConfig::Disk {
-                    path: format!("{}/{}", path, dimension.key.path),
-                },
-                WorldStorageConfig::RamOnly => WorldStorageConfig::RamOnly,
-            },
-            generator: Arc::new(Self::make_generator_for_dimension(
-                dimension,
-                seed,
-                world_generator,
-            )),
-            view_distance: config.view_distance,
-            simulation_distance: config.simulation_distance,
-            compression: config.compression,
-        }
     }
     /// Queues a dimension change to be processed after the current tick.
     pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {

@@ -94,13 +94,19 @@ impl LevelData {
     /// Creates new level data with the given seed.
     #[must_use]
     pub fn new_with_seed(seed: i64) -> Self {
+        Self::new_with_seed_and_difficulty(seed, Difficulty::default())
+    }
+
+    /// Creates new level data with the given seed and difficulty.
+    #[must_use]
+    pub fn new_with_seed_and_difficulty(seed: i64, difficulty: Difficulty) -> Self {
         Self {
             seed,
             game_time: 0,
             day_time: 0,
             spawn: SpawnPoint::default(),
             weather: WeatherState::default(),
-            difficulty: Difficulty::default(),
+            difficulty,
             difficulty_locked: false,
             game_rules: FxHashMap::default(),
             game_rules_values: GameRuleValues::new(&REGISTRY.game_rules),
@@ -156,12 +162,16 @@ impl LevelDataManager {
     ///
     /// If `level.json` exists, it will be loaded (the provided seed is ignored).
     /// Otherwise, new data will be created with the provided seed.
-    pub async fn new(world_dir: Option<impl AsRef<Path>>, seed: i64) -> io::Result<Self> {
-        let (data, path) = match &world_dir {
+    pub async fn new(
+        world_dir: Option<impl AsRef<Path>>,
+        seed: i64,
+        difficulty: Difficulty,
+    ) -> io::Result<Self> {
+        let (data, path, dirty) = match &world_dir {
             Some(dir) => {
                 let path = dir.as_ref().join("level.json");
 
-                let data = if path.exists() {
+                let (data, dirty) = if path.exists() {
                     // Load existing level data (seed from file takes precedence)
                     let content = fs::read_to_string(&path).await?;
                     let mut loaded: LevelData = serde_json::from_str(&content).map_err(|e| {
@@ -172,21 +182,24 @@ impl LevelDataManager {
                     })?;
                     // Initialize runtime game rules from serialized values
                     loaded.load_game_rules();
-                    loaded
+                    (loaded, false)
                 } else {
-                    // Create new level data with the provided seed
-                    LevelData::new_with_seed(seed)
+                    // Create new level data with the provided defaults.
+                    (
+                        LevelData::new_with_seed_and_difficulty(seed, difficulty),
+                        true,
+                    )
                 };
-                (data, Some(path))
+                (data, Some(path), dirty)
             }
-            None => (LevelData::new_with_seed(seed), None),
+            None => (
+                LevelData::new_with_seed_and_difficulty(seed, difficulty),
+                None,
+                false,
+            ),
         };
 
-        Ok(Self {
-            path,
-            data,
-            dirty: false,
-        })
+        Ok(Self { path, data, dirty })
     }
 
     /// Gets a reference to the level data.

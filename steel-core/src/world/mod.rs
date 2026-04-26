@@ -55,7 +55,10 @@ pub enum RaytraceAction {
 }
 
 use glam::DVec3;
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos, types::UpdateFlags};
+use steel_utils::{
+    BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos,
+    types::{GameType, UpdateFlags},
+};
 use tokio::{runtime::Runtime, time::Instant};
 
 use crate::{
@@ -112,6 +115,8 @@ const SEND_PLAYER_INFO_INTERVAL: u64 = 600;
 pub struct WorldConfig {
     /// Storage configuration for chunk persistence.
     pub storage: WorldStorageConfig,
+    /// Directory for level data. `None` means level data is ephemeral.
+    pub level_data_path: Option<String>,
     /// World generator.
     pub generator: Arc<ChunkGeneratorType>,
     /// Server view distance (maximum chunk radius).
@@ -120,6 +125,14 @@ pub struct WorldConfig {
     pub simulation_distance: u8,
     /// Compression settings for encoding broadcast packets.
     pub compression: Option<CompressionInfo>,
+    /// Whether the world should be marked as flat in login/respawn packets.
+    pub is_flat: bool,
+    /// Sea level sent in login/respawn packets.
+    pub sea_level: i32,
+    /// Default game mode for first-visit player data.
+    pub default_gamemode: GameType,
+    /// Difficulty used when creating new level data.
+    pub difficulty: steel_utils::types::Difficulty,
 }
 
 /// A struct that represents a world.
@@ -130,6 +143,8 @@ pub struct World {
     pub players: PlayerMap,
     /// Spatial index for player proximity queries.
     pub player_area_map: PlayerAreaMap,
+    /// Loaded world identifier (`domain:world`).
+    pub key: Identifier,
     /// The dimension of the world.
     pub dimension: DimensionTypeRef,
     /// Level data manager for persistent world state.
@@ -140,6 +155,12 @@ pub struct World {
     pub simulation_distance: u8,
     /// Compression settings for encoding broadcast packets.
     pub compression: Option<CompressionInfo>,
+    /// Whether the world should be marked as flat in login/respawn packets.
+    pub is_flat: bool,
+    /// Sea level sent in login/respawn packets.
+    pub sea_level: i32,
+    /// Default game mode for first-visit player data.
+    pub default_gamemode: GameType,
     /// Whether the tick rate is running normally (not frozen/paused).
     /// When false, movement validation checks are skipped.
     tick_runs_normally: AtomicBool,
@@ -172,6 +193,7 @@ impl World {
     /// * `config` - World configuration including storage options
     pub async fn new_with_config(
         chunk_runtime: Arc<Runtime>,
+        key: Identifier,
         dimension: DimensionTypeRef,
         seed: i64,
         config: WorldConfig,
@@ -180,6 +202,9 @@ impl World {
         let view_distance = config.view_distance;
         let simulation_distance = config.simulation_distance;
         let compression = config.compression;
+        let is_flat = config.is_flat;
+        let sea_level = config.sea_level;
+        let default_gamemode = config.default_gamemode;
         // Create storage backend based on config
         let storage: Arc<ChunkStorage> = match &config.storage {
             WorldStorageConfig::Disk { path } => {
@@ -192,11 +217,8 @@ impl World {
 
         // Create or skip level data based on config
 
-        let path = match &config.storage {
-            WorldStorageConfig::Disk { path } => Some(Path::new(path)),
-            WorldStorageConfig::RamOnly => None,
-        };
-        let level_data = LevelDataManager::new(path, seed).await?;
+        let path = config.level_data_path.as_deref().map(Path::new);
+        let level_data = LevelDataManager::new(path, seed, config.difficulty).await?;
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
         //     REGISTRY
         //         .blocks
@@ -226,11 +248,15 @@ impl World {
             )),
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
+            key,
             dimension,
             level_data: SyncRwLock::new(level_data),
             view_distance,
             simulation_distance,
             compression,
+            is_flat,
+            sea_level,
+            default_gamemode,
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
@@ -247,10 +273,7 @@ impl World {
     )]
     pub async fn cleanup(&self, total_saved: &mut usize) {
         match self.level_data.write().save().await {
-            Ok(()) => log::info!(
-                "World {} level data saved successfully",
-                self.dimension.key.path
-            ),
+            Ok(()) => log::info!("World {} level data saved successfully", self.key),
             Err(e) => log::error!("Failed to save world level data: {e}"),
         }
 
