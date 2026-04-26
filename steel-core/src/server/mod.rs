@@ -153,6 +153,10 @@ pub struct Server {
 impl Server {
     /// Creates a new server.
     ///
+    #[expect(
+        clippy::too_many_lines,
+        reason = "server initialization is a single cohesive flow"
+    )]
     pub async fn new(
         chunk_runtime: Arc<Runtime>,
         cancel_token: CancellationToken,

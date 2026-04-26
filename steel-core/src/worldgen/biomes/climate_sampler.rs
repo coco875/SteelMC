@@ -7,6 +7,8 @@
 //! noise router (`router_temperature`, `router_vegetation`, etc.). Other dimensions
 //! need their own climate samplers with their own transpiled density functions.
 
+use std::f32::consts::TAU;
+
 use steel_utils::BlockPos;
 use steel_utils::climate::{Parameter, ParameterPoint, TargetPoint, quantize_coord};
 use steel_utils::random::{Random, xoroshiro::Xoroshiro};
@@ -115,7 +117,7 @@ impl OverworldClimateSampler {
             }
 
             angle += radius_increment / radius;
-            if angle > std::f32::consts::TAU {
+            if angle > TAU {
                 angle = 0.0;
                 radius += radius_increment;
             }

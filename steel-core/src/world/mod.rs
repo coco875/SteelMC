@@ -421,6 +421,10 @@ impl World {
         Ok(())
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "dx_chunk/dz_chunk mirror vanilla's dXChunk/dZChunk"
+    )]
     fn find_spawn_in_loaded_radius(&self, spawn_chunk: ChunkPos) -> Option<BlockPos> {
         let mut x_chunk_offset = 0;
         let mut z_chunk_offset = 0;
@@ -489,7 +493,7 @@ impl World {
         for y in (self.get_min_y()..=top_y + 1).rev() {
             let pos = BlockPos::new(x, y, z);
             let state = self.get_block_state(pos);
-            if state.get_block().config.liquid {
+            if state.has_fluid() {
                 break;
             }
 
