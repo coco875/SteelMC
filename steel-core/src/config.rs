@@ -4,9 +4,10 @@
 //! defines `RuntimeConfig` (the subset kept after startup) and the world/domain
 //! configuration types that both crates share.
 
-use serde::{Deserialize, Deserializer};
+use rustc_hash::FxHashSet;
+use serde::{Deserialize, Deserializer, de::Error as DeError};
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     path::{Component, Path, PathBuf},
 };
 pub use steel_protocol::packet_traits::CompressionInfo;
@@ -15,6 +16,7 @@ use steel_utils::Identifier;
 use steel_utils::codec::Or;
 use steel_utils::types::{Difficulty, GameType};
 use text_components::TextComponent;
+use toml::map::Map;
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::worldgen::registry::WorldGeneratorRegistry;
@@ -235,7 +237,7 @@ impl StorageSelection {
     pub fn config_value(&self) -> toml::Value {
         self.config
             .clone()
-            .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()))
+            .unwrap_or_else(|| toml::Value::Table(Map::new()))
     }
 }
 
@@ -304,9 +306,11 @@ impl WorldsConfig {
             return Err("worlds.toml must declare at least one domain".to_owned());
         }
 
-        let root_seed = seed_from_config(self.seed.as_deref().unwrap_or(""));
-        let root_gamemode = self.default_gamemode.unwrap_or(GameType::Survival);
-        let root_difficulty = self.difficulty.unwrap_or(Difficulty::Normal);
+        let root_defaults = RootWorldDefaults {
+            seed: seed_from_config(self.seed.as_deref().unwrap_or("")),
+            gamemode: self.default_gamemode.unwrap_or(GameType::Survival),
+            difficulty: self.difficulty.unwrap_or(Difficulty::Normal),
+        };
         let root_storage = self
             .storage
             .clone()
@@ -324,92 +328,19 @@ impl WorldsConfig {
         let mut resolved_worlds = Vec::new();
 
         for (domain_name, domain) in &self.domains {
-            validate_domain_name(domain_name)?;
-            if domain.default {
-                if default_domain.replace(domain_name.clone()).is_some() {
-                    return Err("worlds.toml must declare exactly one default domain".to_owned());
-                }
+            if domain.default && default_domain.replace(domain_name.clone()).is_some() {
+                return Err("worlds.toml must declare exactly one default domain".to_owned());
             }
-            if domain.worlds.is_empty() {
-                return Err(format!(
-                    "domain {domain_name} must declare at least one world"
-                ));
-            }
-
-            let domain_seed = domain
-                .seed
-                .as_deref()
-                .map(seed_from_config)
-                .unwrap_or(root_seed);
-            let domain_gamemode = domain.default_gamemode.unwrap_or(root_gamemode);
-            let domain_difficulty = domain.difficulty.unwrap_or(root_difficulty);
-            let domain_storage = domain
-                .storage
-                .clone()
-                .unwrap_or_else(|| root_storage.clone());
-            storage_registry.validate_selection(&domain_storage)?;
-
-            let mut seen_world_names = HashSet::new();
-            let mut default_world = None;
-            let mut domain_world_ids = Vec::with_capacity(domain.worlds.len());
-
-            for world in &domain.worlds {
-                validate_world_name(&world.name, domain_name)?;
-                if !seen_world_names.insert(world.name.clone()) {
-                    return Err(format!(
-                        "domain {domain_name} declares duplicate world {}",
-                        world.name
-                    ));
-                }
-
-                let world_key = Identifier::new(domain_name.clone(), world.name.clone());
-                if world.default && default_world.replace(world_key.clone()).is_some() {
-                    return Err(format!(
-                        "domain {domain_name} must declare exactly one default world"
-                    ));
-                }
-
-                let generator_config = world
-                    .config
-                    .clone()
-                    .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new()));
-                generator_registry.validate_config(&world.generator, &generator_config)?;
-
-                let storage = world
-                    .storage
-                    .clone()
-                    .unwrap_or_else(|| domain_storage.clone());
-                storage_registry.validate_selection(&storage)?;
-
-                domain_world_ids.push(world_key.clone());
-                resolved_worlds.push(ResolvedWorldConfig {
-                    key: world_key,
-                    domain: domain_name.clone(),
-                    name: world.name.clone(),
-                    generator: world.generator.clone(),
-                    generator_config,
-                    seed: world
-                        .seed
-                        .as_deref()
-                        .map(seed_from_config)
-                        .unwrap_or(domain_seed),
-                    default_gamemode: world.default_gamemode.unwrap_or(domain_gamemode),
-                    difficulty: world.difficulty.unwrap_or(domain_difficulty),
-                    storage,
-                });
-            }
-
-            let Some(default_world) = default_world else {
-                return Err(format!(
-                    "domain {domain_name} must declare exactly one default world"
-                ));
-            };
-
-            resolved_domains.push(ResolvedDomainConfig {
-                name: domain_name.clone(),
-                default_world,
-                worlds: domain_world_ids,
-            });
+            let (resolved_domain, mut domain_worlds) = resolve_domain_config(
+                domain_name,
+                domain,
+                root_defaults,
+                &root_storage,
+                generator_registry,
+                storage_registry,
+            )?;
+            resolved_domains.push(resolved_domain);
+            resolved_worlds.append(&mut domain_worlds);
         }
 
         if resolved_worlds.is_empty() {
@@ -427,6 +358,138 @@ impl WorldsConfig {
             worlds: resolved_worlds,
             player_storage,
         })
+    }
+}
+
+fn resolve_domain_config(
+    domain_name: &str,
+    domain: &DomainConfig,
+    root_defaults: RootWorldDefaults,
+    root_storage: &StorageSelection,
+    generator_registry: &WorldGeneratorRegistry,
+    storage_registry: &WorldStorageRegistry,
+) -> Result<(ResolvedDomainConfig, Vec<ResolvedWorldConfig>), String> {
+    validate_domain_name(domain_name)?;
+    if domain.worlds.is_empty() {
+        return Err(format!(
+            "domain {domain_name} must declare at least one world"
+        ));
+    }
+
+    let domain_defaults = DomainWorldDefaults::from_config(domain, root_defaults);
+    let domain_storage = domain
+        .storage
+        .clone()
+        .unwrap_or_else(|| root_storage.clone());
+    storage_registry.validate_selection(&domain_storage)?;
+
+    let mut seen_world_names = FxHashSet::default();
+    let mut default_world = None;
+    let mut domain_world_ids = Vec::with_capacity(domain.worlds.len());
+    let mut resolved_worlds = Vec::with_capacity(domain.worlds.len());
+
+    for world in &domain.worlds {
+        let resolved_world = resolve_world_config(
+            domain_name,
+            world,
+            domain_defaults,
+            &domain_storage,
+            generator_registry,
+            storage_registry,
+        )?;
+
+        if !seen_world_names.insert(world.name.clone()) {
+            return Err(format!(
+                "domain {domain_name} declares duplicate world {}",
+                world.name
+            ));
+        }
+        if world.default && default_world.replace(resolved_world.key.clone()).is_some() {
+            return Err(format!(
+                "domain {domain_name} must declare exactly one default world"
+            ));
+        }
+
+        domain_world_ids.push(resolved_world.key.clone());
+        resolved_worlds.push(resolved_world);
+    }
+
+    let Some(default_world) = default_world else {
+        return Err(format!(
+            "domain {domain_name} must declare exactly one default world"
+        ));
+    };
+
+    Ok((
+        ResolvedDomainConfig {
+            name: domain_name.to_owned(),
+            default_world,
+            worlds: domain_world_ids,
+        },
+        resolved_worlds,
+    ))
+}
+
+fn resolve_world_config(
+    domain_name: &str,
+    world: &WorldEntryConfig,
+    domain_defaults: DomainWorldDefaults,
+    domain_storage: &StorageSelection,
+    generator_registry: &WorldGeneratorRegistry,
+    storage_registry: &WorldStorageRegistry,
+) -> Result<ResolvedWorldConfig, String> {
+    validate_world_name(&world.name, domain_name)?;
+    let world_key = Identifier::new(domain_name.to_owned(), world.name.clone());
+
+    let generator_config = world
+        .config
+        .clone()
+        .unwrap_or_else(|| toml::Value::Table(Map::new()));
+    generator_registry.validate_config(&world.generator, &generator_config)?;
+
+    let storage = world
+        .storage
+        .clone()
+        .unwrap_or_else(|| domain_storage.clone());
+    storage_registry.validate_selection(&storage)?;
+
+    Ok(ResolvedWorldConfig {
+        key: world_key,
+        domain: domain_name.to_owned(),
+        name: world.name.clone(),
+        generator: world.generator.clone(),
+        generator_config,
+        seed: world
+            .seed
+            .as_deref()
+            .map_or(domain_defaults.seed, seed_from_config),
+        default_gamemode: world.default_gamemode.unwrap_or(domain_defaults.gamemode),
+        difficulty: world.difficulty.unwrap_or(domain_defaults.difficulty),
+        storage,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct RootWorldDefaults {
+    seed: i64,
+    gamemode: GameType,
+    difficulty: Difficulty,
+}
+
+#[derive(Clone, Copy)]
+struct DomainWorldDefaults {
+    seed: i64,
+    gamemode: GameType,
+    difficulty: Difficulty,
+}
+
+impl DomainWorldDefaults {
+    fn from_config(domain: &DomainConfig, root: RootWorldDefaults) -> Self {
+        Self {
+            seed: domain.seed.as_deref().map_or(root.seed, seed_from_config),
+            gamemode: domain.default_gamemode.unwrap_or(root.gamemode),
+            difficulty: domain.difficulty.unwrap_or(root.difficulty),
+        }
     }
 }
 
@@ -505,9 +568,7 @@ where
     let Some(value) = Option::<String>::deserialize(deserializer)? else {
         return Ok(None);
     };
-    parse_game_type(&value)
-        .map(Some)
-        .map_err(serde::de::Error::custom)
+    parse_game_type(&value).map(Some).map_err(DeError::custom)
 }
 
 fn parse_game_type(value: &str) -> Result<GameType, String> {
@@ -527,9 +588,7 @@ where
     let Some(value) = Option::<String>::deserialize(deserializer)? else {
         return Ok(None);
     };
-    parse_difficulty(&value)
-        .map(Some)
-        .map_err(serde::de::Error::custom)
+    parse_difficulty(&value).map(Some).map_err(DeError::custom)
 }
 
 fn parse_difficulty(value: &str) -> Result<Difficulty, String> {

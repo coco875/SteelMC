@@ -922,13 +922,8 @@ impl Player {
             true
         });
 
-        // TODO: sendPlayerPermissionLevel
-        // TODO: initInventoryMenu
-        // TODO: tick rate update for joining player
-
         // Shared spawn (teleport, abilities, weather, time, chunk tracking reset)
         player_arc.spawn(spawn, (0.0, 0.0), ResetReason::Respawn);
-        self.send_inventory_to_remote();
     }
 
     /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
@@ -1102,6 +1097,9 @@ impl Player {
 
         // Force health/xp resync on next tick
         self.reset_sent_info();
+
+        // Resend client context that is not fully covered by CLogin/CRespawn.
+        self.server().resend_player_context(self);
 
         // Add to world / re-enter chunk tracking
         match reason {

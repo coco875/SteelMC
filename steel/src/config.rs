@@ -28,7 +28,7 @@ pub struct SteelConfig {
     pub worlds: WorldsConfig,
 }
 
-fn empty_worlds_config() -> WorldsConfig {
+const fn empty_worlds_config() -> WorldsConfig {
     WorldsConfig {
         save_path: String::new(),
         seed: None,

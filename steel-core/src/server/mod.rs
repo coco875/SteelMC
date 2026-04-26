@@ -13,10 +13,10 @@ use crate::config::{RuntimeConfig, WorldsConfig};
 use crate::entity::{SharedEntity, init_entities};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
-use crate::player::Player;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
-use crate::player::player_data_storage::PlayerDataStorage;
+use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
+use crate::player::{Player, ResetReason};
 use crate::portal::DimensionChangeRequest;
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
@@ -33,8 +33,8 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSetHeldSlot, CSystemChat, CTabList, CTickingState,
-    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
+    CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -211,15 +211,32 @@ impl Server {
     /// # Panics
     /// Panics if the registry is not initialized.
     pub async fn add_player(&self, player: Arc<Player>) {
-        use crate::player::ResetReason;
+        let Ok(target_domain) = self.load_join_domain(&player).await else {
+            player.disconnect("Failed to load player data");
+            return;
+        };
+        let Ok(world) = self.load_join_world(&player, &target_domain).await else {
+            player.disconnect("Failed to load player data");
+            return;
+        };
 
-        let target_domain = match self
+        player.reset_health_if_dead();
+        self.send_login_packet(&player, &world);
+
+        let pos = *player.position.lock();
+        let rotation = player.rotation.load();
+        player.reset(world, ResetReason::InitialJoin);
+        player.spawn(pos, rotation, ResetReason::InitialJoin);
+    }
+
+    async fn load_join_domain(&self, player: &Player) -> Result<String, ()> {
+        match self
             .player_data_storage
             .load_global(player.gameprofile.id)
             .await
         {
             Ok(Some(global)) if self.worlds.has_domain(&global.last_active_domain) => {
-                global.last_active_domain
+                Ok(global.last_active_domain)
             }
             Ok(Some(global)) => {
                 log::warn!(
@@ -227,28 +244,33 @@ impl Server {
                     player.gameprofile.name,
                     global.last_active_domain
                 );
-                self.worlds.default_domain().to_owned()
+                Ok(self.worlds.default_domain().to_owned())
             }
-            Ok(None) => self.worlds.default_domain().to_owned(),
+            Ok(None) => Ok(self.worlds.default_domain().to_owned()),
             Err(e) => {
                 log::error!(
                     "Failed to load global player data for {}: {e}",
                     player.gameprofile.name
                 );
-                player.disconnect("Failed to load player data");
-                return;
+                Err(())
             }
-        };
+        }
+    }
 
+    async fn load_join_world(
+        &self,
+        player: &Arc<Player>,
+        target_domain: &str,
+    ) -> Result<Arc<World>, ()> {
         let mut world = self
             .worlds
-            .default_world(&target_domain)
+            .default_world(target_domain)
             .cloned()
             .unwrap_or_else(|| self.overworld().clone());
 
         match self
             .player_data_storage
-            .load_domain(&target_domain, player.gameprofile.id)
+            .load_domain(target_domain, player.gameprofile.id)
             .await
         {
             Ok(Some(saved_data)) => {
@@ -266,17 +288,19 @@ impl Server {
                     }
                 }
                 player.set_world(world.clone());
-                saved_data.apply_to_player(&player);
+                saved_data.apply_to_player(player);
                 log::info!("Loaded saved data for player {}", player.gameprofile.name);
+                Ok(world)
             }
             Ok(None) => {
                 player.set_world(world.clone());
-                apply_first_visit_defaults(&player, &world);
+                apply_first_visit_defaults(player, &world);
                 log::debug!(
                     "No saved data for player {} in domain {}, using defaults",
                     player.gameprofile.name,
                     target_domain
                 );
+                Ok(world)
             }
             Err(e) => {
                 log::error!(
@@ -284,14 +308,12 @@ impl Server {
                     player.gameprofile.name,
                     target_domain
                 );
-                player.disconnect("Failed to load player data");
-                return;
+                Err(())
             }
         }
+    }
 
-        player.reset_health_if_dead();
-
-        // Get gamerule values
+    fn send_login_packet(&self, player: &Player, world: &World) {
         let reduced_debug_info =
             world.get_game_rule(&REDUCED_DEBUG_INFO) == GameRuleValue::Bool(true);
         let immediate_respawn =
@@ -326,58 +348,6 @@ impl Server {
             },
             enforces_secure_chat: self.config.enforce_secure_chat,
         });
-
-        // Send player abilities (flight, invulnerability, etc.)
-        player.send_abilities();
-
-        // Send current world difficulty to the client
-        player.send_difficulty();
-
-        player.send_packet(CSetHeldSlot {
-            slot: i32::from(player.inventory.lock().get_selected_slot()),
-        });
-
-        if world.can_have_weather() {
-            let (rain_level, thunder_level) = {
-                let weather = world.weather.lock();
-                (weather.rain_level, weather.thunder_level)
-            };
-
-            if world.is_raining() {
-                player.send_packet(CGameEvent {
-                    event: GameEventType::StartRaining,
-                    data: 0.0,
-                });
-            }
-
-            player.send_packet(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: rain_level,
-            });
-
-            player.send_packet(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: thunder_level,
-            });
-        }
-
-        let commands = self.command_dispatcher.read().get_commands();
-        player.send_packet(commands);
-
-        // TODO: Set permissions level to match player's level
-        player.send_packet(CEntityEvent {
-            entity_id: player.id,
-            event: EntityStatus::PermissionLevelOwners,
-        });
-
-        // Send current ticking state to the joining player
-        self.send_ticking_state_to_player(&player);
-
-        // Reset transient state and spawn into world
-        let pos = *player.position.lock();
-        let rotation = player.rotation.load();
-        player.reset(world, ResetReason::InitialJoin);
-        player.spawn(pos, rotation, ResetReason::InitialJoin);
     }
 
     /// Gets all the players on the server
@@ -759,12 +729,12 @@ impl Server {
 
         let pos = *player.position.lock();
         let rotation = player.rotation.load();
-        player.reset(target_world, crate::player::ResetReason::DimensionChange);
-        player.spawn(pos, rotation, crate::player::ResetReason::DimensionChange);
+        player.reset(target_world, ResetReason::DimensionChange);
+        player.spawn(pos, rotation, ResetReason::DimensionChange);
         self.player_data_storage
             .save_global(
                 player.gameprofile.id,
-                &crate::player::player_data_storage::GlobalPlayerData {
+                &GlobalPlayerData {
                     last_active_domain: target_domain,
                 },
             )
@@ -894,6 +864,28 @@ impl Server {
 
         player.send_packet(state_packet);
         player.send_packet(step_packet);
+    }
+
+    /// Resends client state that is not fully covered by `CRespawn`.
+    pub fn resend_player_context(&self, player: &Player) {
+        player.send_difficulty();
+        player.send_inventory_to_remote();
+
+        let commands = self.command_dispatcher.read().get_commands();
+        player.send_packet(commands);
+
+        // TODO: Set permissions level to match player's level.
+        player.send_packet(CEntityEvent {
+            entity_id: player.id,
+            event: EntityStatus::PermissionLevelOwners,
+        });
+
+        self.send_ticking_state_to_player(player);
+
+        player.send_packet(CGameEvent {
+            event: GameEventType::ChangeGameMode,
+            data: player.game_mode.load().into(),
+        });
     }
     /// Queues a dimension change to be processed after the current tick.
     pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {

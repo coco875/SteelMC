@@ -3,6 +3,7 @@
 //! The main library for the Steel Minecraft server.
 
 use std::{
+    error::Error,
     fmt, io,
     net::{Ipv4Addr, SocketAddrV4},
     sync::{Arc, OnceLock},
@@ -60,7 +61,7 @@ impl fmt::Display for SteelServerError {
     }
 }
 
-impl std::error::Error for SteelServerError {}
+impl Error for SteelServerError {}
 
 impl SteelServer {
     /// Creates a new Steel server.

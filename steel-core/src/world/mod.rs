@@ -57,7 +57,7 @@ pub enum RaytraceAction {
 use glam::DVec3;
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Identifier, SectionPos,
-    types::{GameType, UpdateFlags},
+    types::{Difficulty, GameType, UpdateFlags},
 };
 use tokio::{runtime::Runtime, time::Instant};
 
@@ -132,7 +132,7 @@ pub struct WorldConfig {
     /// Default game mode for first-visit player data.
     pub default_gamemode: GameType,
     /// Difficulty used when creating new level data.
-    pub difficulty: steel_utils::types::Difficulty,
+    pub difficulty: Difficulty,
 }
 
 /// A struct that represents a world.

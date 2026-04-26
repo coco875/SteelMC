@@ -2,6 +2,7 @@
 
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+use std::iter::repeat_n;
 use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::{REGISTRY, RegistryExt};
@@ -132,7 +133,7 @@ struct FlatLayerConfig {
     height: usize,
 }
 
-fn default_flat_dimension() -> Identifier {
+const fn default_flat_dimension() -> Identifier {
     Identifier::vanilla_static("overworld")
 }
 
@@ -248,7 +249,7 @@ fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Stri
             .by_key(&layer.block)
             .ok_or_else(|| format!("unknown block {} in minecraft:flat layer", layer.block))?;
         let state = REGISTRY.blocks.get_default_state_id(block);
-        layers.extend(std::iter::repeat_n(state, layer.height));
+        layers.extend(repeat_n(state, layer.height));
     }
 
     Ok(GeneratorOutput {

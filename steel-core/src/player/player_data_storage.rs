@@ -184,7 +184,7 @@ impl FilePlayerDataStorage {
         domain: &str,
         uuid: Uuid,
     ) -> io::Result<Option<PersistentPlayerData>> {
-        let path = self.player_file(&self.domain_players_dir(domain), uuid);
+        let path = Self::player_file(&self.domain_players_dir(domain), uuid);
         if !path.exists() {
             return Ok(None);
         }
@@ -196,7 +196,7 @@ impl FilePlayerDataStorage {
     }
 
     async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
-        let path = self.player_file(&self.global_players_dir(), uuid);
+        let path = Self::player_file(&self.global_players_dir(), uuid);
         if !path.exists() {
             return Ok(None);
         }
@@ -225,23 +225,23 @@ impl FilePlayerDataStorage {
         self.save_root.join(domain).join("players")
     }
 
-    fn player_file(&self, players_dir: &Path, uuid: Uuid) -> PathBuf {
+    fn player_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
         players_dir.join(format!("{uuid}.dat"))
     }
 
-    fn temp_file(&self, players_dir: &Path, uuid: Uuid) -> PathBuf {
+    fn temp_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
         players_dir.join(format!("{uuid}.dat.tmp"))
     }
 
-    fn backup_file(&self, players_dir: &Path, uuid: Uuid) -> PathBuf {
+    fn backup_file(players_dir: &Path, uuid: Uuid) -> PathBuf {
         players_dir.join(format!("{uuid}.dat_old"))
     }
 
     async fn write_atomic(&self, players_dir: &Path, uuid: Uuid, bytes: Vec<u8>) -> io::Result<()> {
         fs::create_dir_all(players_dir).await?;
-        let temp_path = self.temp_file(players_dir, uuid);
-        let final_path = self.player_file(players_dir, uuid);
-        let backup_path = self.backup_file(players_dir, uuid);
+        let temp_path = Self::temp_file(players_dir, uuid);
+        let final_path = Self::player_file(players_dir, uuid);
+        let backup_path = Self::backup_file(players_dir, uuid);
 
         fs::write(&temp_path, bytes).await?;
         if final_path.exists() {
