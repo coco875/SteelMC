@@ -143,6 +143,56 @@ impl ChunkMap {
         Some(f(&guard))
     }
 
+    /// Loads full chunks in a square radius, runs `f`, then removes the temporary ticket.
+    pub async fn with_full_chunks_in_radius<F, R>(
+        self: &Arc<Self>,
+        center: ChunkPos,
+        radius: u8,
+        f: F,
+    ) -> Option<R>
+    where
+        F: FnOnce() -> R,
+    {
+        let ticket_level = MAX_VIEW_DISTANCE.saturating_sub(radius);
+
+        self.chunk_tickets.lock().add_ticket(center, ticket_level);
+        self.tick_scheduling();
+
+        let mut holders = Vec::new();
+        let radius = i32::from(radius);
+        for dz in -radius..=radius {
+            for dx in -radius..=radius {
+                let pos = ChunkPos::new(center.0.x + dx, center.0.y + dz);
+                let Some(holder) = self.chunks.read_sync(&pos, |_, holder| holder.clone()) else {
+                    self.chunk_tickets
+                        .lock()
+                        .remove_ticket(center, ticket_level);
+                    self.tick_scheduling();
+                    return None;
+                };
+                holders.push(holder);
+            }
+        }
+
+        for holder in holders {
+            if holder.await_chunk(ChunkStatus::Full).await.is_none() {
+                self.chunk_tickets
+                    .lock()
+                    .remove_ticket(center, ticket_level);
+                self.tick_scheduling();
+                return None;
+            }
+        }
+
+        let result = f();
+        self.chunk_tickets
+            .lock()
+            .remove_ticket(center, ticket_level);
+        self.tick_scheduling();
+
+        Some(result)
+    }
+
     /// Records a block change at the given position.
     /// This marks the chunk as having pending changes to broadcast.
     pub fn block_changed(&self, pos: BlockPos) {

@@ -249,6 +249,10 @@ impl Server {
             )
             .await
             .map_err(|e| format!("failed to create world {}: {e}", world_entry.key))?;
+            world
+                .initialize_spawn_if_needed()
+                .await
+                .map_err(|e| format!("failed to initialize spawn for {}: {e}", world_entry.key))?;
             worlds.insert(world_entry.key.clone(), world);
         }
 

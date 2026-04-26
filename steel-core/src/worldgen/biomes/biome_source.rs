@@ -18,6 +18,7 @@
 
 use steel_registry::biome::BiomeRef;
 use steel_registry::vanilla_biomes;
+use steel_utils::BlockPos;
 use steel_worldgen::density_functions::nether::NetherColumnCache;
 use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 use steel_worldgen::multi_noise::{get_nether_biome_cached, get_overworld_biome_cached};
@@ -71,6 +72,15 @@ impl BiomeSourceKind {
             Self::Overworld(source) => source.chunk_sampler(),
             Self::Nether(source) => source.chunk_sampler(),
             Self::End(source) => source.chunk_sampler(),
+        }
+    }
+
+    /// Returns vanilla's climate-based initial spawn search origin for dimensions that define one.
+    #[must_use]
+    pub fn initial_spawn_search_origin(&self) -> BlockPos {
+        match self {
+            Self::Overworld(source) => source.climate_sampler().find_spawn_position(),
+            Self::Nether(_) | Self::End(_) => BlockPos::new(0, 0, 0),
         }
     }
 }

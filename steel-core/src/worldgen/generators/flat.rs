@@ -35,6 +35,10 @@ impl FlatChunkGenerator {
 }
 
 impl ChunkGenerator for FlatChunkGenerator {
+    fn spawn_height(&self, min_y: i32, height: i32) -> i32 {
+        min_y + height.min(self.layers.len() as i32)
+    }
+
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
     fn create_biomes(&self, chunk: &ChunkAccess) {

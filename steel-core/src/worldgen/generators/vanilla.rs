@@ -104,6 +104,10 @@ impl<N: DimensionNoises> VanillaGenerator<N> {
 }
 
 impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
+    fn initial_spawn_search_origin(&self) -> steel_utils::BlockPos {
+        self.biome_source.initial_spawn_search_origin()
+    }
+
     fn create_structures(&self, _chunk: &ChunkAccess) {}
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
