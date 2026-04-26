@@ -35,7 +35,7 @@ Template: *"This requires [Hack] which risks [Consequence]. Proceed or solve roo
 
  **Testing**
   - Add tests for advanced systems, code using unsafe (Always use // SAFETY comments) or code that needs to match vanilla determinism (ItemComponent hashing or worldgen)
-  - Only #[allow] clippy lints with a justification comment unless obvious. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained.
+  - Suppress clippy lints with `#[expect(clippy::lint_name, reason = "...")]`. False positives and intentional deviations (e.g., function length for readability) are acceptable when explained
 
 **GENERATED CODE** — Never modify generated files directly:
 - `steel-registry/src/generated/` → modify `steel-registry/build/build.rs`
