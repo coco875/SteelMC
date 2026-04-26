@@ -69,7 +69,7 @@ use crate::{
     chunk_saver::{ChunkStorage, RamOnlyStorage, RegionManager},
     entity::{EntityCache, EntityTracker, RemovalReason, SharedEntity, entities::ItemEntity},
     fluid::fluid_state_to_block,
-    level_data::LevelDataManager,
+    level_data::{LevelDataManager, WorldGenerationSettings},
     player::{LastSeen, Player, connection::NetworkConnection},
     poi::PointOfInterestStorage,
 };
@@ -119,6 +119,8 @@ pub struct WorldConfig {
     pub level_data_path: Option<String>,
     /// World generator.
     pub generator: Arc<ChunkGeneratorType>,
+    /// Generator metadata persisted for startup compatibility checks.
+    pub generation_settings: WorldGenerationSettings,
     /// Server view distance (maximum chunk radius).
     pub view_distance: u8,
     /// Server simulation distance.
@@ -222,7 +224,12 @@ impl World {
         // Create or skip level data based on config
 
         let path = config.level_data_path.as_deref().map(Path::new);
-        let level_data = LevelDataManager::new(path, seed, config.difficulty).await?;
+        let mut level_data =
+            LevelDataManager::new(path, seed, config.difficulty, config.generation_settings)
+                .await?;
+        if level_data.is_dirty() {
+            level_data.save().await?;
+        }
         // let generator = Arc::new(ChunkGeneratorType::Flat(FlatChunkGenerator::new(
         //     REGISTRY
         //         .blocks

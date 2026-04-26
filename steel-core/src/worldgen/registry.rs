@@ -7,6 +7,7 @@ use steel_registry::dimension_type::DimensionTypeRef;
 use steel_registry::vanilla_dimension_types::{OVERWORLD, THE_END, THE_NETHER};
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
+use toml::map::Map;
 
 use crate::worldgen::{
     BiomeSourceKind, ChunkGeneratorType, EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator,
@@ -16,6 +17,8 @@ use crate::worldgen::{
 pub struct GeneratorOutput {
     /// Vanilla dimension type rules used by this loaded world.
     pub dimension_type: DimensionTypeRef,
+    /// Generator config after applying generator defaults.
+    pub config: toml::Value,
     /// Chunk generator instance.
     pub generator: ChunkGeneratorType,
     /// Whether the client should treat this as a flat world.
@@ -204,6 +207,7 @@ fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, 
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &OVERWORLD,
+        config: empty_config(),
         generator: ChunkGeneratorType::Overworld(VanillaGenerator::new(
             BiomeSourceKind::overworld(seed),
             seed,
@@ -218,6 +222,7 @@ fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Str
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_NETHER,
+        config: empty_config(),
         generator: ChunkGeneratorType::Nether(VanillaGenerator::new(
             BiomeSourceKind::nether(seed),
             seed,
@@ -232,6 +237,7 @@ fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String
     let seed = seed as u64;
     Ok(GeneratorOutput {
         dimension_type: &THE_END,
+        config: empty_config(),
         generator: ChunkGeneratorType::End(VanillaGenerator::new(BiomeSourceKind::end(seed), seed)),
         is_flat: false,
         sea_level: sea_level_for_dimension_type(&THE_END),
@@ -242,6 +248,7 @@ fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Stri
     let parsed = parse_flat_config(config)?;
     validate_flat_config(config)?;
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
+    let normalized_config = normalized_flat_config(&parsed);
     let mut layers = Vec::new();
     for layer in parsed.layers {
         let block = REGISTRY
@@ -254,6 +261,7 @@ fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Stri
 
     Ok(GeneratorOutput {
         dimension_type,
+        config: normalized_config,
         generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers(layers)),
         is_flat: true,
         sea_level: sea_level_for_dimension_type(dimension_type),
@@ -268,10 +276,50 @@ fn create_empty(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Str
     let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     Ok(GeneratorOutput {
         dimension_type,
+        config: normalized_dimension_type_config(&parsed.dimension_type),
         generator: ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
         is_flat: false,
         sea_level: sea_level_for_dimension_type(dimension_type),
     })
+}
+
+fn empty_config() -> toml::Value {
+    toml::Value::Table(Map::new())
+}
+
+fn normalized_dimension_type_config(dimension_type: &Identifier) -> toml::Value {
+    toml::Value::Table(normalized_dimension_type_table(dimension_type))
+}
+
+fn normalized_dimension_type_table(dimension_type: &Identifier) -> Map<String, toml::Value> {
+    let mut table = Map::new();
+    table.insert(
+        "dimension_type".to_owned(),
+        toml::Value::String(dimension_type.to_string()),
+    );
+    table
+}
+
+fn normalized_flat_config(config: &FlatGeneratorConfig) -> toml::Value {
+    let mut table = normalized_dimension_type_table(&config.dimension_type);
+    let layers = config
+        .layers
+        .iter()
+        .map(|layer| {
+            let mut layer_table = Map::new();
+            layer_table.insert(
+                "block".to_owned(),
+                toml::Value::String(layer.block.to_string()),
+            );
+            layer_table.insert(
+                "height".to_owned(),
+                toml::Value::Integer(layer.height as i64),
+            );
+            toml::Value::Table(layer_table)
+        })
+        .collect();
+    table.insert("layers".to_owned(), toml::Value::Array(layers));
+    toml::Value::Table(table)
 }
 
 fn dimension_type_by_key(key: &Identifier) -> Result<DimensionTypeRef, String> {

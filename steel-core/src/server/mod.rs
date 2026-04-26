@@ -9,10 +9,11 @@ pub mod worlds;
 use crate::behavior::init_behaviors;
 use crate::block_entity::init_block_entities;
 use crate::command::CommandDispatcher;
-use crate::config::{RuntimeConfig, WorldsConfig};
+use crate::config::{ResolvedWorldConfig, RuntimeConfig, WorldsConfig};
 use crate::entity::{SharedEntity, init_entities};
 
 use crate::chunk_saver::registry::WorldStorageRegistry;
+use crate::level_data::WorldGenerationSettings;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentPlayerData;
@@ -23,6 +24,7 @@ use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
 use crate::worldgen::WorldGeneratorRegistry;
+use crate::worldgen::registry::GeneratorOutput;
 use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
@@ -81,6 +83,27 @@ fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
         rotation: (spawn.angle, 0.0),
         portal_cooldown: 0,
     }
+}
+
+fn generation_settings_for_world(
+    world_entry: &ResolvedWorldConfig,
+    generator_output: &GeneratorOutput,
+) -> WorldGenerationSettings {
+    WorldGenerationSettings::from_generator_config(
+        world_entry.generator.clone(),
+        &generator_output.config,
+        generator_output.dimension_type.key.clone(),
+        generator_output.dimension_type.min_y,
+        generator_output.dimension_type.height,
+    )
+}
+
+fn world_config_registries() -> Result<(WorldGeneratorRegistry, WorldStorageRegistry), String> {
+    let generator_registry = WorldGeneratorRegistry::new_with_builtins()
+        .map_err(|e| format!("failed to initialize world generator registry: {e}"))?;
+    let storage_registry = WorldStorageRegistry::new_with_builtins()
+        .map_err(|e| format!("failed to initialize world storage registry: {e}"))?;
+    Ok((generator_registry, storage_registry))
 }
 
 struct DomainPlayerState {
@@ -154,10 +177,7 @@ impl Server {
 
         let registry_cache = RegistryCache::new(config.compression);
 
-        let generator_registry = WorldGeneratorRegistry::new_with_builtins()
-            .map_err(|e| format!("failed to initialize world generator registry: {e}"))?;
-        let storage_registry = WorldStorageRegistry::new_with_builtins()
-            .map_err(|e| format!("failed to initialize world storage registry: {e}"))?;
+        let (generator_registry, storage_registry) = world_config_registries()?;
         let resolved_worlds = worlds_config
             .validate_and_resolve(&generator_registry, &storage_registry)
             .map_err(|e| format!("failed to validate worlds.toml: {e}"))?;
@@ -204,6 +224,7 @@ impl Server {
                     Path::new(&default_world_path),
                 )
                 .map_err(|e| format!("failed to create storage for {}: {e}", world_entry.key))?;
+            let generation_settings = generation_settings_for_world(world_entry, &generator_output);
             let world = World::new_with_config(
                 chunk_runtime.clone(),
                 world_entry.key.clone(),
@@ -215,6 +236,7 @@ impl Server {
                         .level_data_path
                         .map(|path| path.to_string_lossy().into_owned()),
                     generator: Arc::new(generator_output.generator),
+                    generation_settings,
                     view_distance: config.view_distance,
                     simulation_distance: config.simulation_distance,
                     compression: config.compression,
