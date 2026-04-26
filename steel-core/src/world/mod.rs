@@ -145,8 +145,12 @@ pub struct World {
     pub player_area_map: PlayerAreaMap,
     /// Loaded world identifier (`domain:world`).
     pub key: Identifier,
-    /// The dimension of the world.
-    pub dimension: DimensionTypeRef,
+    /// Vanilla dimension type for this loaded world.
+    ///
+    /// Vanilla often calls loaded worlds "dimensions". In Steel, `World` is the
+    /// loaded world instance and `dimension_type` is the vanilla registry entry
+    /// controlling height, skylight, ceiling, water evaporation, etc.
+    pub dimension_type: DimensionTypeRef,
     /// Level data manager for persistent world state.
     pub level_data: SyncRwLock<LevelDataManager>,
     /// Server view distance (maximum chunk radius).
@@ -188,13 +192,13 @@ impl World {
     ///
     /// # Arguments
     /// * `chunk_runtime` - The Tokio runtime for chunk operations
-    /// * `dimension` - The dimension type (overworld, nether, end)
+    /// * `dimension_type` - Vanilla dimension type (overworld, nether, end)
     /// * `seed` - The world seed
     /// * `config` - World configuration including storage options
     pub async fn new_with_config(
         chunk_runtime: Arc<Runtime>,
         key: Identifier,
-        dimension: DimensionTypeRef,
+        dimension_type: DimensionTypeRef,
         seed: i64,
         config: WorldConfig,
         generation_pool: Arc<rayon::ThreadPool>,
@@ -241,7 +245,7 @@ impl World {
             chunk_map: Arc::new(ChunkMap::new_with_storage(
                 chunk_runtime,
                 weak_self.clone(),
-                dimension,
+                dimension_type,
                 storage,
                 config.generator,
                 generation_pool,
@@ -249,7 +253,7 @@ impl World {
             players: PlayerMap::new(),
             player_area_map: PlayerAreaMap::new(),
             key,
-            dimension,
+            dimension_type,
             level_data: SyncRwLock::new(level_data),
             view_distance,
             simulation_distance,
@@ -283,14 +287,20 @@ impl World {
         }
     }
 
+    /// Returns the domain this loaded world belongs to.
+    #[must_use]
+    pub fn domain(&self) -> &str {
+        self.key.namespace.as_ref()
+    }
+
     /// Returns the total height of the world in blocks.
     pub const fn get_height(&self) -> i32 {
-        self.dimension.height
+        self.dimension_type.height
     }
 
     /// Returns the minimum Y coordinate of the world.
     pub const fn get_min_y(&self) -> i32 {
-        self.dimension.min_y
+        self.dimension_type.min_y
     }
 
     /// Returns the maximum Y coordinate of the world.
@@ -923,9 +933,9 @@ impl World {
 
     /// Checks whether the world can have weather.
     pub fn can_have_weather(&self) -> bool {
-        self.dimension.has_skylight
-            && !self.dimension.has_ceiling
-            && self.dimension.key != vanilla_dimension_types::THE_END.key
+        self.dimension_type.has_skylight
+            && !self.dimension_type.has_ceiling
+            && self.dimension_type.key != vanilla_dimension_types::THE_END.key
     }
 
     /// Schedules a block tick at the given position.

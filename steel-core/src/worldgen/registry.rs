@@ -14,8 +14,8 @@ use crate::worldgen::{
 
 /// Fully constructed generator metadata for a world.
 pub struct GeneratorOutput {
-    /// Dimension rules used by this world.
-    pub dimension: DimensionTypeRef,
+    /// Vanilla dimension type rules used by this loaded world.
+    pub dimension_type: DimensionTypeRef,
     /// Chunk generator instance.
     pub generator: ChunkGeneratorType,
     /// Whether the client should treat this as a flat world.
@@ -113,15 +113,15 @@ impl WorldGeneratorRegistry {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct DimensionOnlyConfig {
-    dimension: Identifier,
+struct DimensionTypeOnlyConfig {
+    dimension_type: Identifier,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FlatGeneratorConfig {
-    #[serde(default = "default_flat_dimension")]
-    dimension: Identifier,
+    #[serde(default = "default_flat_dimension_type")]
+    dimension_type: Identifier,
     #[serde(default = "default_flat_layers")]
     layers: Vec<FlatLayerConfig>,
 }
@@ -133,7 +133,7 @@ struct FlatLayerConfig {
     height: usize,
 }
 
-const fn default_flat_dimension() -> Identifier {
+const fn default_flat_dimension_type() -> Identifier {
     Identifier::vanilla_static("overworld")
 }
 
@@ -165,11 +165,11 @@ fn validate_empty_config(config: &toml::Value) -> Result<(), String> {
 }
 
 fn validate_empty_world_config(config: &toml::Value) -> Result<(), String> {
-    let parsed: DimensionOnlyConfig = config
+    let parsed: DimensionTypeOnlyConfig = config
         .clone()
         .try_into()
         .map_err(|e| format!("invalid steel:empty config: {e}"))?;
-    dimension_by_key(&parsed.dimension).map(|_| ())
+    dimension_type_by_key(&parsed.dimension_type).map(|_| ())
 }
 
 fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
@@ -177,7 +177,7 @@ fn validate_flat_config(config: &toml::Value) -> Result<(), String> {
     if parsed.layers.is_empty() {
         return Err("minecraft:flat requires at least one layer".to_owned());
     }
-    dimension_by_key(&parsed.dimension)?;
+    dimension_type_by_key(&parsed.dimension_type)?;
     for layer in &parsed.layers {
         if layer.height == 0 {
             return Err("minecraft:flat layer height must be greater than zero".to_owned());
@@ -203,13 +203,13 @@ fn create_overworld(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, 
     validate_empty_config(config)?;
     let seed = seed as u64;
     Ok(GeneratorOutput {
-        dimension: &OVERWORLD,
+        dimension_type: &OVERWORLD,
         generator: ChunkGeneratorType::Overworld(VanillaGenerator::new(
             BiomeSourceKind::overworld(seed),
             seed,
         )),
         is_flat: false,
-        sea_level: sea_level_for_dimension(&OVERWORLD),
+        sea_level: sea_level_for_dimension_type(&OVERWORLD),
     })
 }
 
@@ -217,13 +217,13 @@ fn create_nether(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, Str
     validate_empty_config(config)?;
     let seed = seed as u64;
     Ok(GeneratorOutput {
-        dimension: &THE_NETHER,
+        dimension_type: &THE_NETHER,
         generator: ChunkGeneratorType::Nether(VanillaGenerator::new(
             BiomeSourceKind::nether(seed),
             seed,
         )),
         is_flat: false,
-        sea_level: sea_level_for_dimension(&THE_NETHER),
+        sea_level: sea_level_for_dimension_type(&THE_NETHER),
     })
 }
 
@@ -231,17 +231,17 @@ fn create_end(config: &toml::Value, seed: i64) -> Result<GeneratorOutput, String
     validate_empty_config(config)?;
     let seed = seed as u64;
     Ok(GeneratorOutput {
-        dimension: &THE_END,
+        dimension_type: &THE_END,
         generator: ChunkGeneratorType::End(VanillaGenerator::new(BiomeSourceKind::end(seed), seed)),
         is_flat: false,
-        sea_level: sea_level_for_dimension(&THE_END),
+        sea_level: sea_level_for_dimension_type(&THE_END),
     })
 }
 
 fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, String> {
     let parsed = parse_flat_config(config)?;
     validate_flat_config(config)?;
-    let dimension = dimension_by_key(&parsed.dimension)?;
+    let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     let mut layers = Vec::new();
     for layer in parsed.layers {
         let block = REGISTRY
@@ -253,38 +253,38 @@ fn create_flat(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, Stri
     }
 
     Ok(GeneratorOutput {
-        dimension,
+        dimension_type,
         generator: ChunkGeneratorType::Flat(FlatChunkGenerator::new_layers(layers)),
         is_flat: true,
-        sea_level: sea_level_for_dimension(dimension),
+        sea_level: sea_level_for_dimension_type(dimension_type),
     })
 }
 
 fn create_empty(config: &toml::Value, _seed: i64) -> Result<GeneratorOutput, String> {
-    let parsed: DimensionOnlyConfig = config
+    let parsed: DimensionTypeOnlyConfig = config
         .clone()
         .try_into()
         .map_err(|e| format!("invalid steel:empty config: {e}"))?;
-    let dimension = dimension_by_key(&parsed.dimension)?;
+    let dimension_type = dimension_type_by_key(&parsed.dimension_type)?;
     Ok(GeneratorOutput {
-        dimension,
+        dimension_type,
         generator: ChunkGeneratorType::Empty(EmptyChunkGenerator::new()),
         is_flat: false,
-        sea_level: sea_level_for_dimension(dimension),
+        sea_level: sea_level_for_dimension_type(dimension_type),
     })
 }
 
-fn dimension_by_key(key: &Identifier) -> Result<DimensionTypeRef, String> {
+fn dimension_type_by_key(key: &Identifier) -> Result<DimensionTypeRef, String> {
     REGISTRY
         .dimension_types
         .by_key(key)
         .ok_or_else(|| format!("unknown dimension type {key}"))
 }
 
-fn sea_level_for_dimension(dimension: DimensionTypeRef) -> i32 {
-    if dimension == &THE_NETHER {
+fn sea_level_for_dimension_type(dimension_type: DimensionTypeRef) -> i32 {
+    if dimension_type == &THE_NETHER {
         32
-    } else if dimension == &THE_END {
+    } else if dimension_type == &THE_END {
         0
     } else {
         63

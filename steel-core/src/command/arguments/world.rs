@@ -1,4 +1,4 @@
-//! Argument that resolves a dimension identifier to a loaded world.
+//! Argument that resolves a world identifier to a loaded world.
 //!
 //! Accepts full identifiers (`minecraft:overworld`) and path-only shorthands
 //! (`the_nether`). Shorthands are resolved against the namespace of the
@@ -18,10 +18,14 @@ use crate::{
     world::World,
 };
 
-/// Parses a dimension argument into a loaded [`World`].
-pub struct DimensionArgument;
+/// Parses a world argument into a loaded [`World`].
+///
+/// Vanilla and the Java protocol refer to loaded worlds as "dimensions" in many
+/// places. Steel uses "world" here because the value resolves to a loaded
+/// runtime [`World`], not a vanilla dimension type registry entry.
+pub struct WorldArgument;
 
-impl CommandArgument for DimensionArgument {
+impl CommandArgument for WorldArgument {
     type Output = Arc<World>;
 
     fn parse<'a>(
@@ -41,8 +45,7 @@ impl CommandArgument for DimensionArgument {
         }
 
         // Fall back to path-only shorthand using the sender's current namespace
-        let ns = &context.world.key.namespace;
-        let key = Identifier::new(ns.clone(), s.to_owned());
+        let key = Identifier::new(context.world.domain().to_owned(), s.to_owned());
         let world = context.server.worlds.get(&key)?.clone();
 
         Some((&arg[1..], world))
@@ -53,7 +56,7 @@ impl CommandArgument for DimensionArgument {
     }
 
     fn suggest(&self, prefix: &str, suggestion_ctx: &SuggestionContext) -> Vec<SuggestionEntry> {
-        let player_ns = &suggestion_ctx.world.key.namespace;
+        let player_domain = suggestion_ctx.world.domain();
 
         let mut suggestions: Vec<SuggestionEntry> = suggestion_ctx
             .server
@@ -64,7 +67,7 @@ impl CommandArgument for DimensionArgument {
 
         // For worlds sharing the sender's namespace, also suggest the path-only shorthand
         for id in suggestion_ctx.server.worlds.keys() {
-            if id.namespace == *player_ns {
+            if id.namespace.as_ref() == player_domain {
                 let path = id.path.as_ref();
                 if !suggestions.iter().any(|s| s.text == path) {
                     suggestions.push(SuggestionEntry::new(path));

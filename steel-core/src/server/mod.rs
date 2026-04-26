@@ -15,9 +15,10 @@ use crate::entity::{SharedEntity, init_entities};
 use crate::chunk_saver::registry::WorldStorageRegistry;
 use crate::player::chunk_sender::ChunkSender;
 use crate::player::connection::NetworkConnection;
+use crate::player::player_data::PersistentPlayerData;
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::{Player, ResetReason};
-use crate::portal::DimensionChangeRequest;
+use crate::portal::{TeleportTransition, WorldChangeRequest};
 use crate::server::registry_cache::RegistryCache;
 use crate::server::worlds::WorldMap;
 use crate::world::{World, WorldConfig, WorldGameTickTimings};
@@ -33,8 +34,8 @@ use std::{
 use steel_crypto::key_store::KeyStore;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
-    CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
-    CommonPlayerSpawnInfo, GameEventType,
+    CEntityEvent, CGameEvent, CLogin, CRemovePlayerInfo, CSystemChat, CTabList, CTickingState,
+    CTickingStep, CommonPlayerSpawnInfo, GameEventType,
 };
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
@@ -68,6 +69,40 @@ fn apply_first_visit_defaults(player: &Arc<Player>, world: &Arc<World>) {
         .update_for_game_mode(world.default_gamemode);
 }
 
+fn world_spawn_transition(world: Arc<World>) -> TeleportTransition {
+    let spawn = world.level_data.read().data().spawn.clone();
+    TeleportTransition {
+        target_world: world,
+        position: DVec3::new(
+            f64::from(spawn.x) + 0.5,
+            f64::from(spawn.y),
+            f64::from(spawn.z) + 0.5,
+        ),
+        rotation: (spawn.angle, 0.0),
+        portal_cooldown: 0,
+    }
+}
+
+struct DomainPlayerState {
+    world: Arc<World>,
+    data: DomainPlayerData,
+}
+
+enum DomainPlayerData {
+    Saved {
+        data: PersistentPlayerData,
+        restore_location: bool,
+    },
+    FirstVisit,
+}
+
+struct DomainSwitchRequest {
+    player: Arc<Player>,
+    target_domain: String,
+    target_world: Option<Arc<World>>,
+    restore_saved_location: bool,
+}
+
 /// The main server struct.
 pub struct Server {
     /// Runtime configuration (view distance, compression, etc.).
@@ -86,8 +121,10 @@ pub struct Server {
     pub command_dispatcher: SyncRwLock<CommandDispatcher>,
     /// Player data storage for saving/loading player state.
     pub player_data_storage: PlayerDataStorage,
-    /// Queued dimension changes to process after the tick.
-    pub pending_dimension_changes: SyncMutex<Vec<(SharedEntity, DimensionChangeRequest)>>,
+    /// Queued world changes to process after the tick.
+    pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
+    /// Queued domain switches to process after world ticks.
+    pending_domain_switches: SyncMutex<Vec<DomainSwitchRequest>>,
 }
 
 impl Server {
@@ -170,7 +207,7 @@ impl Server {
             let world = World::new_with_config(
                 chunk_runtime.clone(),
                 world_entry.key.clone(),
-                generator_output.dimension,
+                generator_output.dimension_type,
                 world_entry.seed,
                 WorldConfig {
                     storage: storage_output.storage,
@@ -202,7 +239,8 @@ impl Server {
             tick_rate_manager: SyncRwLock::new(TickRateManager::new()),
             command_dispatcher: SyncRwLock::new(CommandDispatcher::new()),
             player_data_storage,
-            pending_dimension_changes: SyncMutex::new(vec![]),
+            pending_world_changes: SyncMutex::new(vec![]),
+            pending_domain_switches: SyncMutex::new(vec![]),
         })
     }
 
@@ -215,17 +253,29 @@ impl Server {
             player.disconnect("Failed to load player data");
             return;
         };
-        let Ok(world) = self.load_join_world(&player, &target_domain).await else {
-            player.disconnect("Failed to load player data");
-            return;
+        let state = match self
+            .load_domain_player_state(&player, &target_domain, None, true)
+            .await
+        {
+            Ok(state) => state,
+            Err(error) => {
+                log::error!(
+                    "Failed to load player data for {}: {error}",
+                    player.gameprofile.name
+                );
+                player.disconnect("Failed to load player data");
+                return;
+            }
         };
 
+        Self::apply_domain_player_state(&player, &state);
         player.reset_health_if_dead();
-        self.send_login_packet(&player, &world);
+        self.send_login_packet(&player, &state.world);
 
+        player.reset(state.world.clone(), ResetReason::InitialJoin);
+        Self::apply_domain_player_state(&player, &state);
         let pos = *player.position.lock();
         let rotation = player.rotation.load();
-        player.reset(world, ResetReason::InitialJoin);
         player.spawn(pos, rotation, ResetReason::InitialJoin);
     }
 
@@ -257,16 +307,21 @@ impl Server {
         }
     }
 
-    async fn load_join_world(
+    async fn load_domain_player_state(
         &self,
-        player: &Arc<Player>,
+        player: &Player,
         target_domain: &str,
-    ) -> Result<Arc<World>, ()> {
+        fallback_world: Option<Arc<World>>,
+        restore_saved_location: bool,
+    ) -> Result<DomainPlayerState, String> {
         let mut world = self
             .worlds
             .default_world(target_domain)
             .cloned()
-            .unwrap_or_else(|| self.overworld().clone());
+            .ok_or_else(|| format!("domain {target_domain} has no default world"))?;
+        if let Some(fallback_world) = fallback_world {
+            world = fallback_world;
+        }
 
         match self
             .player_data_storage
@@ -274,42 +329,83 @@ impl Server {
             .await
         {
             Ok(Some(saved_data)) => {
-                if let Ok(saved_world_key) = saved_data.dimension.parse::<Identifier>() {
-                    if saved_world_key.namespace.as_ref() == target_domain
-                        && let Some(saved_world) = self.worlds.get(&saved_world_key)
-                    {
-                        world = saved_world.clone();
-                    } else {
-                        log::warn!(
-                            "Saved world {} for player {} is missing, using domain default",
-                            saved_world_key,
-                            player.gameprofile.name
-                        );
-                    }
-                }
-                player.set_world(world.clone());
-                saved_data.apply_to_player(player);
+                let restore_location = restore_saved_location
+                    && self.resolve_saved_world(
+                        &saved_data.world,
+                        target_domain,
+                        &mut world,
+                        &player.gameprofile.name,
+                    );
                 log::info!("Loaded saved data for player {}", player.gameprofile.name);
-                Ok(world)
+                Ok(DomainPlayerState {
+                    world,
+                    data: DomainPlayerData::Saved {
+                        data: saved_data,
+                        restore_location,
+                    },
+                })
             }
             Ok(None) => {
-                player.set_world(world.clone());
-                apply_first_visit_defaults(player, &world);
                 log::debug!(
                     "No saved data for player {} in domain {}, using defaults",
                     player.gameprofile.name,
                     target_domain
                 );
-                Ok(world)
+                Ok(DomainPlayerState {
+                    world,
+                    data: DomainPlayerData::FirstVisit,
+                })
             }
-            Err(e) => {
-                log::error!(
-                    "Failed to load domain player data for {} in domain {}: {e}",
-                    player.gameprofile.name,
-                    target_domain
-                );
-                Err(())
+            Err(e) => Err(format!(
+                "failed to load domain player data for {} in domain {}: {e}",
+                player.gameprofile.name, target_domain
+            )),
+        }
+    }
+
+    fn resolve_saved_world(
+        &self,
+        saved_world: &str,
+        target_domain: &str,
+        world: &mut Arc<World>,
+        player_name: &str,
+    ) -> bool {
+        let Ok(saved_world_key) = saved_world.parse::<Identifier>() else {
+            log::warn!(
+                "Saved world {saved_world} for player {player_name} is invalid, using domain default spawn"
+            );
+            return false;
+        };
+        if saved_world_key.namespace.as_ref() != target_domain {
+            log::warn!(
+                "Saved world {saved_world_key} for player {player_name} is outside target domain {target_domain}, using domain default spawn"
+            );
+            return false;
+        }
+        let Some(saved_world) = self.worlds.get(&saved_world_key) else {
+            log::warn!(
+                "Saved world {saved_world_key} for player {player_name} is missing, using domain default spawn"
+            );
+            return false;
+        };
+        *world = saved_world.clone();
+        true
+    }
+
+    fn apply_domain_player_state(player: &Arc<Player>, state: &DomainPlayerState) {
+        match &state.data {
+            DomainPlayerData::Saved {
+                data,
+                restore_location,
+            } => {
+                if *restore_location {
+                    data.apply_to_player(player);
+                } else {
+                    apply_first_visit_defaults(player, &state.world);
+                    data.apply_to_player_without_location(player);
+                }
             }
+            DomainPlayerData::FirstVisit => apply_first_visit_defaults(player, &state.world),
         }
     }
 
@@ -335,7 +431,7 @@ impl Server {
             show_death_screen: !immediate_respawn,
             do_limited_crafting,
             common_player_spawn_info: CommonPlayerSpawnInfo {
-                dimension_type: world.dimension.id() as i32,
+                dimension_type: world.dimension_type.id() as i32,
                 dimension: world.key.clone(),
                 seed: hashed_seed,
                 game_type: player.game_mode.load(),
@@ -505,8 +601,10 @@ impl Server {
 
             {
                 let server = self.clone();
-                let _ = spawn_blocking(move || server.process_world_teleporting()).await;
+                let _ = spawn_blocking(move || server.process_world_changes()).await;
             }
+
+            self.process_domain_switches().await;
 
             let (tps, mspt) = {
                 let tick_duration_nanos = tick_start.elapsed().as_nanos() as u64;
@@ -658,27 +756,31 @@ impl Server {
         }
     }
 
-    fn process_world_teleporting(&self) {
-        let changes = mem::take(&mut *self.pending_dimension_changes.lock());
+    fn process_world_changes(&self) {
+        let changes = mem::take(&mut *self.pending_world_changes.lock());
 
         for (entity, request) in changes {
             if entity.is_removed() {
                 continue;
             }
             match request {
-                DimensionChangeRequest::Computed(transition) => {
+                WorldChangeRequest::Computed(transition) => {
                     entity.change_world(&transition);
                 }
-                DimensionChangeRequest::Portal { .. } => {
+                WorldChangeRequest::WorldSpawn { target_world } => {
+                    let transition = world_spawn_transition(target_world);
+                    entity.change_world(&transition);
+                }
+                WorldChangeRequest::Portal { .. } => {
                     // TODO: portal destination calculation + async chunk pre-warming
                 }
             }
         }
     }
 
-    /// Switches a player to another domain, saving and loading domain-scoped data.
-    pub async fn switch_player_domain(
-        self: Arc<Self>,
+    /// Queues a player domain switch for processing at the server tick safe point.
+    pub fn queue_domain_switch(
+        &self,
         player: Arc<Player>,
         target_domain: String,
     ) -> Result<(), String> {
@@ -686,52 +788,138 @@ impl Server {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_domain = player.get_world().key.namespace.to_string();
+        let current_domain = player.get_world().domain().to_owned();
+        if current_domain == target_domain {
+            return Err(format!("already in domain {target_domain}"));
+        }
+        if player.connection.closed() {
+            return Err("player is disconnecting".to_owned());
+        }
+        if !player.begin_domain_switch() {
+            return Err("domain switch already in progress".to_owned());
+        }
+
+        self.pending_domain_switches
+            .lock()
+            .push(DomainSwitchRequest {
+                player,
+                target_domain,
+                target_world: None,
+                restore_saved_location: true,
+            });
+        Ok(())
+    }
+
+    /// Queues a cross-domain teleport using saved target-domain location or target-world spawn.
+    pub fn queue_domain_switch_to_world(
+        &self,
+        player: Arc<Player>,
+        target_world: Arc<World>,
+    ) -> Result<(), String> {
+        let target_domain = target_world.domain().to_owned();
+        if player.connection.closed() {
+            return Err("player is disconnecting".to_owned());
+        }
+        if !player.begin_domain_switch() {
+            return Err("domain switch already in progress".to_owned());
+        }
+
+        self.pending_domain_switches
+            .lock()
+            .push(DomainSwitchRequest {
+                player,
+                target_domain,
+                target_world: Some(target_world),
+                restore_saved_location: true,
+            });
+        Ok(())
+    }
+
+    async fn process_domain_switches(&self) {
+        let switches = mem::take(&mut *self.pending_domain_switches.lock());
+
+        for request in switches {
+            let player = request.player.clone();
+            let player_name = player.gameprofile.name.clone();
+            let result = self.process_domain_switch(request).await;
+            player.finish_domain_switch();
+
+            if let Err(error) = result {
+                log::error!("Failed to switch {player_name} domain: {error}");
+                if !player.connection.closed() {
+                    player.disconnect("Failed to switch domain");
+                }
+            }
+        }
+    }
+
+    async fn process_domain_switch(&self, request: DomainSwitchRequest) -> Result<(), String> {
+        let DomainSwitchRequest {
+            player,
+            target_domain,
+            target_world,
+            restore_saved_location,
+        } = request;
+        if player.connection.closed() {
+            return Ok(());
+        }
+        if !self.worlds.has_domain(&target_domain) {
+            return Err(format!("unknown domain {target_domain}"));
+        }
+
+        let current_world = player.get_world();
+        let current_domain = current_world.domain().to_owned();
         if current_domain == target_domain {
             return Ok(());
         }
 
-        self.player_data_storage
-            .save_domain(&current_domain, &player)
-            .await
-            .map_err(|e| format!("failed to save current domain data: {e}"))?;
+        let current_data = PersistentPlayerData::from_player(&player);
+        current_world.remove_player_for_world_change(&player);
 
-        let mut target_world = self
-            .worlds
-            .default_world(&target_domain)
-            .cloned()
-            .ok_or_else(|| format!("domain {target_domain} has no default world"))?;
-
-        match self
+        if let Err(e) = self
             .player_data_storage
-            .load_domain(&target_domain, player.gameprofile.id)
+            .save_domain_data(&current_domain, player.gameprofile.id, &current_data)
             .await
-            .map_err(|e| format!("failed to load target domain data: {e}"))?
         {
-            Some(saved_data) => {
-                if let Ok(saved_world_key) = saved_data.dimension.parse::<Identifier>() {
-                    if saved_world_key.namespace.as_ref() == target_domain
-                        && let Some(saved_world) = self.worlds.get(&saved_world_key)
-                    {
-                        target_world = saved_world.clone();
-                    } else {
-                        log::warn!(
-                            "Saved world {} for player {} is missing, using domain default",
-                            saved_world_key,
-                            player.gameprofile.name
-                        );
-                    }
-                }
-                saved_data.apply_to_player(&player);
-            }
-            None => apply_first_visit_defaults(&player, &target_world),
+            Self::cleanup_removed_domain_switch_player(&current_world, &player);
+            return Err(format!("failed to save current domain data: {e}"));
         }
 
+        if player.connection.closed() {
+            Self::cleanup_removed_domain_switch_player(&current_world, &player);
+            return Ok(());
+        }
+
+        let target_state = match self
+            .load_domain_player_state(
+                &player,
+                &target_domain,
+                target_world.clone(),
+                restore_saved_location,
+            )
+            .await
+        {
+            Ok(state) => state,
+            Err(error) => {
+                Self::cleanup_removed_domain_switch_player(&current_world, &player);
+                return Err(error);
+            }
+        };
+
+        if player.connection.closed() {
+            Self::cleanup_removed_domain_switch_player(&current_world, &player);
+            return Ok(());
+        }
+
+        Self::apply_domain_player_state(&player, &target_state);
+        player.reset(target_state.world.clone(), ResetReason::WorldChange);
+        Self::apply_domain_player_state(&player, &target_state);
         let pos = *player.position.lock();
         let rotation = player.rotation.load();
-        player.reset(target_world, ResetReason::DimensionChange);
-        player.spawn(pos, rotation, ResetReason::DimensionChange);
-        self.player_data_storage
+        player.spawn(pos, rotation, ResetReason::WorldChange);
+
+        if let Err(e) = self
+            .player_data_storage
             .save_global(
                 player.gameprofile.id,
                 &GlobalPlayerData {
@@ -739,7 +927,19 @@ impl Server {
                 },
             )
             .await
-            .map_err(|e| format!("failed to save global player data: {e}"))
+        {
+            log::error!(
+                "Failed to save global player data for {} after domain switch: {e}",
+                player.gameprofile.name
+            );
+        }
+
+        Ok(())
+    }
+
+    fn cleanup_removed_domain_switch_player(world: &World, player: &Player) {
+        world.broadcast_to_all(CRemovePlayerInfo::single(player.gameprofile.id));
+        player.cleanup();
     }
 
     #[tracing::instrument(level = "trace", skip(self), name = "tick_worlds")]
@@ -887,10 +1087,8 @@ impl Server {
             data: player.game_mode.load().into(),
         });
     }
-    /// Queues a dimension change to be processed after the current tick.
-    pub fn queue_dimension_change(&self, entity: SharedEntity, request: DimensionChangeRequest) {
-        self.pending_dimension_changes
-            .lock()
-            .push((entity, request));
+    /// Queues a world change to be processed after the current tick.
+    pub fn queue_world_change(&self, entity: SharedEntity, request: WorldChangeRequest) {
+        self.pending_world_changes.lock().push((entity, request));
     }
 }

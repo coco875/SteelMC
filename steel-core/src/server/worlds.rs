@@ -105,7 +105,7 @@ impl WorldMap {
     pub fn worlds_in_domain(&self, domain: &str) -> Vec<Arc<World>> {
         self.worlds
             .values()
-            .filter(|world| world.key.namespace.as_ref() == domain)
+            .filter(|world| world.domain() == domain)
             .cloned()
             .collect()
     }
@@ -118,7 +118,7 @@ impl WorldMap {
         target_world_name: &str,
     ) -> Option<Arc<World>> {
         let key = Identifier::new(
-            source_world.key.namespace.to_string(),
+            source_world.domain().to_owned(),
             target_world_name.to_owned(),
         );
         self.worlds.get(&key).cloned()

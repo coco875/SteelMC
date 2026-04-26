@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use rustc_hash::FxHashMap;
 use simdnbt::{ToNbtTag, borrow::read_compound as read_borrowed_compound, owned::NbtTag};
 use tokio::{fs, io};
 use uuid::Uuid;
@@ -16,6 +17,7 @@ use crate::config::StorageSelection;
 use crate::player::Player;
 use steel_registry::item_stack::ItemStack;
 use steel_utils::Identifier;
+use steel_utils::locks::{AsyncMutex, SyncMutex};
 
 const PLAYER_MAGIC: [u8; 4] = *b"STLP";
 const GLOBAL_MAGIC: [u8; 4] = *b"STLG";
@@ -39,6 +41,7 @@ enum PlayerDataStorageBackend {
 
 struct FilePlayerDataStorage {
     save_root: PathBuf,
+    file_locks: SyncMutex<FxHashMap<PathBuf, Arc<AsyncMutex<()>>>>,
 }
 
 #[derive(SchemaWrite, SchemaRead)]
@@ -55,7 +58,7 @@ struct PlayerDataFile {
     abilities: AbilitiesFile,
     inventory: Vec<SlotFile>,
     selected_slot: i32,
-    dimension: String,
+    world: String,
     food_level: i32,
     food_saturation_level: f32,
     food_exhaustion_level: f32,
@@ -104,7 +107,7 @@ impl PlayerDataStorage {
 
     /// Saves a player's current domain data and global last-active-domain.
     pub async fn save(&self, player: &Player) -> io::Result<()> {
-        let domain = player.get_world().key.namespace.to_string();
+        let domain = player.get_world().domain().to_owned();
         self.save_domain(&domain, player).await?;
         self.save_global(
             player.gameprofile.id,
@@ -119,6 +122,20 @@ impl PlayerDataStorage {
     pub async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
         match &self.backend {
             PlayerDataStorageBackend::File(storage) => storage.save_domain(domain, player).await,
+        }
+    }
+
+    /// Saves an already captured player data snapshot for a specific domain.
+    pub async fn save_domain_data(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
+        match &self.backend {
+            PlayerDataStorageBackend::File(storage) => {
+                storage.save_domain_data(domain, uuid, data).await
+            }
         }
     }
 
@@ -165,13 +182,25 @@ impl PlayerDataStorage {
 impl FilePlayerDataStorage {
     async fn new(save_root: PathBuf) -> io::Result<Self> {
         fs::create_dir_all(save_root.join("global").join("players")).await?;
-        Ok(Self { save_root })
+        Ok(Self {
+            save_root,
+            file_locks: SyncMutex::new(FxHashMap::default()),
+        })
     }
 
     async fn save_domain(&self, domain: &str, player: &Player) -> io::Result<()> {
         let uuid = player.gameprofile.id;
         let data = PersistentPlayerData::from_player(player);
-        let file = PlayerDataFile::from_persistent(&data)?;
+        self.save_domain_data(domain, uuid, &data).await
+    }
+
+    async fn save_domain_data(
+        &self,
+        domain: &str,
+        uuid: Uuid,
+        data: &PersistentPlayerData,
+    ) -> io::Result<()> {
+        let file = PlayerDataFile::from_persistent(data)?;
         let bytes = encode_player_file(&file)?;
         self.write_atomic(&self.domain_players_dir(domain), uuid, bytes)
             .await?;
@@ -185,6 +214,8 @@ impl FilePlayerDataStorage {
         uuid: Uuid,
     ) -> io::Result<Option<PersistentPlayerData>> {
         let path = Self::player_file(&self.domain_players_dir(domain), uuid);
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
         if !path.exists() {
             return Ok(None);
         }
@@ -197,6 +228,8 @@ impl FilePlayerDataStorage {
 
     async fn load_global(&self, uuid: Uuid) -> io::Result<Option<GlobalPlayerData>> {
         let path = Self::player_file(&self.global_players_dir(), uuid);
+        let lock = self.file_lock(&path);
+        let _guard = lock.lock().await;
         if !path.exists() {
             return Ok(None);
         }
@@ -237,11 +270,21 @@ impl FilePlayerDataStorage {
         players_dir.join(format!("{uuid}.dat_old"))
     }
 
+    fn file_lock(&self, path: &Path) -> Arc<AsyncMutex<()>> {
+        let mut locks = self.file_locks.lock();
+        locks
+            .entry(path.to_path_buf())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
+    }
+
     async fn write_atomic(&self, players_dir: &Path, uuid: Uuid, bytes: Vec<u8>) -> io::Result<()> {
         fs::create_dir_all(players_dir).await?;
         let temp_path = Self::temp_file(players_dir, uuid);
         let final_path = Self::player_file(players_dir, uuid);
         let backup_path = Self::backup_file(players_dir, uuid);
+        let lock = self.file_lock(&final_path);
+        let _guard = lock.lock().await;
 
         fs::write(&temp_path, bytes).await?;
         if final_path.exists() {
@@ -285,7 +328,7 @@ impl PlayerDataFile {
             },
             inventory,
             selected_slot: data.selected_slot,
-            dimension: data.dimension.clone(),
+            world: data.world.clone(),
             food_level: data.food_level,
             food_saturation_level: data.food_saturation_level,
             food_exhaustion_level: data.food_exhaustion_level,
@@ -326,7 +369,7 @@ impl PlayerDataFile {
             },
             inventory,
             selected_slot: self.selected_slot,
-            dimension: self.dimension,
+            world: self.world,
             food_level: self.food_level,
             food_saturation_level: self.food_saturation_level,
             food_exhaustion_level: self.food_exhaustion_level,
@@ -445,7 +488,7 @@ mod tests {
             },
             inventory: Vec::new(),
             selected_slot: 4,
-            dimension: "lobby:void".to_owned(),
+            world: "lobby:void".to_owned(),
             food_level: 20,
             food_saturation_level: 5.0,
             food_exhaustion_level: 0.0,
@@ -459,7 +502,7 @@ mod tests {
         let encoded = encode_player_file(&file).expect("player file should encode");
         let decoded = decode_player_file(&encoded).expect("player file should decode");
 
-        assert_eq!(decoded.dimension, "lobby:void");
+        assert_eq!(decoded.world, "lobby:void");
         assert_eq!(decoded.game_mode, 2);
         assert_eq!(decoded.selected_slot, 4);
         assert_eq!(decoded.experience_level, 7);

@@ -77,9 +77,12 @@ pub struct PersistentPlayerData {
     /// NBT tag: `SelectedItemSlot` (Int)
     pub selected_slot: i32,
 
-    /// Dimension identifier (e.g., "minecraft:overworld").
+    /// Loaded world identifier (e.g., "minecraft:overworld").
+    ///
+    /// Vanilla stores this under the `Dimension` NBT key because it calls loaded
+    /// worlds dimensions.
     /// NBT tag: `Dimension` (String)
-    pub dimension: String,
+    pub world: String,
 
     /// Current food level (0–20, default 20).
     /// NBT tag: `foodLevel` (Int)
@@ -207,7 +210,7 @@ impl PersistentPlayerData {
             },
             inventory: slots,
             selected_slot: i32::from(inventory.get_selected_slot()),
-            dimension: player.get_world().key.to_string(),
+            world: player.get_world().key.to_string(),
             food_level: food_data.food_level,
             food_saturation_level: food_data.saturation_level,
             food_exhaustion_level: food_data.exhaustion_level,
@@ -254,7 +257,7 @@ impl PersistentPlayerData {
         compound.insert("Health", self.health);
         compound.insert("playerGameType", self.game_mode);
         compound.insert("SelectedItemSlot", self.selected_slot);
-        compound.insert("Dimension", self.dimension.clone());
+        compound.insert("Dimension", self.world.clone());
         compound.insert("DataVersion", self.data_version);
 
         // Food data (vanilla-compatible keys)
@@ -335,7 +338,7 @@ impl PersistentPlayerData {
         let game_mode = nbt.int("playerGameType").unwrap_or(0);
         let prev_game_mode = nbt.int("previousPlayerGameType").unwrap_or(0);
         let selected_slot = nbt.int("SelectedItemSlot").unwrap_or(0);
-        let dimension = nbt.string("Dimension").map_or_else(
+        let world = nbt.string("Dimension").map_or_else(
             || "minecraft:overworld".to_string(),
             |s| s.to_str().to_string(),
         );
@@ -383,7 +386,7 @@ impl PersistentPlayerData {
             abilities,
             inventory,
             selected_slot,
-            dimension,
+            world,
             food_level,
             food_saturation_level,
             food_exhaustion_level,
@@ -474,23 +477,37 @@ impl PersistentPlayerData {
     ///
     /// This restores position, rotation, inventory, abilities, etc.
     pub fn apply_to_player(&self, player: &Player) {
+        self.apply_to_player_inner(player, true);
+    }
+
+    /// Applies saved gameplay state without restoring world-local location data.
+    ///
+    /// Used when the saved world no longer exists and the player must spawn at
+    /// the target world's default spawn instead of stale coordinates.
+    pub fn apply_to_player_without_location(&self, player: &Player) {
+        self.apply_to_player_inner(player, false);
+    }
+
+    fn apply_to_player_inner(&self, player: &Player, restore_location: bool) {
         use glam::DVec3;
 
-        // Position
-        *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
+        if restore_location {
+            // Position
+            *player.position.lock() = DVec3::new(self.pos[0], self.pos[1], self.pos[2]);
 
-        // Rotation
-        player.rotation.store((self.rotation[0], self.rotation[1]));
+            // Rotation
+            player.rotation.store((self.rotation[0], self.rotation[1]));
 
-        // Motion/velocity
-        player.movement.lock().delta_movement =
-            DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
+            // Motion/velocity
+            player.movement.lock().delta_movement =
+                DVec3::new(self.motion[0], self.motion[1], self.motion[2]);
 
-        // Ground state
-        {
-            let mut es = player.entity_state.lock();
-            es.on_ground = self.on_ground;
-            es.fall_flying = self.fall_flying;
+            // Ground state
+            {
+                let mut es = player.entity_state.lock();
+                es.on_ground = self.on_ground;
+                es.fall_flying = self.fall_flying;
+            }
         }
 
         // Health

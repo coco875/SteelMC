@@ -111,7 +111,7 @@ impl ChunkMap {
     pub fn new_with_storage(
         chunk_runtime: Arc<Runtime>,
         world: Weak<World>,
-        _dimension: DimensionTypeRef,
+        _dimension_type: DimensionTypeRef,
         storage: Arc<ChunkStorage>,
         generator: Arc<ChunkGeneratorType>,
         generation_pool: Arc<ThreadPool>,

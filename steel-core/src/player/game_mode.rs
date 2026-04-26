@@ -250,7 +250,7 @@ impl Player {
             }
         }
 
-        let domain = self.get_world().key.namespace.to_string();
+        let domain = self.get_world().domain().to_owned();
         for w in self.server().worlds.worlds_in_domain(&domain) {
             let mut level_data = w.level_data.write();
             level_data.data_mut().difficulty = difficulty;

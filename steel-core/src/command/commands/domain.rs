@@ -22,13 +22,11 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 .cloned()
                 .ok_or(CommandError::InvalidRequirement)?;
             let server = context.server.clone();
-            let domain_for_task = domain.clone();
-            let player_name = player.gameprofile.name.clone();
-            tokio::spawn(async move {
-                if let Err(error) = server.switch_player_domain(player, domain_for_task).await {
-                    log::error!("Failed to switch {player_name} domain: {error}");
-                }
-            });
+            server
+                .queue_domain_switch(player, domain.clone())
+                .map_err(|error| {
+                    CommandError::CommandFailed(Box::new(TextComponent::plain(error)))
+                })?;
 
             context.sender.send_message(&TextComponent::plain(format!(
                 "Switching to domain {domain}"

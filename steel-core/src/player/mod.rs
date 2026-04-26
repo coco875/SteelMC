@@ -267,6 +267,8 @@ pub struct Player {
 
     /// Whether the player has been removed from the world.
     removed: AtomicBool,
+    /// Whether the player is between domain saves/loads and should ignore gameplay packets.
+    domain_switching: AtomicBool,
 
     /// Callback for entity lifecycle events (movement between chunks, removal).
     level_callback: SyncMutex<Arc<dyn EntityLevelCallback>>,
@@ -366,6 +368,7 @@ impl Player {
             food_data: SyncMutex::new(FoodData::new()),
             health_sync: SyncMutex::new(HealthSyncState::new()),
             removed: AtomicBool::new(false),
+            domain_switching: AtomicBool::new(false),
             level_callback: SyncMutex::new(Arc::new(NullEntityCallback)),
             experience: SyncMutex::new(Experience::default()),
             chunk_send_epoch: AtomicU32::new(0),
@@ -817,10 +820,10 @@ impl Player {
         }
     }
 
-    /// TODO: bed/respawn anchor, cross-dimension, potion clearing, noRespawnBlockAvailable
+    /// TODO: bed/respawn anchor, cross-world, potion clearing, noRespawnBlockAvailable
     ///
     /// # Panics
-    /// If the player dies in a dimension that doesn't exist.
+    /// If the player dies in a world that doesn't exist.
     pub fn respawn(&self) {
         {
             let mut living_base = self.living_base.lock();
@@ -960,14 +963,31 @@ impl Player {
         self.world.store(world);
     }
 
+    /// Marks the player as switching domains if they are not already in a transition.
+    pub fn begin_domain_switch(&self) -> bool {
+        self.domain_switching
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Clears the domain-switch transition marker.
+    pub fn finish_domain_switch(&self) {
+        self.domain_switching.store(false, Ordering::Release);
+    }
+
+    /// Returns whether this player is currently switching domains.
+    pub fn is_domain_switching(&self) -> bool {
+        self.domain_switching.load(Ordering::Acquire)
+    }
+
     /// Resets the player's transient state and prepares them for a new world.
     ///
     /// This is the shared "clean slate" path used by initial join, respawn, and
-    /// dimension change. If the player is currently in a different world, they are
+    /// world change. If the player is currently in a different world, they are
     /// removed from the old world first.
     ///
     /// Vanilla equivalent: the work that happens when a fresh `ServerPlayer` is
-    /// constructed during respawn / dimension change, since vanilla recreates the
+    /// constructed during respawn / world change, since vanilla recreates the
     /// player object. We reuse the same `Player`, so we reset manually.
     pub fn reset(self: &Arc<Self>, new_world: Arc<World>, reason: ResetReason) {
         let old_world = self.get_world();
@@ -977,7 +997,7 @@ impl Player {
         if switching_worlds {
             self.do_close_container();
             self.send_packet(CContainerClose { container_id: 0 });
-            old_world.remove_player_for_dimension_change(self);
+            old_world.remove_player_for_world_change(self);
             self.set_world(new_world.clone());
         }
 
@@ -1005,12 +1025,12 @@ impl Player {
         if reason != ResetReason::InitialJoin {
             // 0x01 = keep attributes, 0x02 = keep entity data
             let data_kept: i8 = match reason {
-                ResetReason::DimensionChange => 0x03,
+                ResetReason::WorldChange => 0x03,
                 _ => 0x00,
             };
 
             self.send_packet(CRespawn {
-                dimension_type: new_world.dimension.id() as i32,
+                dimension_type: new_world.dimension_type.id() as i32,
                 dimension_name: new_world.key.clone(),
                 hashed_seed: new_world.obfuscated_seed(),
                 gamemode: self.game_mode.load() as u8,
@@ -1030,7 +1050,7 @@ impl Player {
     /// Spawns the player into their current world at the given position.
     ///
     /// This is the shared "enter world" path used by initial join, respawn, and
-    /// dimension change. Sends position sync, abilities, inventory, time, weather,
+    /// world change. Sends position sync, abilities, inventory, time, weather,
     /// and adds the player to the world as appropriate for the given reason.
     ///
     /// # Panics
@@ -1103,10 +1123,10 @@ impl Player {
 
         // Add to world / re-enter chunk tracking
         match reason {
-            ResetReason::InitialJoin | ResetReason::DimensionChange => {
-                if reason == ResetReason::DimensionChange {
+            ResetReason::InitialJoin | ResetReason::WorldChange => {
+                if reason == ResetReason::WorldChange {
                     log::info!(
-                        "Player {} changed dimension to {}",
+                        "Player {} changed world to {}",
                         self.gameprofile.name,
                         world.key
                     );
@@ -1137,8 +1157,8 @@ pub enum ResetReason {
     InitialJoin,
     /// Respawning after death in the same world.
     Respawn,
-    /// Teleporting to a different world (dimension change).
-    DimensionChange,
+    /// Teleporting to a different loaded world.
+    WorldChange,
 }
 
 impl Entity for Player {
@@ -1238,15 +1258,21 @@ impl Entity for Player {
 
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let new_world = teleport_transition.target_world.clone();
-        self.reset(new_world, ResetReason::DimensionChange);
-        // TODO: set portal cooldown from teleport_transition.portal_cooldown
-        self.spawn(
-            teleport_transition.position,
-            teleport_transition.rotation,
-            ResetReason::DimensionChange,
-        );
-        // Vanilla: PlayerList.sendAllPlayerInfo → inventoryMenu.sendAllDataToRemote
-        self.send_inventory_to_remote();
+        if Arc::ptr_eq(&self.get_world(), &new_world) {
+            let pos = teleport_transition.position;
+            let rotation = teleport_transition.rotation;
+            self.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1);
+        } else {
+            self.reset(new_world, ResetReason::WorldChange);
+            // TODO: set portal cooldown from teleport_transition.portal_cooldown
+            self.spawn(
+                teleport_transition.position,
+                teleport_transition.rotation,
+                ResetReason::WorldChange,
+            );
+            // Vanilla: PlayerList.sendAllPlayerInfo -> inventoryMenu.sendAllDataToRemote
+            self.send_inventory_to_remote();
+        }
     }
 }
 
