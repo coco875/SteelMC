@@ -35,3 +35,5 @@ pub mod noise_parameters;
 #[rustfmt::skip]
 #[path = "generated/vanilla_density_functions/mod.rs"]
 pub mod density_functions;
+
+pub mod simd_overworld;

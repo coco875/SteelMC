@@ -4,3 +4,5 @@ pub mod aquifer;
 pub mod beardifier;
 pub mod noise_chunk;
 pub mod ore_veinifier;
+pub mod simd_aquifer;
+pub mod simd_noise_chunk;

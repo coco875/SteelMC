@@ -6,6 +6,7 @@ use enum_dispatch::enum_dispatch;
 use steel_worldgen::density_functions::{
     end::EndNoises, nether::NetherNoises, overworld::OverworldNoises,
 };
+use steel_worldgen::simd_overworld::SimdOverworldNoises;
 
 use crate::world::World;
 #[expect(
@@ -13,7 +14,9 @@ use crate::world::World;
     reason = "enum_dispatch resolves the trait name through this import"
 )]
 use crate::worldgen::generator::ChunkGenerator;
-use crate::worldgen::generators::{EmptyChunkGenerator, FlatChunkGenerator, VanillaGenerator};
+use crate::worldgen::generators::{
+    EmptyChunkGenerator, FlatChunkGenerator, SimdVanillaGenerator, VanillaGenerator,
+};
 
 /// Type alias for overworld generator.
 pub type OverworldGenerator = VanillaGenerator<OverworldNoises>;
@@ -23,6 +26,8 @@ pub type NetherGenerator = VanillaGenerator<NetherNoises>;
 
 /// Type alias for end generator.
 pub type EndGenerator = VanillaGenerator<EndNoises>;
+
+pub type SimdOverworldGenerator = SimdVanillaGenerator;
 
 #[expect(
     missing_docs,
