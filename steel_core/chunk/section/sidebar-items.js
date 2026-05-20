@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["BLOCK_STATE_SECTION_COUNTS"],"struct":["BlockStateSectionCounts","ChunkSection","SectionHolder","Sections"]};

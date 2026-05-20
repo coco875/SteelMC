@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COORDINATE_SCALE"],"fn":["clamped_lerp_4x","wrap_4x"],"struct":["BlendedNoise"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["deserialize_optional_tag_identifier","deserialize_tag_identifier","insert_spawn_conditions"],"struct":["BiomeCondition","BlockStateData","FluidStateData","SpawnConditionEntry"]};

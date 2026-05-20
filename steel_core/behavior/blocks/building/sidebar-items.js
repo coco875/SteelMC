@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["door_block","fence_block","rotated_pillar_block","slab_block","stair_block","weathering_block"]};

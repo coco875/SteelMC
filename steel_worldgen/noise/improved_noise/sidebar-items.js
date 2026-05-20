@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["grad_dot","grad_dot_4x","lerp2_4x","lerp3_4x","lerp_4x","smoothstep_4x"],"struct":["ImprovedNoise"]};

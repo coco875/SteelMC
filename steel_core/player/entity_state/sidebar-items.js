@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SPRINT_SPEED_MODIFIER_AMOUNT"],"struct":["EntityState","SharedFlags"]};

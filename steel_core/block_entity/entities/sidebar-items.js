@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BARREL_SLOTS","BEEHIVE_MAX_OCCUPANTS","BEEHIVE_MIN_OCCUPATION_TICKS_NECTARLESS","SIGN_LINES"],"mod":["barrel","beehive","raw","sign"],"struct":["BarrelBlockEntity","BeehiveBlockEntity","RawBlockEntity","SignBlockEntity","SignText"]};

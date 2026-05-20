@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["steel_core",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html\" title=\"trait core::iter::traits::collect::IntoIterator\">IntoIterator</a> for <a class=\"struct\" href=\"steel_core/player/entity_state/struct.SharedFlags.html\" title=\"struct steel_core::player::entity_state::SharedFlags\">SharedFlags</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html\" title=\"trait core::iter::traits::collect::IntoIterator\">IntoIterator</a> for <a class=\"struct\" href=\"steel_core/world/structure/struct.StructureReferenceSet.html\" title=\"struct steel_core::world::structure::StructureReferenceSet\">StructureReferenceSet</a>",0],["impl&lt;'a&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html\" title=\"trait core::iter::traits::collect::IntoIterator\">IntoIterator</a> for &amp;'a <a class=\"struct\" href=\"steel_core/world/structure/struct.StructureReferenceSet.html\" title=\"struct steel_core::world::structure::StructureReferenceSet\">StructureReferenceSet</a>",0]]],["steel_utils",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html\" title=\"trait core::iter::traits::collect::IntoIterator\">IntoIterator</a> for <a class=\"struct\" href=\"steel_utils/types/struct.UpdateFlags.html\" title=\"struct steel_utils::types::UpdateFlags\">UpdateFlags</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1170,355]}

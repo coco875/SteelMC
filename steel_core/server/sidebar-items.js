@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHUNK_SCHEDULING_TPS","CHUNK_SENDING_TPS","TAB_LIST_UPDATE_INTERVAL"],"enum":["DomainPlayerData"],"fn":["apply_first_visit_defaults","generation_settings_for_world","world_config_registries","world_spawn_transition"],"mod":["jobs","registry_cache","tick_rate_manager","worlds"],"struct":["DomainPlayerState","DomainSwitchRequest","Server"]};

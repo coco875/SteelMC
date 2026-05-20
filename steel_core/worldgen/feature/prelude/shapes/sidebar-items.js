@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SupportType"],"fn":["bounding_box","is_face_center_supported","is_face_full","is_face_rigid_supported","is_face_sturdy","is_shape_full_block"],"struct":["AABB","AABBd","BlockShapes","ShapeId","ShapeRegistry"],"type":["VoxelShape"]};
