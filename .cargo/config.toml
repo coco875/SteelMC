@@ -1,7 +1,7 @@
 # https://github.com/bevyengine/bevy/blob/main/.cargo/config_fast_builds.toml for more details
 
 [build]
-rustflags = ["-Zthreads=0", "-Ctarget-cpu=native"]
+rustflags = ["-Zthreads=0"]
 # TODO: remove once nightly ICE with incremental cache is fixed
 #incremental = false
 
