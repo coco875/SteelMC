@@ -7,6 +7,7 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncMutex;
+use steel_worldgen::FloatGen;
 
 static GEODE_NOISE_BY_SEED: LazyLock<SyncMutex<FxHashMap<i64, NormalNoise>>> =
     LazyLock::new(|| SyncMutex::new(FxHashMap::default()));
@@ -61,14 +62,17 @@ impl FeatureDecorationRunner {
             config.max_gen_offset,
         );
         Self::for_each_vanilla_between_closed(min, max, |pos| {
-            let noise_offset =
-                noise.get_value(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()))
-                    * config.noise_multiplier;
+            let noise_offset = noise.get_value(
+                pos.x() as FloatGen,
+                pos.y() as FloatGen,
+                pos.z() as FloatGen,
+            ) * config.noise_multiplier as FloatGen;
             let dist_sum_shell =
-                Self::geode_distance_sum(pos, &points, noise_offset, |offset| offset);
-            let dist_sum_crack = Self::geode_distance_sum(pos, &crack_points, noise_offset, |_| {
-                crack.crack_point_offset
-            });
+                Self::geode_distance_sum(pos, &points, noise_offset as f64, |offset| offset);
+            let dist_sum_crack =
+                Self::geode_distance_sum(pos, &crack_points, noise_offset as f64, |_| {
+                    crack.crack_point_offset
+                });
 
             if dist_sum_shell >= outer_crust {
                 if should_generate_crack

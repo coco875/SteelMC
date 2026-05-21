@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::template_pool::Projection;
 use steel_utils::BoundingBox;
+use steel_worldgen::FloatGen;
 use steel_worldgen::math::map_clamped;
 
 use crate::world::structure::StructureStart;
@@ -68,7 +69,7 @@ fn is_in_kernel_range(index: i32) -> bool {
 ///
 /// `dx`, `dy`, `dz` are the distances from the query point to the piece for kernel lookup.
 /// `y_to_ground` is the vertical distance from query point to the piece's ground level.
-fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
+fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> FloatGen {
     let xi = dx + KERNEL_RADIUS;
     let yi = dy + KERNEL_RADIUS;
     let zi = dz + KERNEL_RADIUS;
@@ -82,14 +83,14 @@ fn get_beard_contribution(dx: i32, dy: i32, dz: i32, y_to_ground: i32) -> f64 {
     let value = -dy_with_offset * fast_inv_sqrt(dist_sq / 2.0) / 2.0;
     let kernel_idx =
         zi as usize * KERNEL_SIZE * KERNEL_SIZE + xi as usize * KERNEL_SIZE + yi as usize;
-    value * f64::from(BEARD_KERNEL[kernel_idx])
+    value as FloatGen * BEARD_KERNEL[kernel_idx] as FloatGen
 }
 
 /// Computes the bury density contribution for a point near a structure piece.
 ///
 /// Simple linear falloff: 1.0 at distance 0, 0.0 at distance 6.
-fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> f64 {
-    let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+fn get_bury_contribution(dx: f64, dy: f64, dz: f64) -> FloatGen {
+    let distance = (dx * dx + dy * dy + dz * dz).sqrt() as FloatGen;
     map_clamped(distance, 0.0, 6.0, 1.0, 0.0)
 }
 
@@ -216,7 +217,7 @@ impl Beardifier {
     ///
     /// Returns 0.0 if no structures are nearby.
     #[must_use]
-    pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
+    pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> FloatGen {
         let Some(affected) = &self.affected_box else {
             return 0.0;
         };

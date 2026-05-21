@@ -13,6 +13,7 @@ use steel_utils::random::{
     Random, RandomSource, RandomSplitter, legacy_random::LegacyRandom, xoroshiro::Xoroshiro,
 };
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
+use steel_worldgen::FloatGen;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{lerp, lerp2};
 use steel_worldgen::noise_parameters::get_noise_parameters;
@@ -226,7 +227,7 @@ pub(crate) fn column_interpolated_density<N: DimensionNoises>(
     z: i32,
     cell_w: i32,
     cell_h: i32,
-) -> f64 {
+) -> FloatGen {
     interpolated_density::<N>(cache, noises, x, y, z, cell_w, cell_h)
 }
 
@@ -263,8 +264,8 @@ pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
 
     let cell_x = block_x.div_euclid(cell_w);
     let cell_z = block_z.div_euclid(cell_w);
-    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
-    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_x = block_x.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
+    let factor_z = block_z.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
     let x0 = cell_x * cell_w;
     let x1 = x0 + cell_w;
     let z0 = cell_z * cell_w;
@@ -272,15 +273,15 @@ pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
 
     let interp_count = N::interpolated_count();
 
-    let mut c000 = [0.0f64; MAX_INTERP];
-    let mut c100 = [0.0f64; MAX_INTERP];
-    let mut c010 = [0.0f64; MAX_INTERP];
-    let mut c110 = [0.0f64; MAX_INTERP];
-    let mut c001 = [0.0f64; MAX_INTERP];
-    let mut c101 = [0.0f64; MAX_INTERP];
-    let mut c011 = [0.0f64; MAX_INTERP];
-    let mut c111 = [0.0f64; MAX_INTERP];
-    let mut interpolated = [0.0f64; MAX_INTERP];
+    let mut c000 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c100 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c010 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c110 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c001 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c101 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c011 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c111 = [0.0 as FloatGen; MAX_INTERP];
+    let mut interpolated = [0.0 as FloatGen; MAX_INTERP];
 
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
@@ -307,7 +308,7 @@ pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
 
     let mut above_is_air = false;
     let mut have_above = false;
-    let mut blended_scratch = [0.0_f64; 2];
+    let mut blended_scratch = [0.0 as FloatGen; 2];
 
     for cell_y_idx in (min_cell_y_idx..=max_cell_y_idx).rev() {
         let y0 = (cell_min_y + cell_y_idx) * cell_h;
@@ -349,7 +350,7 @@ pub(crate) fn find_solid_block_below_air<N: DimensionNoises>(
 
         for y_in_cell in (bottom_y_in_cell..=top_y_in_cell).rev() {
             let pos_y = y0 + y_in_cell;
-            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+            let factor_y = y_in_cell as FloatGen / cell_h as FloatGen;
 
             for ch in 0..interp_count {
                 let d00 = lerp(factor_y, c000[ch], c010[ch]);
@@ -413,8 +414,8 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
 
     let cell_x = block_x.div_euclid(cell_w);
     let cell_z = block_z.div_euclid(cell_w);
-    let factor_x = f64::from(block_x.rem_euclid(cell_w)) / f64::from(cell_w);
-    let factor_z = f64::from(block_z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let factor_x = block_x.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
+    let factor_z = block_z.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
     let x0 = cell_x * cell_w;
     let x1 = x0 + cell_w;
     let z0 = cell_z * cell_w;
@@ -422,15 +423,15 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
 
     let interp_count = N::interpolated_count();
 
-    let mut c000 = [0.0f64; MAX_INTERP];
-    let mut c100 = [0.0f64; MAX_INTERP];
-    let mut c010 = [0.0f64; MAX_INTERP];
-    let mut c110 = [0.0f64; MAX_INTERP];
-    let mut c001 = [0.0f64; MAX_INTERP];
-    let mut c101 = [0.0f64; MAX_INTERP];
-    let mut c011 = [0.0f64; MAX_INTERP];
-    let mut c111 = [0.0f64; MAX_INTERP];
-    let mut interpolated = [0.0f64; MAX_INTERP];
+    let mut c000 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c100 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c010 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c110 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c001 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c101 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c011 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c111 = [0.0 as FloatGen; MAX_INTERP];
+    let mut interpolated = [0.0 as FloatGen; MAX_INTERP];
 
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
@@ -456,7 +457,7 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
         (max_y_inclusive - (cell_min_y + max_cell_y_idx) * cell_h).clamp(0, cell_h - 1);
 
     // Precompute blended noise per corner (x, z) × two Y levels per cell.
-    let mut blended_scratch = [0.0_f64; 2];
+    let mut blended_scratch = [0.0 as FloatGen; 2];
     for cell_y_idx in (0..=max_cell_y_idx).rev() {
         let y0 = (cell_min_y + cell_y_idx) * cell_h;
         let y1 = y0 + cell_h;
@@ -498,7 +499,7 @@ fn iterate_noise_column_capped<N: DimensionNoises>(
         // Iterate Y within cell from top to bottom
         for y_in_cell in (0..=top_y_in_cell).rev() {
             let pos_y = (cell_min_y + cell_y_idx) * cell_h + y_in_cell;
-            let factor_y = f64::from(y_in_cell) / f64::from(cell_h);
+            let factor_y = y_in_cell as FloatGen / cell_h as FloatGen;
 
             // Trilinearly interpolate each channel independently
             for ch in 0..interp_count {
@@ -546,15 +547,15 @@ fn interpolated_density<N: DimensionNoises>(
     z: i32,
     cell_w: i32,
     cell_h: i32,
-) -> f64 {
+) -> FloatGen {
     const MAX_INTERP: usize = 16;
 
     let cx = x.div_euclid(cell_w);
     let cy = y.div_euclid(cell_h);
     let cz = z.div_euclid(cell_w);
-    let fx = f64::from(x.rem_euclid(cell_w)) / f64::from(cell_w);
-    let fy = f64::from(y.rem_euclid(cell_h)) / f64::from(cell_h);
-    let fz = f64::from(z.rem_euclid(cell_w)) / f64::from(cell_w);
+    let fx = x.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
+    let fy = y.rem_euclid(cell_h) as FloatGen / cell_h as FloatGen;
+    let fz = z.rem_euclid(cell_w) as FloatGen / cell_w as FloatGen;
 
     let x0 = cx * cell_w;
     let x1 = x0 + cell_w;
@@ -565,15 +566,15 @@ fn interpolated_density<N: DimensionNoises>(
 
     let interp_count = N::interpolated_count();
 
-    let mut c000 = [0.0f64; MAX_INTERP];
-    let mut c100 = [0.0f64; MAX_INTERP];
-    let mut c010 = [0.0f64; MAX_INTERP];
-    let mut c110 = [0.0f64; MAX_INTERP];
-    let mut c001 = [0.0f64; MAX_INTERP];
-    let mut c101 = [0.0f64; MAX_INTERP];
-    let mut c011 = [0.0f64; MAX_INTERP];
-    let mut c111 = [0.0f64; MAX_INTERP];
-    let mut interpolated = [0.0f64; MAX_INTERP];
+    let mut c000 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c100 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c010 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c110 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c001 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c101 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c011 = [0.0 as FloatGen; MAX_INTERP];
+    let mut c111 = [0.0 as FloatGen; MAX_INTERP];
+    let mut interpolated = [0.0 as FloatGen; MAX_INTERP];
 
     macro_rules! fill {
         ($out:expr, $ex:expr, $ey:expr, $ez:expr, $blended:expr) => {{
@@ -591,7 +592,7 @@ fn interpolated_density<N: DimensionNoises>(
 
     // Precompute blended noise at each corner (x, z) for the two cell Y levels.
     let ys = [y0, y1];
-    let mut blended_scratch = [0.0_f64; 2];
+    let mut blended_scratch = [0.0 as FloatGen; 2];
     noises.compute_noise_column(x0, &ys, z0, &mut blended_scratch);
     let (b000, b010) = (blended_scratch[0], blended_scratch[1]);
     noises.compute_noise_column(x1, &ys, z0, &mut blended_scratch);
@@ -972,15 +973,15 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 let min_surface_level =
                     if let Some((p00, p10, p01, p11)) = preliminary_surface_corners {
                         // Vanilla: (float)(blockX & 15) / 16.0F — exact for 0-15.
-                        let t_x = f64::from(local_x as u8) / 16.0;
-                        let t_z = f64::from(local_z as u8) / 16.0;
+                        let t_x = (local_x as u8) as FloatGen / 16.0;
+                        let t_z = (local_z as u8) as FloatGen / 16.0;
                         let interp = lerp2(
                             t_x,
                             t_z,
-                            f64::from(p00),
-                            f64::from(p10),
-                            f64::from(p01),
-                            f64::from(p11),
+                            p00 as FloatGen,
+                            p10 as FloatGen,
+                            p01 as FloatGen,
+                            p11 as FloatGen,
                         );
                         interp.floor() as i32 + surface_depth - 8
                     } else {

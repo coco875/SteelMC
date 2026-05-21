@@ -22,6 +22,7 @@ use steel_registry::vanilla_biomes;
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BlockPos, Identifier};
+use steel_worldgen::FloatGen;
 use steel_worldgen::density_functions::nether::NetherColumnCache;
 use steel_worldgen::density_functions::overworld::OverworldColumnCache;
 use steel_worldgen::multi_noise::{
@@ -352,11 +353,11 @@ pub struct EndChunkBiomeSampler<'a> {
     /// All quart positions within a chunk produce the same chunk coordinates,
     /// and `EndIslands::sample` ignores `block_y`, so the erosion is constant
     /// per chunk. This avoids redundant 25×25 simplex neighborhood scans.
-    cached_erosion: Option<(i32, i32, f64)>,
+    cached_erosion: Option<(i32, i32, FloatGen)>,
 }
 
 impl EndChunkBiomeSampler<'_> {
-    fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
+    fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> FloatGen {
         if let Some((cx, cz, erosion)) = self.cached_erosion
             && cx == chunk_x
             && cz == chunk_z

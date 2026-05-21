@@ -1,6 +1,12 @@
 //! Math utilities for noise generation, matching vanilla Minecraft's Mth.java
 
+#[cfg(not(feature = "f32_gen"))]
 use std::f64::consts::PI;
+
+#[cfg(feature = "f32_gen")]
+use std::f32::consts::PI;
+
+use steel_worldgen::FloatGen;
 
 /// Smoothstep - quintic Hermite interpolation (NOT cubic!)
 ///
@@ -11,7 +17,7 @@ use std::f64::consts::PI;
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn smoothstep(x: f64) -> f64 {
+pub fn smoothstep(x: FloatGen) -> FloatGen {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
@@ -22,7 +28,7 @@ pub fn smoothstep(x: f64) -> f64 {
 /// Java reference: `Mth.smoothstepDerivative(double)`
 #[inline]
 #[must_use]
-pub fn smoothstep_derivative(x: f64) -> f64 {
+pub fn smoothstep_derivative(x: FloatGen) -> FloatGen {
     30.0 * x * x * (x - 1.0) * (x - 1.0)
 }
 
@@ -35,9 +41,9 @@ pub fn smoothstep_derivative(x: f64) -> f64 {
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn floor(v: f64) -> i32 {
+pub fn floor(v: FloatGen) -> i32 {
     let i = v as i32;
-    if v < f64::from(i) { i - 1 } else { i }
+    if v < i as FloatGen { i - 1 } else { i }
 }
 
 /// Long floor function matching Java behavior.
@@ -45,9 +51,9 @@ pub fn floor(v: f64) -> i32 {
 /// Java reference: `Mth.lfloor(double)`
 #[inline]
 #[must_use]
-pub fn lfloor(v: f64) -> i64 {
+pub fn lfloor(v: FloatGen) -> i64 {
     let i = v as i64;
-    if v < i as f64 { i - 1 } else { i }
+    if v < i as FloatGen { i - 1 } else { i }
 }
 
 /// Linear interpolation.
@@ -58,7 +64,7 @@ pub fn lfloor(v: f64) -> i64 {
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
+pub fn lerp(alpha: FloatGen, a: FloatGen, b: FloatGen) -> FloatGen {
     a + alpha * (b - a)
 }
 
@@ -70,7 +76,14 @@ pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
+pub fn lerp2(
+    a1: FloatGen,
+    a2: FloatGen,
+    x00: FloatGen,
+    x10: FloatGen,
+    x01: FloatGen,
+    x11: FloatGen,
+) -> FloatGen {
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
 }
 
@@ -87,18 +100,18 @@ pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
     reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
 )]
 pub fn lerp3(
-    a1: f64,
-    a2: f64,
-    a3: f64,
-    x000: f64,
-    x100: f64,
-    x010: f64,
-    x110: f64,
-    x001: f64,
-    x101: f64,
-    x011: f64,
-    x111: f64,
-) -> f64 {
+    a1: FloatGen,
+    a2: FloatGen,
+    a3: FloatGen,
+    x000: FloatGen,
+    x100: FloatGen,
+    x010: FloatGen,
+    x110: FloatGen,
+    x001: FloatGen,
+    x101: FloatGen,
+    x011: FloatGen,
+    x111: FloatGen,
+) -> FloatGen {
     lerp(
         a3,
         lerp2(a1, a2, x000, x100, x010, x110),
@@ -114,7 +127,7 @@ pub fn lerp3(
 /// Note: Vanilla's parameter order is `(factor, min, max)`, ours is `(min, max, factor)`.
 #[inline]
 #[must_use]
-pub fn clamped_lerp(min: f64, max: f64, factor: f64) -> f64 {
+pub fn clamped_lerp(min: FloatGen, max: FloatGen, factor: FloatGen) -> FloatGen {
     if factor < 0.0 {
         min
     } else if factor > 1.0 {
@@ -129,7 +142,7 @@ pub fn clamped_lerp(min: f64, max: f64, factor: f64) -> f64 {
 /// Java reference: `Mth.clamp(double, double, double)`
 #[inline]
 #[must_use]
-pub fn clamp(value: f64, min: f64, max: f64) -> f64 {
+pub fn clamp(value: FloatGen, min: FloatGen, max: FloatGen) -> FloatGen {
     if value < min {
         min
     } else if value > max {
@@ -157,7 +170,13 @@ pub const fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
 /// Used for Y-clamped gradients in density functions.
 #[inline]
 #[must_use]
-pub fn map_clamped(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
+pub fn map_clamped(
+    value: FloatGen,
+    from_min: FloatGen,
+    from_max: FloatGen,
+    to_min: FloatGen,
+    to_max: FloatGen,
+) -> FloatGen {
     let t = (value - from_min) / (from_max - from_min);
     clamped_lerp(to_min, to_max, t)
 }
@@ -167,7 +186,7 @@ pub fn map_clamped(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max
 /// Java reference: `Mth.inverseLerp(double, double, double)`
 #[inline]
 #[must_use]
-pub fn inverse_lerp(value: f64, a: f64, b: f64) -> f64 {
+pub fn inverse_lerp(value: FloatGen, a: FloatGen, b: FloatGen) -> FloatGen {
     (value - a) / (b - a)
 }
 
@@ -178,21 +197,27 @@ pub fn inverse_lerp(value: f64, a: f64, b: f64) -> f64 {
 /// Java reference: `Mth.map(double, double, double, double, double)`
 #[inline]
 #[must_use]
-pub fn map(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
+pub fn map(
+    value: FloatGen,
+    from_min: FloatGen,
+    from_max: FloatGen,
+    to_min: FloatGen,
+    to_max: FloatGen,
+) -> FloatGen {
     lerp(inverse_lerp(value, from_min, from_max), to_min, to_max)
 }
 
 /// Square a value.
 #[inline]
 #[must_use]
-pub fn square(x: f64) -> f64 {
+pub fn square(x: FloatGen) -> FloatGen {
     x * x
 }
 
 /// Cube a value.
 #[inline]
 #[must_use]
-pub fn cube(x: f64) -> f64 {
+pub fn cube(x: FloatGen) -> FloatGen {
     x * x * x
 }
 
@@ -201,7 +226,7 @@ pub fn cube(x: f64) -> f64 {
 /// Java reference: `NoiseUtils.biasTowardsExtreme(double, double)`
 #[inline]
 #[must_use]
-pub fn bias_towards_extreme(noise: f64, factor: f64) -> f64 {
+pub fn bias_towards_extreme(noise: FloatGen, factor: FloatGen) -> FloatGen {
     noise + (PI * noise).sin() * factor / PI
 }
 

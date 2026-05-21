@@ -862,77 +862,77 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
             }
 
             #[inline]
-            fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_final_density(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_depth(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_barrier(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_fluid_level_floodedness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_fluid_level_floodedness(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_fluid_level_spread(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_fluid_level_spread(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_lava(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_vein_toggle(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_vein_ridged(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_vein_gap(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_erosion(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_continentalness(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_temperature(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_vegetation(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_ridges(self, cache, x, y, z)
             }
 
             #[inline]
-            fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64 {
+            fn router_preliminary_surface_level(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen {
                 router_preliminary_surface_level(self, cache, x, y, z)
             }
 
@@ -945,27 +945,27 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
                 VEIN_INTERP_ENABLED
             }
 
-            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [FloatGen]) {
                 self.blended_noise.compute_column(x, block_ys, z, out);
             }
 
             #[inline]
-            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
+            fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: FloatGen, out: &mut [FloatGen]) {
                 fill_cell_corner_densities(self, cache, x, y, z, blended_noise_value, out)
             }
 
             #[inline]
-            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_interpolated(&self, cache: &mut Self::ColumnCache, interpolated: &[FloatGen], x: i32, y: i32, z: i32) -> FloatGen {
                 combine_interpolated(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_toggle(&self, cache: &mut Self::ColumnCache, interpolated: &[FloatGen], x: i32, y: i32, z: i32) -> FloatGen {
                 combine_vein_toggle(self, cache, interpolated, x, y, z)
             }
 
             #[inline]
-            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[f64], x: i32, y: i32, z: i32) -> f64 {
+            fn combine_vein_ridged(&self, cache: &mut Self::ColumnCache, interpolated: &[FloatGen], x: i32, y: i32, z: i32) -> FloatGen {
                 combine_vein_ridged(self, cache, interpolated, x, y, z)
             }
 
@@ -1046,6 +1046,7 @@ pub(crate) fn build() -> DensityFunctionFiles {
     let overworld = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
+        use steel_worldgen::FloatGen;
 
         #overworld_df
         #overworld_settings
@@ -1054,6 +1055,7 @@ pub(crate) fn build() -> DensityFunctionFiles {
     let nether = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
+        use steel_worldgen::FloatGen;
 
         #nether_df
         #nether_settings
@@ -1062,6 +1064,7 @@ pub(crate) fn build() -> DensityFunctionFiles {
     let end = quote! {
         use steel_registry::RegistryExt;
         use steel_registry::blocks::block_state_ext::BlockStateExt;
+        use steel_worldgen::FloatGen;
 
         #end_df
         #end_settings

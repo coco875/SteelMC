@@ -1,6 +1,8 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 
+use steel_worldgen::FloatGen;
+
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_end_island_feature(
         region: &mut WorldGenRegion<'_>,
@@ -12,8 +14,8 @@ impl FeatureDecorationRunner {
         let mut y = 0;
 
         while size > 0.5 {
-            for x in floor(f64::from(-size))..=size.ceil() as i32 {
-                for z in floor(f64::from(-size))..=size.ceil() as i32 {
+            for x in floor(-size as FloatGen)..=size.ceil() as i32 {
+                for z in floor(-size as FloatGen)..=size.ceil() as i32 {
                     if (x * x + z * z) as f32 <= (size + 1.0) * (size + 1.0) {
                         let _ = region.set_block_state(
                             origin.offset(x, y, z),

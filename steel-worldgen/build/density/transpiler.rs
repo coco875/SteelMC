@@ -545,7 +545,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = named_fn_field_ident(name);
-                quote! { pub #field: f64 }
+                quote! { pub #field: FloatGen }
             })
             .collect();
 
@@ -554,7 +554,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = grid_field_ident(name);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [FloatGen; #grid_total_lit] }
             })
             .collect();
 
@@ -613,7 +613,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = router_cache_field_ident(name);
-                quote! { pub #field: f64 }
+                quote! { pub #field: FloatGen }
             })
             .collect();
 
@@ -622,7 +622,7 @@ impl TranspileContext {
             .iter()
             .map(|name| {
                 let field = router_grid_field_ident(name);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [FloatGen; #grid_total_lit] }
             })
             .collect();
 
@@ -683,7 +683,7 @@ impl TranspileContext {
             .values()
             .map(|(idx, _, _)| {
                 let field = format_ident!("inline_noise_{}", idx);
-                quote! { pub #field: f64 }
+                quote! { pub #field: FloatGen }
             })
             .collect();
 
@@ -692,7 +692,7 @@ impl TranspileContext {
             .values()
             .map(|(idx, _, _)| {
                 let field = format_ident!("grid_inline_noise_{}", idx);
-                quote! { #field: [f64; #grid_total_lit] }
+                quote! { #field: [FloatGen; #grid_total_lit] }
             })
             .collect();
 
@@ -705,7 +705,7 @@ impl TranspileContext {
                 let scale = Literal::f64_unsuffixed(*xz_scale);
                 quote! {
                     self.#field = noises.#noise_field.get_value(
-                        f64::from(x) * #scale, 0.0, f64::from(z) * #scale,
+                        x as FloatGen * #scale, 0.0, z as FloatGen * #scale,
                     );
                 }
             })
@@ -953,7 +953,7 @@ impl TranspileContext {
             fns.push(quote! {
                 #[doc = #doc]
                 #[inline]
-                fn #fn_name(#params) -> f64 {
+                fn #fn_name(#params) -> FloatGen {
                     #body
                 }
             });
@@ -989,7 +989,7 @@ impl TranspileContext {
 
                 fns.push(quote! {
                     #[inline]
-                    fn #compute_fn_name(#compute_params) -> f64 {
+                    fn #compute_fn_name(#compute_params) -> FloatGen {
                         #compute_body
                     }
                 });
@@ -1001,7 +1001,7 @@ impl TranspileContext {
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
-                    pub fn #fn_name(#full_params) -> f64 {
+                    pub fn #fn_name(#full_params) -> FloatGen {
                         cache.#cache_field
                     }
                 });
@@ -1014,7 +1014,7 @@ impl TranspileContext {
                 fns.push(quote! {
                     #[doc = #doc]
                     #[inline]
-                    pub fn #fn_name(#params) -> f64 {
+                    pub fn #fn_name(#params) -> FloatGen {
                         let x = cache.x;
                         let z = cache.z;
                         #body
@@ -1157,8 +1157,8 @@ impl TranspileContext {
                 x: i32,
                 y: i32,
                 z: i32,
-                blended_noise_value: f64,
-                out: &mut [f64],
+                blended_noise_value: FloatGen,
+                out: &mut [FloatGen],
             ) {
                 let x = cache.x;
                 let z = cache.z;
@@ -1170,11 +1170,11 @@ impl TranspileContext {
             pub fn combine_interpolated(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[FloatGen],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> FloatGen {
                 let x = cache.x;
                 let z = cache.z;
                 #combine_fd_body
@@ -1185,11 +1185,11 @@ impl TranspileContext {
             pub fn combine_vein_toggle(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[FloatGen],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> FloatGen {
                 let x = cache.x;
                 let z = cache.z;
                 #combine_vein_toggle_body
@@ -1200,11 +1200,11 @@ impl TranspileContext {
             pub fn combine_vein_ridged(
                 noises: &#noises,
                 cache: &#cache,
-                interpolated: &[f64],
+                interpolated: &[FloatGen],
                 _x: i32,
                 y: i32,
                 _z: i32,
-            ) -> f64 {
+            ) -> FloatGen {
                 let x = cache.x;
                 let z = cache.z;
                 #combine_vein_ridged_body
@@ -1249,7 +1249,7 @@ impl TranspileContext {
                 let to_y = Literal::f64_unsuffixed(f64::from(g.to_y));
                 let from_val = Literal::f64_unsuffixed(g.from_value);
                 let to_val = Literal::f64_unsuffixed(g.to_value);
-                quote! { map_clamped(f64::from(y), #from_y, #to_y, #from_val, #to_val) }
+                quote! { map_clamped(y as FloatGen, #from_y, #to_y, #from_val, #to_val) }
             }
 
             DensityFunction::Noise(n) => {
@@ -1265,9 +1265,9 @@ impl TranspileContext {
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
                 if is_flat || n.y_scale == 0.0 {
-                    quote! { noises.#field.get_value(f64::from(x) * #xz_scale, 0.0, f64::from(z) * #xz_scale) }
+                    quote! { noises.#field.get_value(x as FloatGen * #xz_scale, 0.0, z as FloatGen * #xz_scale) }
                 } else {
-                    quote! { noises.#field.get_value(f64::from(x) * #xz_scale, f64::from(y) * #y_scale, f64::from(z) * #xz_scale) }
+                    quote! { noises.#field.get_value(x as FloatGen * #xz_scale, y as FloatGen * #y_scale, z as FloatGen * #xz_scale) }
                 }
             }
 
@@ -1284,9 +1284,9 @@ impl TranspileContext {
                         let dx = #dx;
                         let dz = #dz;
                         noises.#field.get_value(
-                            f64::from(x) * #xz_scale + dx,
+                            x as FloatGen * #xz_scale + dx,
                             0.0,
-                            f64::from(z) * #xz_scale + dz,
+                            z as FloatGen * #xz_scale + dz,
                         )
                     }}
                 } else {
@@ -1295,9 +1295,9 @@ impl TranspileContext {
                         let dy = #dy;
                         let dz = #dz;
                         noises.#field.get_value(
-                            f64::from(x) * #xz_scale + dx,
-                            f64::from(y) * #y_scale + dy,
-                            f64::from(z) * #xz_scale + dz,
+                            x as FloatGen * #xz_scale + dx,
+                            y as FloatGen * #y_scale + dy,
+                            z as FloatGen * #xz_scale + dz,
                         )
                     }}
                 }
@@ -1305,20 +1305,20 @@ impl TranspileContext {
 
             DensityFunction::ShiftA(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25) * 4.0 }
+                quote! { noises.#field.get_value(x as FloatGen * 0.25, 0.0, z as FloatGen * 0.25) * 4.0 }
             }
 
             DensityFunction::ShiftB(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value(f64::from(z) * 0.25, f64::from(x) * 0.25, 0.0) * 4.0 }
+                quote! { noises.#field.get_value(z as FloatGen * 0.25, x as FloatGen * 0.25, 0.0) * 4.0 }
             }
 
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 if is_flat {
-                    quote! { noises.#field.get_value(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25) * 4.0 }
+                    quote! { noises.#field.get_value(x as FloatGen * 0.25, 0.0, z as FloatGen * 0.25) * 4.0 }
                 } else {
-                    quote! { noises.#field.get_value(f64::from(x) * 0.25, f64::from(y) * 0.25, f64::from(z) * 0.25) * 4.0 }
+                    quote! { noises.#field.get_value(x as FloatGen * 0.25, y as FloatGen * 0.25, z as FloatGen * 0.25) * 4.0 }
                 }
             }
 
@@ -1337,15 +1337,15 @@ impl TranspileContext {
                     match t.op {
                         TwoArgType::Add => quote! { ((#a) + (#b)) },
                         TwoArgType::Mul => quote! { ((#a) * (#b)) },
-                        TwoArgType::Min => quote! { f64::min(#a, #b) },
-                        TwoArgType::Max => quote! { f64::max(#a, #b) },
+                        TwoArgType::Min => quote! { FloatGen::min(#a, #b) },
+                        TwoArgType::Max => quote! { FloatGen::max(#a, #b) },
                     }
                 } else {
                     let op = match t.op {
                         TwoArgType::Add => quote! { ((#a) + (#b)) },
                         TwoArgType::Mul => quote! { ((#a) * (#b)) },
-                        TwoArgType::Min => quote! { f64::min(#a, #b) },
-                        TwoArgType::Max => quote! { f64::max(#a, #b) },
+                        TwoArgType::Min => quote! { FloatGen::min(#a, #b) },
+                        TwoArgType::Max => quote! { FloatGen::max(#a, #b) },
                     };
                     quote! {{
                         #(#hoisted)*
@@ -1445,7 +1445,7 @@ impl TranspileContext {
                     let rarity = #input_expr;
                     let scale = #mapper.get_values(rarity);
                     scale * noises.#field.get_value(
-                        f64::from(x) / scale, f64::from(y) / scale, f64::from(z) / scale,
+                        x as FloatGen / scale, y as FloatGen / scale, z as FloatGen / scale,
                     ).abs()
                 }}
             }
@@ -1480,16 +1480,16 @@ impl TranspileContext {
                 let lower_bound = Literal::i32_unsuffixed(fts.lower_bound);
                 quote! {{
                     let __upper = #upper_expr;
-                    let __top_y = ((__upper / f64::from(#cell_height)).floor() as i32) * #cell_height;
+                    let __top_y = ((__upper / #cell_height as FloatGen).floor() as i32) * #cell_height;
                     if __top_y <= #lower_bound {
-                        f64::from(#lower_bound)
+                        #lower_bound as FloatGen
                     } else {
-                        let mut __result = f64::from(#lower_bound);
+                        let mut __result = #lower_bound as FloatGen;
                         let mut y = __top_y;
                         while y >= #lower_bound {
                             let __d = #density_expr;
                             if __d > 0.0 {
-                                __result = f64::from(y);
+                                __result = y as FloatGen;
                                 break;
                             }
                             y -= #cell_height;
@@ -1583,12 +1583,12 @@ impl TranspileContext {
             const LOCATIONS: [f32; #n_lit] = [#(#locations),*];
             const DERIVATIVES: [f32; #n_lit] = [#(#derivatives),*];
             let coord = (#coord) as f32;
-            f64::from(spline_eval::evaluate_spline(&LOCATIONS, &DERIVATIVES, coord, |__i| {
+            spline_eval::evaluate_spline(&LOCATIONS, &DERIVATIVES, coord, |__i| {
                 match __i {
                     #(#value_arms,)*
                     _ => unreachable!()
                 }
-            }))
+            }) as FloatGen
         }}
     }
 

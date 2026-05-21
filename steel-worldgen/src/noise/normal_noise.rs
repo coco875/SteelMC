@@ -3,6 +3,7 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
+use crate::FloatGen;
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
 
@@ -15,7 +16,7 @@ use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::N
     clippy::unreadable_literal,
     reason = "exact vanilla constant; underscores would obscure precision"
 )]
-pub const INPUT_FACTOR: f64 = 1.0181268882175227;
+pub const INPUT_FACTOR: FloatGen = 1.0181268882175227;
 
 /// Value factor numerator matching vanilla's inline literal `0.16666666666666666` (1/6).
 ///
@@ -27,7 +28,7 @@ pub const INPUT_FACTOR: f64 = 1.0181268882175227;
     clippy::unreadable_literal,
     reason = "exact vanilla constant; underscores would obscure precision"
 )]
-const VALUE_FACTOR_NUMERATOR: f64 = 0.16666666666666666;
+const VALUE_FACTOR_NUMERATOR: FloatGen = 0.16666666666666666;
 
 /// Normal (Double Perlin) noise generator.
 ///
@@ -40,9 +41,9 @@ pub struct NormalNoise {
     /// Second Perlin noise sampler (coordinates scaled by `INPUT_FACTOR`)
     second: PerlinNoise,
     /// Factor applied to the sum of both samplers
-    value_factor: f64,
+    value_factor: FloatGen,
     /// Maximum possible output value
-    max_value: f64,
+    max_value: FloatGen,
 }
 
 impl NormalNoise {
@@ -57,7 +58,7 @@ impl NormalNoise {
     pub fn create_from_random(
         random: &mut RandomSource,
         first_octave: i32,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
     ) -> Self {
         let first = PerlinNoise::create_from_random(random, first_octave, amplitudes);
         let second = PerlinNoise::create_from_random(random, first_octave, amplitudes);
@@ -74,7 +75,7 @@ impl NormalNoise {
         splitter: &RandomSplitter,
         noise_id: &str,
         first_octave: i32,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
     ) -> Self {
         let mut random = splitter.with_hash_of(&NameHash::new(noise_id));
         Self::create_from_random(&mut random, first_octave, amplitudes)
@@ -90,7 +91,7 @@ impl NormalNoise {
     pub fn create_legacy_nether_biome(
         random: &mut RandomSource,
         first_octave: i32,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
     ) -> Self {
         let first = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
         let second = PerlinNoise::create_legacy_for_nether(random, first_octave, amplitudes);
@@ -99,7 +100,7 @@ impl NormalNoise {
     }
 
     /// Finish construction with the two `PerlinNoise` instances.
-    fn finish(first: PerlinNoise, second: PerlinNoise, amplitudes: &[f64]) -> Self {
+    fn finish(first: PerlinNoise, second: PerlinNoise, amplitudes: &[FloatGen]) -> Self {
         // Find the span of non-zero octaves
         let mut min_octave = i32::MAX;
         let mut max_octave = i32::MIN;
@@ -142,7 +143,7 @@ impl NormalNoise {
     /// The sum is then scaled by the value factor.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn get_value(&self, x: FloatGen, y: FloatGen, z: FloatGen) -> FloatGen {
         let x2 = x * INPUT_FACTOR;
         let y2 = y * INPUT_FACTOR;
         let z2 = z * INPUT_FACTOR;
@@ -152,7 +153,7 @@ impl NormalNoise {
     /// Get the maximum possible output value.
     #[inline]
     #[must_use]
-    pub const fn max_value(&self) -> f64 {
+    pub const fn max_value(&self) -> FloatGen {
         self.max_value
     }
 }
@@ -162,8 +163,8 @@ impl NormalNoise {
 /// This is used to normalize the output of the combined noise.
 /// Formula: 0.1 * (1 + 1/(span + 1))
 #[inline]
-fn expected_deviation(octave_span: i32) -> f64 {
-    0.1 * (1.0 + 1.0 / f64::from(octave_span + 1))
+fn expected_deviation(octave_span: i32) -> FloatGen {
+    0.1 * (1.0 + 1.0 / (octave_span + 1) as FloatGen)
 }
 
 #[cfg(test)]
@@ -197,13 +198,19 @@ mod tests {
         let noise = NormalNoise::create(&splitter, "test_noise", -4, &[1.0, 1.0, 1.0, 1.0]);
 
         // Sample at different locations
-        let values: Vec<f64> = (0..10)
-            .map(|i| noise.get_value(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0))
+        let values: Vec<FloatGen> = (0..10)
+            .map(|i| noise.get_value(i as FloatGen * 50.0, 64.0, i as FloatGen * 50.0))
             .collect();
 
         // Check there's variation
-        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min = values
+            .iter()
+            .copied()
+            .fold(FloatGen::INFINITY, FloatGen::min);
+        let max = values
+            .iter()
+            .copied()
+            .fold(FloatGen::NEG_INFINITY, FloatGen::max);
         assert!(max - min > 0.01, "Noise should have spatial variation");
     }
 

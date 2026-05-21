@@ -12,6 +12,7 @@
 use std::marker::PhantomData;
 use std::mem;
 
+use steel_worldgen::FloatGen;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::lerp;
 
@@ -56,8 +57,8 @@ pub struct NoiseChunk<N: DimensionNoises> {
 /// Two slices (current X and next X) for one interpolation channel.
 /// Flat layout: index with `z * corners_y + y`.
 struct ChannelSlices {
-    slice0: [f64; MAX_SLICE_LEN],
-    slice1: [f64; MAX_SLICE_LEN],
+    slice0: [FloatGen; MAX_SLICE_LEN],
+    slice1: [FloatGen; MAX_SLICE_LEN],
 }
 
 impl<N: DimensionNoises> NoiseChunk<N> {
@@ -136,7 +137,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
         let block_x = cell_x * cell_width;
 
-        let mut values = [0.0f64; MAX_INTERP];
+        let mut values = [0.0 as FloatGen; MAX_INTERP];
 
         // Collect Y values for SIMD precomputation.
         let mut block_ys = [0i32; MAX_SLICE_LEN];
@@ -145,7 +146,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         }
         let block_ys = &block_ys[..corners_y];
 
-        let mut blended_column = [0.0f64; MAX_SLICE_LEN];
+        let mut blended_column = [0.0 as FloatGen; MAX_SLICE_LEN];
 
         for cz in 0..=self.cell_count_xz {
             let cell_z = self.first_cell_z + cz as i32;
@@ -202,7 +203,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         beardifier: Option<&Beardifier>,
         mut place_block: F,
     ) where
-        F: FnMut(usize, i32, usize, f64, &[f64], &mut N::ColumnCache),
+        F: FnMut(usize, i32, usize, FloatGen, &[FloatGen], &mut N::ColumnCache),
     {
         let cell_width = N::Settings::CELL_WIDTH;
         let cell_height = N::Settings::CELL_HEIGHT;
@@ -214,7 +215,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
         // Fill initial X slice (slice0)
         self.fill_slice(true, self.first_cell_x, noises, cache);
 
-        let mut interpolated = [0.0f64; MAX_INTERP];
+        let mut interpolated = [0.0 as FloatGen; MAX_INTERP];
 
         for cell_x_idx in 0..cell_count_xz {
             // Fill next X slice (slice1)
@@ -227,11 +228,11 @@ impl<N: DimensionNoises> NoiseChunk<N> {
 
             for cell_z_idx in 0..cell_count_xz {
                 for x_in_cell in 0..cell_width {
-                    let factor_x = f64::from(x_in_cell) / f64::from(cell_width);
+                    let factor_x = x_in_cell as FloatGen / cell_width as FloatGen;
                     let local_x = (cell_x_idx as i32 * cell_width + x_in_cell) as usize;
 
                     for z_in_cell in 0..cell_width {
-                        let factor_z = f64::from(z_in_cell) / f64::from(cell_width);
+                        let factor_z = z_in_cell as FloatGen / cell_width as FloatGen;
                         let local_z = (cell_z_idx as i32 * cell_width + z_in_cell) as usize;
 
                         // Pre-compute flat indices for this Z column
@@ -241,7 +242,7 @@ impl<N: DimensionNoises> NoiseChunk<N> {
                         // Process entire Y column at this (x, z)
                         for cell_y_idx in (0..cell_count_y).rev() {
                             for y_in_cell in (0..cell_height).rev() {
-                                let factor_y = f64::from(y_in_cell) / f64::from(cell_height);
+                                let factor_y = y_in_cell as FloatGen / cell_height as FloatGen;
 
                                 let world_y =
                                     (self.cell_min_y + cell_y_idx as i32) * cell_height + y_in_cell;

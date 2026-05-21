@@ -23,8 +23,10 @@ pub use perlin_noise::{PerlinNoise, wrap as perlin_wrap};
 pub use perlin_simplex_noise::PerlinSimplexNoise;
 pub use simplex_noise::SimplexNoise;
 
+use crate::FloatGen;
+
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
-pub(crate) const GRADIENT: [[f64; 3]; 16] = [
+pub(crate) const GRADIENT: [[FloatGen; 3]; 16] = [
     [1.0, 1.0, 0.0],
     [-1.0, 1.0, 0.0],
     [1.0, -1.0, 0.0],

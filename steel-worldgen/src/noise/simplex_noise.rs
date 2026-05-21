@@ -3,6 +3,7 @@
 //! Used by the End islands density function for terrain generation in The End dimension.
 //! Supports 2D and 3D sampling with the same gradient vectors as Perlin noise.
 
+use crate::FloatGen;
 use crate::math::floor;
 use crate::noise::GRADIENT;
 use crate::random::Random;
@@ -11,11 +12,11 @@ use crate::random::Random;
     clippy::unreadable_literal,
     reason = "exact mathematical constant; underscores would obscure precision"
 )]
-const SQRT_3: f64 = 1.7320508075688772;
+const SQRT_3: FloatGen = 1.7320508075688772;
 /// Skewing factor for 2D simplex: `0.5 * (sqrt(3) - 1)`
-const F2: f64 = 0.5 * (SQRT_3 - 1.0);
+const F2: FloatGen = 0.5 * (SQRT_3 - 1.0);
 /// Unskewing factor for 2D simplex: `(3 - sqrt(3)) / 6`
-const G2: f64 = (3.0 - SQRT_3) / 6.0;
+const G2: FloatGen = (3.0 - SQRT_3) / 6.0;
 
 /// Simplex noise generator matching vanilla's `SimplexNoise.java`.
 ///
@@ -25,11 +26,11 @@ const G2: f64 = (3.0 - SQRT_3) / 6.0;
 pub struct SimplexNoise {
     p: [i32; 512],
     /// X offset for the noise coordinates.
-    pub xo: f64,
+    pub xo: FloatGen,
     /// Y offset for the noise coordinates.
-    pub yo: f64,
+    pub yo: FloatGen,
     /// Z offset for the noise coordinates.
-    pub zo: f64,
+    pub zo: FloatGen,
 }
 
 impl SimplexNoise {
@@ -38,9 +39,9 @@ impl SimplexNoise {
     /// Matches vanilla's `SimplexNoise(RandomSource)` constructor:
     /// consumes 3 doubles for offsets, then shuffles a 256-entry permutation table.
     pub fn new<R: Random>(random: &mut R) -> Self {
-        let xo = random.next_f64() * 256.0;
-        let yo = random.next_f64() * 256.0;
-        let zo = random.next_f64() * 256.0;
+        let xo = random.next_f64() as FloatGen * 256.0;
+        let yo = random.next_f64() as FloatGen * 256.0;
+        let zo = random.next_f64() as FloatGen * 256.0;
 
         let mut p = [0i32; 512];
 
@@ -70,13 +71,19 @@ impl SimplexNoise {
 
     /// Dot product of gradient vector and offset vector.
     #[inline]
-    fn dot(g: &[f64; 3], x: f64, y: f64, z: f64) -> f64 {
+    fn dot(g: &[FloatGen; 3], x: FloatGen, y: FloatGen, z: FloatGen) -> FloatGen {
         g[0] * x + g[1] * y + g[2] * z
     }
 
     /// Compute corner noise contribution for a simplex vertex.
     #[inline]
-    fn corner_noise_3d(index: usize, x: f64, y: f64, z: f64, base: f64) -> f64 {
+    fn corner_noise_3d(
+        index: usize,
+        x: FloatGen,
+        y: FloatGen,
+        z: FloatGen,
+        base: FloatGen,
+    ) -> FloatGen {
         let t0 = base - x * x - y * y - z * z;
         if t0 < 0.0 {
             0.0
@@ -90,19 +97,19 @@ impl SimplexNoise {
     ///
     /// Returns a value typically in the range `[-1, 1]` (scaled by 70).
     #[must_use]
-    pub fn get_value_2d(&self, xin: f64, yin: f64) -> f64 {
+    pub fn get_value_2d(&self, xin: FloatGen, yin: FloatGen) -> FloatGen {
         let s = (xin + yin) * F2;
         let i = floor(xin + s);
         let j = floor(yin + s);
-        let t = f64::from(i + j) * G2;
-        let x0 = xin - (f64::from(i) - t);
-        let y0 = yin - (f64::from(j) - t);
+        let t = (i + j) as FloatGen * G2;
+        let x0 = xin - (i as FloatGen - t);
+        let y0 = yin - (j as FloatGen - t);
 
         // Determine which simplex triangle we're in
         let (i1, j1) = if x0 > y0 { (1, 0) } else { (0, 1) };
 
-        let x1 = x0 - f64::from(i1) + G2;
-        let y1 = y0 - f64::from(j1) + G2;
+        let x1 = x0 - i1 as FloatGen + G2;
+        let y1 = y0 - j1 as FloatGen + G2;
         let x2 = x0 - 1.0 + 2.0 * G2;
         let y2 = y0 - 1.0 + 2.0 * G2;
 
@@ -120,9 +127,9 @@ impl SimplexNoise {
     }
 
     /// Skewing factor for 3D simplex: `1/3`
-    const F3: f64 = 1.0 / 3.0;
+    const F3: FloatGen = 1.0 / 3.0;
     /// Unskewing factor for 3D simplex: `1/6`
-    const G3: f64 = 1.0 / 6.0;
+    const G3: FloatGen = 1.0 / 6.0;
 
     /// Sample 3D simplex noise at the given coordinates.
     ///
@@ -132,15 +139,15 @@ impl SimplexNoise {
         clippy::many_single_char_names,
         reason = "matches vanilla simplex noise math notation"
     )]
-    pub fn get_value_3d(&self, xin: f64, yin: f64, zin: f64) -> f64 {
+    pub fn get_value_3d(&self, xin: FloatGen, yin: FloatGen, zin: FloatGen) -> FloatGen {
         let s = (xin + yin + zin) * Self::F3;
         let i = floor(xin + s);
         let j = floor(yin + s);
         let k = floor(zin + s);
-        let t = f64::from(i + j + k) * Self::G3;
-        let x0 = xin - (f64::from(i) - t);
-        let y0 = yin - (f64::from(j) - t);
-        let z0 = zin - (f64::from(k) - t);
+        let t = (i + j + k) as FloatGen * Self::G3;
+        let x0 = xin - (i as FloatGen - t);
+        let y0 = yin - (j as FloatGen - t);
+        let z0 = zin - (k as FloatGen - t);
 
         // Determine which simplex tetrahedron we're in
         let (i1, j1, k1, i2, j2, k2) = if x0 >= y0 {
@@ -159,12 +166,12 @@ impl SimplexNoise {
             (0, 1, 0, 1, 1, 0)
         };
 
-        let x1 = x0 - f64::from(i1) + Self::G3;
-        let y1 = y0 - f64::from(j1) + Self::G3;
-        let z1 = z0 - f64::from(k1) + Self::G3;
-        let x2 = x0 - f64::from(i2) + Self::F3;
-        let y2 = y0 - f64::from(j2) + Self::F3;
-        let z2 = z0 - f64::from(k2) + Self::F3;
+        let x1 = x0 - i1 as FloatGen + Self::G3;
+        let y1 = y0 - j1 as FloatGen + Self::G3;
+        let z1 = z0 - k1 as FloatGen + Self::G3;
+        let x2 = x0 - i2 as FloatGen + Self::F3;
+        let y2 = y0 - j2 as FloatGen + Self::F3;
+        let z2 = z0 - k2 as FloatGen + Self::F3;
         let x3 = x0 - 1.0 + 0.5;
         let y3 = y0 - 1.0 + 0.5;
         let z3 = z0 - 1.0 + 0.5;
@@ -200,8 +207,8 @@ mod tests {
         let noise2 = SimplexNoise::new(&mut rng);
 
         for i in 0..10 {
-            let x = f64::from(i) * 13.7;
-            let z = f64::from(i) * 7.3;
+            let x = i as FloatGen * 13.7;
+            let z = i as FloatGen * 7.3;
             #[expect(
                 clippy::float_cmp,
                 reason = "determinism test: identical inputs must produce bit-identical outputs"
@@ -218,12 +225,18 @@ mod tests {
         let mut rng = LegacyRandom::from_seed(0);
         let noise = SimplexNoise::new(&mut rng);
 
-        let values: Vec<f64> = (0..20)
-            .map(|i| noise.get_value_2d(f64::from(i) * 50.0, f64::from(i) * 30.0))
+        let values: Vec<FloatGen> = (0..20)
+            .map(|i| noise.get_value_2d(i as FloatGen * 50.0, i as FloatGen * 30.0))
             .collect();
 
-        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min = values
+            .iter()
+            .copied()
+            .fold(FloatGen::INFINITY, FloatGen::min);
+        let max = values
+            .iter()
+            .copied()
+            .fold(FloatGen::NEG_INFINITY, FloatGen::max);
         assert!(max - min > 0.01, "2D simplex should have spatial variation");
     }
 

@@ -7,6 +7,7 @@ use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use core::mem;
 use steel_registry::vanilla_block_entity_types;
+use steel_worldgen::FloatGen;
 
 const SCULK_DEFAULT_SPREAD_TYPES: [SculkSpreadType; 3] = [
     SculkSpreadType::SamePosition,
@@ -424,7 +425,7 @@ impl FeatureDecorationRunner {
         {
             cursor.charge - 1
         } else if random.next_i32_bounded(spreader.charge_decay_rate) == 0 {
-            floor(f64::from(cursor.charge) * 0.5) as i32
+            floor(cursor.charge as FloatGen * 0.5) as i32
         } else {
             cursor.charge
         }

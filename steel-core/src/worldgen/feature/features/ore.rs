@@ -8,6 +8,7 @@ use std::f32::consts::PI;
 use std::time::Instant;
 use steel_utils::PackedSectionBlockPos;
 use steel_utils::math::mth;
+use steel_worldgen::FloatGen;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_ore_feature(
@@ -85,9 +86,9 @@ impl FeatureDecorationRunner {
             let radius_wave = mth::sin(f64::from(PI * step)) + 1.0;
             let radius = f64::from(radius_wave) * size_factor + 1.0;
             vein_nodes[i] = [
-                lerp(f64::from(step), x0, x1),
-                lerp(f64::from(step), y0, y1),
-                lerp(f64::from(step), z0, z1),
+                lerp(step as FloatGen, x0 as FloatGen, x1 as FloatGen) as f64,
+                lerp(step as FloatGen, y0 as FloatGen, y1 as FloatGen) as f64,
+                lerp(step as FloatGen, z0 as FloatGen, z1 as FloatGen) as f64,
                 radius / 2.0,
             ];
         }
@@ -231,12 +232,12 @@ impl FeatureDecorationRunner {
                 continue;
             }
 
-            let x_min = floor(node[0] - radius).max(x_start);
-            let z_min = floor(node[2] - radius).max(z_start);
-            let x_max = floor(node[0] + radius).max(x_min);
-            let z_max = floor(node[2] + radius).max(z_min);
-            let raw_y_min = floor(node[1] - radius).max(y_start);
-            let raw_y_max = floor(node[1] + radius).max(raw_y_min);
+            let x_min = floor((node[0] - radius) as FloatGen).max(x_start);
+            let z_min = floor((node[2] - radius) as FloatGen).max(z_start);
+            let x_max = floor((node[0] + radius) as FloatGen).max(x_min);
+            let z_max = floor((node[2] + radius) as FloatGen).max(z_min);
+            let raw_y_min = floor((node[1] - radius) as FloatGen).max(y_start);
+            let raw_y_max = floor((node[1] + radius) as FloatGen).max(raw_y_min);
             let y_min = raw_y_min.max(min_y);
             let y_max = raw_y_max.min(min_y + height - 1);
             if y_min > y_max {

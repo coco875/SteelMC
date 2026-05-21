@@ -3,12 +3,12 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::f64x4;
 use std::simd::{Select, StdFloat};
 
 use crate::math::{floor, lerp2, lerp3, smoothstep, smoothstep_derivative};
 use crate::noise::GRADIENT;
 use crate::random::Random;
+use crate::{FloatGen, Vec4Gen};
 
 /// Improved Perlin noise generator.
 ///
@@ -20,11 +20,11 @@ pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
     p: [u8; 256],
     /// X offset for the noise coordinates
-    pub xo: f64,
+    pub xo: FloatGen,
     /// Y offset for the noise coordinates
-    pub yo: f64,
+    pub yo: FloatGen,
     /// Z offset for the noise coordinates
-    pub zo: f64,
+    pub zo: FloatGen,
 }
 
 impl ImprovedNoise {
@@ -33,9 +33,9 @@ impl ImprovedNoise {
     /// Initializes the permutation table using Fisher-Yates shuffle
     /// and sets random offsets.
     pub fn new<R: Random>(random: &mut R) -> Self {
-        let xo = random.next_f64() * 256.0;
-        let yo = random.next_f64() * 256.0;
-        let zo = random.next_f64() * 256.0;
+        let xo = (random.next_f64() * 256.0) as FloatGen;
+        let yo = (random.next_f64() * 256.0) as FloatGen;
+        let zo = (random.next_f64() * 256.0) as FloatGen;
 
         let mut p = [0u8; 256];
         #[expect(
@@ -60,7 +60,7 @@ impl ImprovedNoise {
     /// This is the standard 3D Perlin noise sampling without Y scaling.
     #[inline]
     #[must_use]
-    pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn noise(&self, x: FloatGen, y: FloatGen, z: FloatGen) -> FloatGen {
         let x = x + self.xo;
         let y = y + self.yo;
         let z = z + self.zo;
@@ -69,9 +69,9 @@ impl ImprovedNoise {
         let yf = floor(y);
         let zf = floor(z);
 
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+        let xr = x - xf as FloatGen;
+        let yr = y - yf as FloatGen;
+        let zr = z - zf as FloatGen;
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
     }
@@ -83,11 +83,11 @@ impl ImprovedNoise {
     #[must_use]
     pub fn noise_with_derivative(
         &self,
-        x: f64,
-        y: f64,
-        z: f64,
-        derivative_out: &mut [f64; 3],
-    ) -> f64 {
+        x: FloatGen,
+        y: FloatGen,
+        z: FloatGen,
+        derivative_out: &mut [FloatGen; 3],
+    ) -> FloatGen {
         let x = x + self.xo;
         let y = y + self.yo;
         let z = z + self.zo;
@@ -96,9 +96,9 @@ impl ImprovedNoise {
         let yf = floor(y);
         let zf = floor(z);
 
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+        let xr = x - xf as FloatGen;
+        let yr = y - yf as FloatGen;
+        let zr = z - zf as FloatGen;
 
         self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
     }
@@ -117,7 +117,14 @@ impl ImprovedNoise {
         clippy::similar_names,
         reason = "yr_fudge and y_fudge match vanilla naming"
     )]
-    pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f64 {
+    pub fn noise_with_y_scale(
+        &self,
+        x: FloatGen,
+        y: FloatGen,
+        z: FloatGen,
+        y_scale: FloatGen,
+        y_fudge: FloatGen,
+    ) -> FloatGen {
         let x = x + self.xo;
         let y = y + self.yo;
         let z = z + self.zo;
@@ -126,9 +133,9 @@ impl ImprovedNoise {
         let yf = floor(y);
         let zf = floor(z);
 
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+        let xr = x - xf as FloatGen;
+        let yr = y - yf as FloatGen;
+        let zr = z - zf as FloatGen;
 
         // Calculate Y fudge for terrain generation
         #[expect(
@@ -142,7 +149,8 @@ impl ImprovedNoise {
                 yr
             };
             // SHIFT_UP_EPSILON = 1.0E-7F in Java (float literal promoted to double)
-            (fudge_limit / y_scale + f64::from(1.0e-7_f32)).floor() * y_scale
+            let shift_up_epsilon = 1.0e-7_f32 as FloatGen;
+            (fudge_limit / y_scale + shift_up_epsilon).floor() * y_scale
         } else {
             0.0
         };
@@ -163,11 +171,11 @@ impl ImprovedNoise {
         x: i32,
         y: i32,
         z: i32,
-        xr: f64,
-        yr: f64,
-        zr: f64,
-        yr_original: f64,
-    ) -> f64 {
+        xr: FloatGen,
+        yr: FloatGen,
+        zr: FloatGen,
+        yr_original: FloatGen,
+    ) -> FloatGen {
         // Get permutation indices for the 8 corners
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
@@ -208,34 +216,34 @@ impl ImprovedNoise {
     #[must_use]
     pub fn noise_with_y_scale_4x(
         &self,
-        x: f64,
-        ys: f64x4,
-        z: f64,
-        y_scale: f64,
-        y_fudges: f64x4,
-    ) -> f64x4 {
+        x: FloatGen,
+        ys: Vec4Gen,
+        z: FloatGen,
+        y_scale: FloatGen,
+        y_fudges: Vec4Gen,
+    ) -> Vec4Gen {
         // Shared x/z offset and floor
         let x = x + self.xo;
         let z = z + self.zo;
         let xf = floor(x);
         let zf = floor(z);
-        let xr = x - f64::from(xf);
-        let zr = z - f64::from(zf);
+        let xr = x - xf as FloatGen;
+        let zr = z - zf as FloatGen;
 
         // Per-lane y offset and floor
-        let ys = ys + f64x4::splat(self.yo);
+        let ys = ys + Vec4Gen::splat(self.yo);
         let ys_floor = ys.floor();
         let yrs = ys - ys_floor;
 
         // Y fudge (per-lane)
         let yr_fudge = if y_scale == 0.0 {
-            f64x4::splat(0.0)
+            Vec4Gen::splat(0.0)
         } else {
-            let y_scale_v = f64x4::splat(y_scale);
-            let zero = f64x4::splat(0.0);
+            let y_scale_v = Vec4Gen::splat(y_scale);
+            let zero = Vec4Gen::splat(0.0);
             let mask = y_fudges.simd_ge(zero) & y_fudges.simd_lt(yrs);
             let fudge_limits = mask.select(y_fudges, yrs);
-            let epsilon = f64x4::splat(f64::from(1.0e-7_f32));
+            let epsilon = Vec4Gen::splat(FloatGen::from(1.0e-7_f32));
             ((fudge_limits / y_scale_v) + epsilon).floor() * y_scale_v
         };
 
@@ -257,12 +265,12 @@ impl ImprovedNoise {
         &self,
         xf: i32,
         zf: i32,
-        xr: f64,
-        zr: f64,
-        ys_floor: f64x4,
-        yrs: f64x4,
-        yrs_original: f64x4,
-    ) -> f64x4 {
+        xr: FloatGen,
+        zr: FloatGen,
+        ys_floor: Vec4Gen,
+        yrs: Vec4Gen,
+        yrs_original: Vec4Gen,
+    ) -> Vec4Gen {
         // Shared x permutation lookups (2 instead of 2×4)
         let x0 = self.p(xf);
         let x1 = self.p(xf + 1);
@@ -301,11 +309,11 @@ impl ImprovedNoise {
         }
 
         // Vectorized gradient dot products
-        let xr_v = f64x4::splat(xr);
-        let zr_v = f64x4::splat(zr);
-        let xr_m1 = xr_v - f64x4::splat(1.0);
-        let yr_m1 = yrs - f64x4::splat(1.0);
-        let zr_m1 = zr_v - f64x4::splat(1.0);
+        let xr_v = Vec4Gen::splat(xr);
+        let zr_v = Vec4Gen::splat(zr);
+        let xr_m1 = xr_v - Vec4Gen::splat(1.0);
+        let yr_m1 = yrs - Vec4Gen::splat(1.0);
+        let zr_m1 = zr_v - Vec4Gen::splat(1.0);
 
         let d000 = grad_dot_4x(h000, xr_v, yrs, zr_v);
         let d100 = grad_dot_4x(h100, xr_m1, yrs, zr_v);
@@ -317,9 +325,9 @@ impl ImprovedNoise {
         let d111 = grad_dot_4x(h111, xr_m1, yr_m1, zr_m1);
 
         // Smoothstep — x and z are shared across lanes
-        let x_alpha = f64x4::splat(smoothstep(xr));
+        let x_alpha = Vec4Gen::splat(smoothstep(xr));
         let y_alpha = smoothstep_4x(yrs_original);
-        let z_alpha = f64x4::splat(smoothstep(zr));
+        let z_alpha = Vec4Gen::splat(smoothstep(zr));
 
         lerp3_4x(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
@@ -333,11 +341,11 @@ impl ImprovedNoise {
         x: i32,
         y: i32,
         z: i32,
-        xr: f64,
-        yr: f64,
-        zr: f64,
-        derivative_out: &mut [f64; 3],
-    ) -> f64 {
+        xr: FloatGen,
+        yr: FloatGen,
+        zr: FloatGen,
+        derivative_out: &mut [FloatGen; 3],
+    ) -> FloatGen {
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
         let xy00 = self.p(x0 as i32 + y);
@@ -439,36 +447,43 @@ impl ImprovedNoise {
 
 /// Smoothstep for 4 lanes: 6x^5 - 15x^4 + 10x^3
 #[inline]
-fn smoothstep_4x(x: f64x4) -> f64x4 {
-    x * x * x * (x * (x * f64x4::splat(6.0) - f64x4::splat(15.0)) + f64x4::splat(10.0))
+fn smoothstep_4x(x: Vec4Gen) -> Vec4Gen {
+    x * x * x * (x * (x * Vec4Gen::splat(6.0) - Vec4Gen::splat(15.0)) + Vec4Gen::splat(10.0))
 }
 
 /// Trilinear interpolation for 4 lanes.
 #[inline]
-fn lerp_4x(alpha: f64x4, a: f64x4, b: f64x4) -> f64x4 {
+fn lerp_4x(alpha: Vec4Gen, a: Vec4Gen, b: Vec4Gen) -> Vec4Gen {
     a + alpha * (b - a)
 }
 
 #[inline]
-fn lerp2_4x(a1: f64x4, a2: f64x4, x00: f64x4, x10: f64x4, x01: f64x4, x11: f64x4) -> f64x4 {
+fn lerp2_4x(
+    a1: Vec4Gen,
+    a2: Vec4Gen,
+    x00: Vec4Gen,
+    x10: Vec4Gen,
+    x01: Vec4Gen,
+    x11: Vec4Gen,
+) -> Vec4Gen {
     lerp_4x(a2, lerp_4x(a1, x00, x10), lerp_4x(a1, x01, x11))
 }
 
 #[inline]
 #[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
 fn lerp3_4x(
-    a1: f64x4,
-    a2: f64x4,
-    a3: f64x4,
-    x000: f64x4,
-    x100: f64x4,
-    x010: f64x4,
-    x110: f64x4,
-    x001: f64x4,
-    x101: f64x4,
-    x011: f64x4,
-    x111: f64x4,
-) -> f64x4 {
+    a1: Vec4Gen,
+    a2: Vec4Gen,
+    a3: Vec4Gen,
+    x000: Vec4Gen,
+    x100: Vec4Gen,
+    x010: Vec4Gen,
+    x110: Vec4Gen,
+    x001: Vec4Gen,
+    x101: Vec4Gen,
+    x011: Vec4Gen,
+    x111: Vec4Gen,
+) -> Vec4Gen {
     lerp_4x(
         a3,
         lerp2_4x(a1, a2, x000, x100, x010, x110),
@@ -479,23 +494,23 @@ fn lerp3_4x(
 /// Gather gradient components for 4 hashes into separate x/y/z SIMD vectors,
 /// then compute the dot product with the given position vectors.
 #[inline]
-fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
-    let mut gx = [0.0f64; 4];
-    let mut gy = [0.0f64; 4];
-    let mut gz = [0.0f64; 4];
+fn grad_dot_4x(hashes: [usize; 4], x: Vec4Gen, y: Vec4Gen, z: Vec4Gen) -> Vec4Gen {
+    let mut gx = [0.0 as FloatGen; 4];
+    let mut gy = [0.0 as FloatGen; 4];
+    let mut gz = [0.0 as FloatGen; 4];
     for i in 0..4 {
         let g = &GRADIENT[hashes[i] & 15];
         gx[i] = g[0];
         gy[i] = g[1];
         gz[i] = g[2];
     }
-    f64x4::from_array(gx) * x + f64x4::from_array(gy) * y + f64x4::from_array(gz) * z
+    Vec4Gen::from_array(gx) * x + Vec4Gen::from_array(gy) * y + Vec4Gen::from_array(gz) * z
 }
 
 /// Calculate the dot product of a gradient vector and the position vector.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
-fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
+fn grad_dot(hash: usize, x: FloatGen, y: FloatGen, z: FloatGen) -> FloatGen {
     let g = &GRADIENT[hash & 15];
     g[0] * x + g[1] * y + g[2] * z
 }
@@ -511,14 +526,14 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
 
         // Test various coordinate combinations
-        let test_x_zs: &[(f64, f64)] = &[
+        let test_x_zs: &[(FloatGen, FloatGen)] = &[
             (0.0, 0.0),
             (1.5, 3.7),
             (-5.2, 100.3),
             (0.001, -0.001),
             (1000.0, -500.0),
         ];
-        let test_ys: &[[f64; 4]] = &[
+        let test_ys: &[[FloatGen; 4]] = &[
             [0.0, 1.0, 2.0, 3.0],
             [64.0, 64.5, 65.0, 65.5],
             [-5.0, -2.5, 0.0, 2.5],
@@ -530,7 +545,7 @@ mod tests {
         for &(x, z) in test_x_zs {
             for ys in test_ys {
                 for &y_scale in &y_scales {
-                    let y_fudges: [f64; 4] = if y_scale == 0.0 {
+                    let y_fudges: [FloatGen; 4] = if y_scale == 0.0 {
                         [0.0; 4]
                     } else {
                         *ys // use ys as fudge values (matching BlendedNoise usage)
@@ -538,10 +553,10 @@ mod tests {
 
                     let simd_result = noise.noise_with_y_scale_4x(
                         x,
-                        f64x4::from_array(*ys),
+                        Vec4Gen::from_array(*ys),
                         z,
                         y_scale,
-                        f64x4::from_array(y_fudges),
+                        Vec4Gen::from_array(y_fudges),
                     );
 
                     for i in 0..4 {
@@ -610,7 +625,7 @@ mod tests {
         // Sample at various points and verify output is in reasonable range
         for x in -10..10 {
             for z in -10..10 {
-                let v = noise.noise(f64::from(x) * 10.0, 64.0, f64::from(z) * 10.0);
+                let v = noise.noise(x as FloatGen * 10.0, 64.0, z as FloatGen * 10.0);
                 // Perlin noise should be in [-1, 1] range roughly
                 assert!(
                     (-1.5..=1.5).contains(&v),

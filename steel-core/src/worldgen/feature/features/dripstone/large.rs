@@ -3,6 +3,7 @@ use super::super::super::runner::FeatureDecorationRunner;
 use std::f32::consts::{PI, TAU};
 use steel_utils::math::mth;
 use steel_utils::value_providers::FloatProvider;
+use steel_worldgen::FloatGen;
 
 struct LargeDripstone {
     root: BlockPos,
@@ -307,9 +308,9 @@ impl WindOffsetter {
 
         let dy = self.origin_y - pos.y();
         pos.offset(
-            floor(wind_x * f64::from(dy)),
+            floor(wind_x as FloatGen * dy as FloatGen),
             0,
-            floor(wind_z * f64::from(dy)),
+            floor(wind_z as FloatGen * dy as FloatGen),
         )
     }
 }

@@ -1,6 +1,7 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
+use steel_worldgen::FloatGen;
 
 impl FeatureDecorationRunner {
     pub(super) fn sample_block_state_provider_optional(
@@ -162,7 +163,7 @@ impl FeatureDecorationRunner {
     ) -> BlockStateId {
         let noise = Self::normal_noise(&provider.noise, provider.seed);
         let noise_value = Self::noise_value(&noise, pos, provider.scale);
-        if noise_value < f64::from(provider.threshold) {
+        if noise_value < provider.threshold as FloatGen {
             Self::random_block_state_from_data_list(registry, random, &provider.low_states)
         } else if random.next_f32() < provider.high_chance {
             Self::random_block_state_from_data_list(registry, random, &provider.high_states)
@@ -182,8 +183,8 @@ impl FeatureDecorationRunner {
             variety_noise,
             -1.0,
             1.0,
-            f64::from(provider.variety[0]),
-            f64::from(provider.variety[1] + 1),
+            provider.variety[0] as FloatGen,
+            (provider.variety[1] + 1) as FloatGen,
         ) as i32;
         assert!(
             local_variety > 0,
@@ -200,13 +201,13 @@ impl FeatureDecorationRunner {
             possible_states.push(Self::noise_state_by_value(
                 registry,
                 &provider.states,
-                slow_value,
+                slow_value as FloatGen,
             ));
         }
 
         let noise = Self::normal_noise(&provider.noise, provider.seed);
         let noise_value = Self::noise_value(&noise, pos, provider.scale);
-        Self::noise_state_by_resolved_value(&possible_states, noise_value)
+        Self::noise_state_by_resolved_value(&possible_states, noise_value as FloatGen)
     }
 
     pub(super) fn normal_noise(parameters: &FeatureNoiseParameters, seed: i64) -> NormalNoise {
@@ -214,23 +215,27 @@ impl FeatureDecorationRunner {
         NormalNoise::create_from_random(
             &mut random,
             parameters.first_octave,
-            &parameters.amplitudes,
+            &parameters
+                .amplitudes
+                .iter()
+                .map(|&f| f as FloatGen)
+                .collect::<Vec<_>>(),
         )
     }
 
-    pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f32) -> f64 {
-        let scale = f64::from(scale);
+    pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f32) -> FloatGen {
+        let scale = scale as FloatGen;
         noise.get_value(
-            f64::from(pos.x()) * scale,
-            f64::from(pos.y()) * scale,
-            f64::from(pos.z()) * scale,
+            pos.x() as FloatGen * scale,
+            pos.y() as FloatGen * scale,
+            pos.z() as FloatGen * scale,
         )
     }
 
     pub(super) fn noise_state_by_value(
         registry: &Registry,
         states: &[BlockStateData],
-        noise_value: f64,
+        noise_value: FloatGen,
     ) -> BlockStateId {
         assert!(
             !states.is_empty(),
@@ -242,7 +247,7 @@ impl FeatureDecorationRunner {
 
     pub(super) fn noise_state_by_resolved_value(
         states: &[BlockStateId],
-        noise_value: f64,
+        noise_value: FloatGen,
     ) -> BlockStateId {
         assert!(
             !states.is_empty(),
@@ -251,9 +256,9 @@ impl FeatureDecorationRunner {
         states[Self::noise_state_index(states.len(), noise_value)]
     }
 
-    pub(super) fn noise_state_index(state_count: usize, noise_value: f64) -> usize {
-        let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
-        (placement_value * state_count as f64) as usize
+    pub(super) fn noise_state_index(state_count: usize, noise_value: FloatGen) -> usize {
+        let placement_value = FloatGen::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
+        (placement_value * state_count as FloatGen) as usize
     }
 
     pub(super) fn random_block_state_from_data_list(
@@ -276,12 +281,12 @@ impl FeatureDecorationRunner {
     }
 
     pub(super) fn clamped_map(
-        value: f64,
-        from_low: f64,
-        from_high: f64,
-        to_low: f64,
-        to_high: f64,
-    ) -> f64 {
+        value: FloatGen,
+        from_low: FloatGen,
+        from_high: FloatGen,
+        to_low: FloatGen,
+        to_high: FloatGen,
+    ) -> FloatGen {
         let inverse_lerp = ((value - from_low) / (from_high - from_low)).clamp(0.0, 1.0);
         to_low + inverse_lerp * (to_high - to_low)
     }
@@ -290,14 +295,15 @@ impl FeatureDecorationRunner {
 #[cfg(test)]
 mod tests {
     use super::FeatureDecorationRunner;
+    use steel_worldgen::FloatGen;
 
     #[test]
     fn noise_state_index_uses_vanilla_placement_value_formula() {
         for (state_count, noise_value) in
-            [(2, -1.5), (4, -0.5), (8, 0.0), (16, 0.75), (32, 1.5)] as [(usize, f64); 5]
+            [(2, -1.5), (4, -0.5), (8, 0.0), (16, 0.75), (32, 1.5)] as [(usize, FloatGen); 5]
         {
-            let placement_value = f64::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
-            let expected = (placement_value * state_count as f64) as usize;
+            let placement_value = FloatGen::midpoint(1.0, noise_value).clamp(0.0, 0.9999);
+            let expected = (placement_value * state_count as FloatGen) as usize;
 
             assert_eq!(
                 FeatureDecorationRunner::noise_state_index(state_count, noise_value),

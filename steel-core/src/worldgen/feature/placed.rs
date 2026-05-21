@@ -5,6 +5,7 @@
 
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
+use steel_worldgen::FloatGen;
 
 #[derive(Clone, Copy)]
 enum BiomeFilterMode<'a> {
@@ -274,9 +275,9 @@ impl FeatureDecorationRunner {
                 noise_offset,
             } => {
                 let noise = Self::biome_info_noise_value(
-                    f64::from(origin.x()) / *noise_factor,
-                    f64::from(origin.z()) / *noise_factor,
-                );
+                    origin.x() as FloatGen / *noise_factor as FloatGen,
+                    origin.z() as FloatGen / *noise_factor as FloatGen,
+                ) as f64;
                 let count =
                     ((noise + *noise_offset) * f64::from(*noise_to_count_ratio)).ceil() as i32;
                 if let Ok(count) = usize::try_from(count) {
@@ -302,9 +303,9 @@ impl FeatureDecorationRunner {
                 above_noise,
             } => {
                 let noise = Self::biome_info_noise_value(
-                    f64::from(origin.x()) / 200.0,
-                    f64::from(origin.z()) / 200.0,
-                );
+                    origin.x() as FloatGen / 200.0,
+                    origin.z() as FloatGen / 200.0,
+                ) as f64;
                 let count = if noise < *noise_level {
                     *below_noise
                 } else {

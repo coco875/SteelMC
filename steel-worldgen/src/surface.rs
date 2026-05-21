@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use crate::BlockStateId;
+use crate::{BlockStateId, FloatGen};
 
 /// Context data passed to transpiled surface rule functions.
 ///
@@ -17,7 +17,7 @@ pub struct SurfaceRuleContext<'a> {
     /// Noise-based surface layer thickness (typically 3-6 blocks).
     pub surface_depth: i32,
     /// Surface secondary noise value for depth variation.
-    pub surface_secondary: f64,
+    pub surface_secondary: FloatGen,
     /// Minimum surface level from preliminary surface interpolation.
     pub min_surface_level: i32,
     /// Whether this column has a steep slope.
@@ -54,7 +54,7 @@ impl<'a> SurfaceRuleContext<'a> {
         block_x: i32,
         block_z: i32,
         surface_depth: i32,
-        surface_secondary: f64,
+        surface_secondary: FloatGen,
         min_surface_level: i32,
         steep: bool,
         block_y: i32,
@@ -89,7 +89,7 @@ impl<'a> SurfaceRuleContext<'a> {
 
     /// Returns a column-cached surface condition noise value.
     #[must_use]
-    pub fn condition_noise(&self, noise_index: usize) -> f64 {
+    pub fn condition_noise(&self, noise_index: usize) -> FloatGen {
         self.condition_noises
             .get(noise_index, self.system, self.block_x, self.block_z)
     }
@@ -146,14 +146,14 @@ pub trait SurfaceBiomeProvider {
 
 /// Lazily caches x/z-only surface condition noise values for one column.
 pub struct SurfaceConditionNoiseCache<'a> {
-    values: &'a [Cell<f64>],
+    values: &'a [Cell<FloatGen>],
     initialized: &'a [Cell<bool>],
 }
 
 impl<'a> SurfaceConditionNoiseCache<'a> {
     /// Creates a cache backed by caller-owned reusable storage.
     #[must_use]
-    pub fn new(values: &'a [Cell<f64>], initialized: &'a [Cell<bool>]) -> Self {
+    pub fn new(values: &'a [Cell<FloatGen>], initialized: &'a [Cell<bool>]) -> Self {
         debug_assert_eq!(values.len(), initialized.len());
         Self {
             values,
@@ -176,7 +176,7 @@ impl<'a> SurfaceConditionNoiseCache<'a> {
         system: &dyn SurfaceNoiseProvider,
         x: i32,
         z: i32,
-    ) -> f64 {
+    ) -> FloatGen {
         if self.initialized[noise_index].get() {
             return self.values[noise_index].get();
         }
@@ -195,7 +195,7 @@ impl<'a> SurfaceConditionNoiseCache<'a> {
 pub trait SurfaceNoiseProvider {
     /// Sample a surface condition noise at (x, z). The noise is identified by
     /// its index in the dimension's `surface_noise_ids()` list.
-    fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64;
+    fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> FloatGen;
 
     /// Get the badlands clay band block at position (x, y, z).
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId;

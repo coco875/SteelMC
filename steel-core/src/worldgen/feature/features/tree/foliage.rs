@@ -8,6 +8,7 @@
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
+use steel_worldgen::FloatGen;
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_foliage_height(
@@ -448,7 +449,7 @@ impl FeatureDecorationRunner {
             let y_offset = attachment.pos.y() - y;
             let smooth_radius = leaf_radius
                 + attachment.radius_offset
-                + floor(f64::from(y_offset) / f64::from(foliage_height) * 3.5);
+                + floor(y_offset as FloatGen / foliage_height as FloatGen * 3.5);
             let jagged_radius = if y_offset > 0 && smooth_radius == previous_radius && (y & 1) == 0
             {
                 smooth_radius + 1

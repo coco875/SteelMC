@@ -11,6 +11,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
+use steel_worldgen::FloatGen;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::{clamp, map, map_clamped};
 
@@ -79,7 +80,7 @@ const SAMPLE_OFFSET_Z: i32 = -5;
 const LAVA_LEVEL: i32 = -54;
 /// Sentinel for "no fluid" — well below any real Y coordinate.
 const WAY_BELOW_MIN_Y: i32 = -32512;
-const FLOWING_UPDATE_SIMILARITY: f64 = 1.0 - ((12 * 12 - 10 * 10) as f64) / 25.0;
+const FLOWING_UPDATE_SIMILARITY: FloatGen = 1.0 - ((12 * 12 - 10 * 10) as FloatGen) / 25.0;
 
 /// Chunk offsets (in chunks, ×16 for blocks) used when sampling
 /// preliminary surface levels around an aquifer cell center.
@@ -223,8 +224,8 @@ const fn unpack_z(packed: i64) -> i32 {
 /// Similarity between two squared distances. Positive when the two nearest
 /// aquifer cells are close together (near a boundary).
 #[inline]
-fn similarity(dist_sq1: i32, dist_sq2: i32) -> f64 {
-    1.0 - f64::from(dist_sq2 - dist_sq1) / 25.0
+fn similarity(dist_sq1: i32, dist_sq2: i32) -> FloatGen {
+    1.0 - (dist_sq2 - dist_sq1) as FloatGen / 25.0
 }
 
 /// Deep dark region check matching `OverworldBiomeBuilder.isDeepDarkRegion`.
@@ -439,7 +440,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         world_x: i32,
         world_y: i32,
         world_z: i32,
-        density: f64,
+        density: FloatGen,
     ) -> AquiferResult {
         // Solid block — let the caller decide (stone or ore)
         if density > 0.0 {
@@ -577,7 +578,7 @@ impl<N: DimensionNoises> Aquifer<N> {
         }
 
         // Compute barrier pressure between closest pairs
-        let mut barrier_noise = f64::NAN;
+        let mut barrier_noise = FloatGen::NAN;
         let status2 = self.get_aquifer_status(closest_idx[1], noises);
         let barrier12 = sim12
             * self.calculate_pressure(
@@ -746,7 +747,7 @@ impl<N: DimensionNoises> Aquifer<N> {
             } else {
                 let dist_below = lowest_surface + 8 - y;
                 let floodedness_factor = if surface_under_global {
-                    map_clamped(f64::from(dist_below), 0.0, 64.0, 1.0, 0.0)
+                    map_clamped(dist_below as FloatGen, 0.0, 64.0, 1.0, 0.0)
                 } else {
                     0.0
                 };
@@ -834,10 +835,10 @@ impl<N: DimensionNoises> Aquifer<N> {
         x: i32,
         y: i32,
         z: i32,
-        barrier_noise: &mut f64,
+        barrier_noise: &mut FloatGen,
         s1: FluidStatus,
         s2: FluidStatus,
-    ) -> f64 {
+    ) -> FloatGen {
         let f1 = s1.at(y);
         let f2 = s2.at(y);
         let f1_is_lava = f1 == Some(self.lava_id);
@@ -855,9 +856,9 @@ impl<N: DimensionNoises> Aquifer<N> {
             return 0.0;
         }
 
-        let avg_fluid_y = 0.5 * f64::from(s1.fluid_level + s2.fluid_level);
-        let above_avg = f64::from(y) + 0.5 - avg_fluid_y;
-        let base = f64::from(fluid_y_diff) / 2.0;
+        let avg_fluid_y = 0.5 * (s1.fluid_level + s2.fluid_level) as FloatGen;
+        let above_avg = y as FloatGen + 0.5 - avg_fluid_y;
+        let base = fluid_y_diff as FloatGen / 2.0;
         let edge_dist = base - above_avg.abs();
 
         let gradient = if above_avg > 0.0 {
@@ -892,8 +893,8 @@ impl<N: DimensionNoises> Aquifer<N> {
 
 /// Quantize: snap value down to the nearest multiple of `quantum`.
 #[inline]
-fn quantize(value: f64, quantum: i32) -> i32 {
-    let q = f64::from(quantum);
+fn quantize(value: FloatGen, quantum: i32) -> i32 {
+    let q = quantum as FloatGen;
     (value / q).floor() as i32 * quantum
 }
 

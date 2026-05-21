@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::FloatGen;
 use crate::noise::SimplexNoise;
 use crate::random::legacy_random::LegacyRandom;
 use crate::random::{Random, RandomSource};
@@ -18,8 +19,8 @@ use crate::random::{Random, RandomSource};
 /// octave number), increasing index = decreasing frequency.
 pub struct PerlinSimplexNoise {
     noise_levels: Vec<Option<SimplexNoise>>,
-    highest_freq_input_factor: f64,
-    highest_freq_value_factor: f64,
+    highest_freq_input_factor: FloatGen,
+    highest_freq_value_factor: FloatGen,
 }
 
 impl PerlinSimplexNoise {
@@ -94,8 +95,8 @@ impl PerlinSimplexNoise {
 
         Self {
             noise_levels,
-            highest_freq_input_factor: 2.0f64.powi(last_octave),
-            highest_freq_value_factor: 1.0 / (2.0f64.powi(total as i32) - 1.0),
+            highest_freq_input_factor: (2.0 as FloatGen).powi(last_octave),
+            highest_freq_value_factor: 1.0 / ((2.0 as FloatGen).powi(total as i32) - 1.0),
         }
     }
 
@@ -103,7 +104,7 @@ impl PerlinSimplexNoise {
     ///
     /// Matches vanilla's `getValue(x, z, false)` path (no offset applied).
     #[must_use]
-    pub fn get_value(&self, x: f64, z: f64) -> f64 {
+    pub fn get_value(&self, x: FloatGen, z: FloatGen) -> FloatGen {
         let mut sum = 0.0;
         let mut factor = self.highest_freq_input_factor;
         let mut amplitude = self.highest_freq_value_factor;

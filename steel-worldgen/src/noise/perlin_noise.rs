@@ -3,13 +3,14 @@
 //! This combines multiple `ImprovedNoise` instances at different frequencies (octaves)
 //! to create more natural-looking noise with detail at multiple scales.
 
+use crate::FloatGen;
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
-const ROUND_OFF: f64 = 33_554_432.0;
-const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
+const ROUND_OFF: FloatGen = 33_554_432.0;
+const HALF_ROUND_OFF: FloatGen = ROUND_OFF / 2.0;
 
 /// Octave-based Perlin noise generator.
 ///
@@ -20,13 +21,13 @@ pub struct PerlinNoise {
     /// Noise generators for each octave (None if amplitude is 0)
     noise_levels: Vec<Option<ImprovedNoise>>,
     /// Amplitude multipliers for each octave
-    amplitudes: Vec<f64>,
+    amplitudes: Vec<FloatGen>,
     /// Factor applied to input coordinates for the lowest frequency octave
-    lowest_freq_input_factor: f64,
+    lowest_freq_input_factor: FloatGen,
     /// Factor applied to output values for the lowest frequency octave
-    lowest_freq_value_factor: f64,
+    lowest_freq_value_factor: FloatGen,
     /// Maximum possible output value
-    max_value: f64,
+    max_value: FloatGen,
 }
 
 impl PerlinNoise {
@@ -36,7 +37,7 @@ impl PerlinNoise {
     /// This is a convenience method; for vanilla-matching behavior within [`NormalNoise`],
     /// use [`create_from_random`](Self::create_from_random) instead.
     #[must_use]
-    pub fn create(splitter: &RandomSplitter, first_octave: i32, amplitudes: &[f64]) -> Self {
+    pub fn create(splitter: &RandomSplitter, first_octave: i32, amplitudes: &[FloatGen]) -> Self {
         let octaves = amplitudes.len();
         let zero_octave_index = (-first_octave) as usize;
 
@@ -67,7 +68,7 @@ impl PerlinNoise {
     pub fn create_from_random(
         random: &mut RandomSource,
         first_octave: i32,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
     ) -> Self {
         let octaves = amplitudes.len();
         let zero_octave_index = (-first_octave) as usize;
@@ -99,7 +100,7 @@ impl PerlinNoise {
     pub fn create_legacy_for_nether(
         random: &mut RandomSource,
         first_octave: i32,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
     ) -> Self {
         let octaves = amplitudes.len();
         let zero_octave_index = (-first_octave) as usize;
@@ -136,18 +137,18 @@ impl PerlinNoise {
     #[must_use]
     fn from_parts(
         noise_levels: Vec<Option<ImprovedNoise>>,
-        amplitudes: &[f64],
+        amplitudes: &[FloatGen],
         zero_octave_index: usize,
     ) -> Self {
         let octaves = amplitudes.len();
 
         // Calculate frequency factors
         // lowest_freq_input_factor = 2^(-zero_octave_index)
-        let lowest_freq_input_factor = 2.0_f64.powi(-(zero_octave_index as i32));
+        let lowest_freq_input_factor = (2.0 as FloatGen).powi(-(zero_octave_index as i32));
 
         // lowest_freq_value_factor = 2^(octaves-1) / (2^octaves - 1)
-        let lowest_freq_value_factor =
-            2.0_f64.powi((octaves - 1) as i32) / (2.0_f64.powi(octaves as i32) - 1.0);
+        let lowest_freq_value_factor = (2.0 as FloatGen).powi((octaves - 1) as i32)
+            / ((2.0 as FloatGen).powi(octaves as i32) - 1.0);
 
         // Calculate max value
         let max_value = Self::edge_value(amplitudes, lowest_freq_value_factor, 2.0);
@@ -162,7 +163,11 @@ impl PerlinNoise {
     }
 
     /// Calculate the theoretical maximum value for the given amplitudes.
-    fn edge_value(amplitudes: &[f64], lowest_freq_value_factor: f64, noise_value: f64) -> f64 {
+    fn edge_value(
+        amplitudes: &[FloatGen],
+        lowest_freq_value_factor: FloatGen,
+        noise_value: FloatGen,
+    ) -> FloatGen {
         let mut value = 0.0;
         let mut value_factor = lowest_freq_value_factor;
 
@@ -179,7 +184,7 @@ impl PerlinNoise {
     /// Sample the noise at the given coordinates.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn get_value(&self, x: FloatGen, y: FloatGen, z: FloatGen) -> FloatGen {
         let mut value = 0.0;
         let mut input_factor = self.lowest_freq_input_factor;
         let mut value_factor = self.lowest_freq_value_factor;
@@ -211,13 +216,13 @@ impl PerlinNoise {
     #[must_use]
     pub fn get_value_with_y_params(
         &self,
-        x: f64,
-        y: f64,
-        z: f64,
-        y_scale: f64,
-        y_fudge: f64,
+        x: FloatGen,
+        y: FloatGen,
+        z: FloatGen,
+        y_scale: FloatGen,
+        y_fudge: FloatGen,
         y_flat_hack: bool,
-    ) -> f64 {
+    ) -> FloatGen {
         let mut value = 0.0;
         let mut input_factor = self.lowest_freq_input_factor;
         let mut value_factor = self.lowest_freq_value_factor;
@@ -248,7 +253,7 @@ impl PerlinNoise {
     /// Get the maximum possible output value.
     #[inline]
     #[must_use]
-    pub const fn max_value(&self) -> f64 {
+    pub const fn max_value(&self) -> FloatGen {
         self.max_value
     }
 
@@ -257,7 +262,7 @@ impl PerlinNoise {
     /// Used by `BlendedNoise` to determine the theoretical max output.
     /// Java reference: `PerlinNoise.maxBrokenValue(double)`
     #[must_use]
-    pub fn max_broken_value(&self, y_scale: f64) -> f64 {
+    pub fn max_broken_value(&self, y_scale: FloatGen) -> FloatGen {
         Self::edge_value(
             &self.amplitudes,
             self.lowest_freq_value_factor,
@@ -284,7 +289,7 @@ impl PerlinNoise {
 /// Public because `BlendedNoise` calls this directly on per-octave coordinates.
 #[inline]
 #[must_use]
-pub fn wrap(x: f64) -> f64 {
+pub fn wrap(x: FloatGen) -> FloatGen {
     if (-HALF_ROUND_OFF..HALF_ROUND_OFF).contains(&x) {
         return x;
     }
@@ -340,13 +345,19 @@ mod tests {
         let noise = PerlinNoise::create(&splitter, -4, &[1.0, 1.0, 1.0, 1.0]);
 
         // Sample at different locations
-        let values: Vec<f64> = (0..10)
-            .map(|i| noise.get_value(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0))
+        let values: Vec<FloatGen> = (0..10)
+            .map(|i| noise.get_value(i as FloatGen * 50.0, 64.0, i as FloatGen * 50.0))
             .collect();
 
         // Check there's variation
-        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min = values
+            .iter()
+            .copied()
+            .fold(FloatGen::INFINITY, FloatGen::min);
+        let max = values
+            .iter()
+            .copied()
+            .fold(FloatGen::NEG_INFINITY, FloatGen::max);
         assert!(max - min > 0.01, "Noise should have spatial variation");
     }
 
@@ -371,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_wrap() {
-        fn wrap_reference(x: f64) -> f64 {
+        fn wrap_reference(x: FloatGen) -> FloatGen {
             x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
         }
 

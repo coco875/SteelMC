@@ -10,7 +10,10 @@ use std::path::Path;
 struct NoiseParamsJson {
     #[serde(rename = "firstOctave")]
     first_octave: i32,
+    #[cfg(not(feature = "f32_gen"))]
     amplitudes: Vec<f64>,
+    #[cfg(feature = "f32_gen")]
+    amplitudes: Vec<f32>,
 }
 
 /// Recursively collect all `.json` files under `dir`, keyed by their path
@@ -62,6 +65,7 @@ pub(crate) fn build() -> TokenStream {
 
         use rustc_hash::FxHashMap;
         use steel_worldgen::density::NoiseParameters;
+        use steel_worldgen::FloatGen;
     });
 
     // Generate static amplitude arrays
@@ -73,7 +77,7 @@ pub(crate) fn build() -> TokenStream {
         let amplitudes = &params.amplitudes;
 
         stream.extend(quote! {
-            static #const_name: &[f64] = &[#(#amplitudes),*];
+            static #const_name: &[FloatGen] = &[#(#amplitudes),*];
         });
     }
 

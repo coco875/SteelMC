@@ -12,6 +12,7 @@ use steel_utils::BlockStateId;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSource, RandomSplitter};
+use steel_worldgen::FloatGen;
 use steel_worldgen::density::NoiseParameters;
 use steel_worldgen::noise::{NormalNoise, PerlinSimplexNoise};
 use steel_worldgen::surface::SurfaceNoiseProvider;
@@ -169,16 +170,16 @@ impl SurfaceSystem {
     pub fn get_surface_depth(&self, x: i32, z: i32) -> i32 {
         let noise_value = self
             .surface_noise
-            .get_value(f64::from(x), 0.0, f64::from(z));
-        let jitter = self.noise_random.at(x, 0, z).next_f64() * 0.25;
+            .get_value(x as FloatGen, 0.0, z as FloatGen);
+        let jitter = self.noise_random.at(x, 0, z).next_f64() as FloatGen * 0.25;
         (noise_value * 2.75 + 3.0 + jitter) as i32
     }
 
     /// Sample the surface secondary noise at a column position.
     #[must_use]
-    pub fn get_surface_secondary(&self, x: i32, z: i32) -> f64 {
+    pub fn get_surface_secondary(&self, x: i32, z: i32) -> FloatGen {
         self.surface_secondary_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
+            .get_value(x as FloatGen, 0.0, z as FloatGen)
     }
 
     /// Compute the effective temperature at a position.
@@ -201,16 +202,16 @@ impl SurfaceSystem {
             TemperatureModifier::Frozen => {
                 let large = self
                     .frozen_temperature_noise
-                    .get_value(f64::from(block_x) * 0.05, f64::from(block_z) * 0.05)
+                    .get_value(block_x as FloatGen * 0.05, block_z as FloatGen * 0.05)
                     * 7.0;
                 let edge = self
                     .biome_info_noise
-                    .get_value(f64::from(block_x) * 0.2, f64::from(block_z) * 0.2);
+                    .get_value(block_x as FloatGen * 0.2, block_z as FloatGen * 0.2);
                 let combined = large + edge;
                 if combined < 0.3 {
                     let small = self
                         .biome_info_noise
-                        .get_value(f64::from(block_x) * 0.09, f64::from(block_z) * 0.09);
+                        .get_value(block_x as FloatGen * 0.09, block_z as FloatGen * 0.09);
                     if small < 0.8 {
                         0.2 // Force warm
                     } else {
@@ -227,7 +228,7 @@ impl SurfaceSystem {
         if block_y > snow_level {
             let v = self
                 .temperature_noise
-                .get_value(f64::from(block_x) / 8.0, f64::from(block_z) / 8.0)
+                .get_value(block_x as FloatGen / 8.0, block_z as FloatGen / 8.0)
                 as f32
                 * 8.0;
             modified_temp - (v + block_y as f32 - snow_level as f32) * 0.05 / 40.0
@@ -356,16 +357,16 @@ impl SurfaceSystem {
         height: i32,
         min_y: i32,
     ) -> i32 {
-        let pillar_buffer = f64::min(
+        let pillar_buffer = FloatGen::min(
             (self
                 .badlands_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
+                .get_value(block_x as FloatGen, 0.0, block_z as FloatGen)
                 * 8.25)
                 .abs(),
             self.badlands_pillar_noise.get_value(
-                f64::from(block_x) * 0.2,
+                block_x as FloatGen * 0.2,
                 0.0,
-                f64::from(block_z) * 0.2,
+                block_z as FloatGen * 0.2,
             ) * 15.0,
         );
 
@@ -374,14 +375,14 @@ impl SurfaceSystem {
         }
 
         let pillar_floor = (self.badlands_pillar_roof_noise.get_value(
-            f64::from(block_x) * 0.75,
+            block_x as FloatGen * 0.75,
             0.0,
-            f64::from(block_z) * 0.75,
+            block_z as FloatGen * 0.75,
         ) * 1.5)
             .abs();
 
         let extension_top = 64.0
-            + f64::min(
+            + FloatGen::min(
                 pillar_buffer * pillar_buffer * 2.5,
                 (pillar_floor * 50.0).ceil() + 24.0,
             );
@@ -441,16 +442,16 @@ impl SurfaceSystem {
         min_surface_level: i32,
         min_y: i32,
     ) {
-        let iceberg = f64::min(
+        let iceberg = FloatGen::min(
             (self
                 .iceberg_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
+                .get_value(block_x as FloatGen, 0.0, block_z as FloatGen)
                 * 8.25)
                 .abs(),
             self.iceberg_pillar_noise.get_value(
-                f64::from(block_x) * 1.28,
+                block_x as FloatGen * 1.28,
                 0.0,
-                f64::from(block_z) * 1.28,
+                block_z as FloatGen * 1.28,
             ) * 15.0,
         );
 
@@ -459,13 +460,13 @@ impl SurfaceSystem {
         }
 
         let iceberg_roof = (self.iceberg_pillar_roof_noise.get_value(
-            f64::from(block_x) * 1.17,
+            block_x as FloatGen * 1.17,
             0.0,
-            f64::from(block_z) * 1.17,
+            block_z as FloatGen * 1.17,
         ) * 1.5)
             .abs();
 
-        let mut top = f64::min(iceberg * iceberg * 1.2, (iceberg_roof * 40.0).ceil() + 14.0);
+        let mut top = FloatGen::min(iceberg * iceberg * 1.2, (iceberg_roof * 40.0).ceil() + 14.0);
 
         if self.should_melt_frozen_ocean_iceberg_slightly(biome_id, block_x, block_z) {
             top -= 2.0;
@@ -473,8 +474,8 @@ impl SurfaceSystem {
 
         let extension_bottom;
         if top > 2.0 {
-            extension_bottom = f64::from(self.sea_level) - top - 7.0;
-            top += f64::from(self.sea_level);
+            extension_bottom = self.sea_level as FloatGen - top - 7.0;
+            top += self.sea_level as FloatGen;
         } else {
             top = 0.0;
             extension_bottom = 0.0;
@@ -518,15 +519,15 @@ impl SurfaceSystem {
 }
 
 impl SurfaceNoiseProvider for SurfaceSystem {
-    fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
-        self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
+    fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> FloatGen {
+        self.condition_noises[noise_index].get_value(x as FloatGen, 0.0, z as FloatGen)
     }
 
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         // Java: (int)Math.round(noise * 4.0)
         let offset = (self
             .clay_bands_offset_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
+            .get_value(x as FloatGen, 0.0, z as FloatGen)
             * 4.0
             + 0.5)
             .floor() as i32;

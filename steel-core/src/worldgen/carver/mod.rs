@@ -16,6 +16,7 @@ use steel_registry::{REGISTRY, TaggedRegistryExt};
 use steel_utils::ChunkPos;
 use steel_utils::math::mth;
 use steel_utils::{BlockPos, BlockStateId, Identifier, types::UpdateFlags};
+use steel_worldgen::FloatGen;
 use steel_worldgen::density::DimensionNoises;
 use steel_worldgen::math::lerp2;
 use steel_worldgen::surface::{SurfaceConditionNoiseCache, SurfaceRuleContext};
@@ -95,16 +96,16 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
         let local_x = (block_x - self.chunk_min_x).clamp(0, 16);
         let local_z = (block_z - self.chunk_min_z).clamp(0, 16);
         // Vanilla: (float)(blockX & 15) / 16.0F — float intermediate is exact for 0-15
-        let t_x = f64::from(local_x as u8) / 16.0;
-        let t_z = f64::from(local_z as u8) / 16.0;
+        let t_x = (local_x as u8) as FloatGen / 16.0;
+        let t_z = (local_z as u8) as FloatGen / 16.0;
         let c = self.psl_corners;
         let interp = lerp2(
             t_x,
             t_z,
-            f64::from(c.nw),
-            f64::from(c.ne),
-            f64::from(c.sw),
-            f64::from(c.se),
+            c.nw as FloatGen,
+            c.ne as FloatGen,
+            c.sw as FloatGen,
+            c.se as FloatGen,
         );
         interp.floor() as i32
     }
@@ -133,7 +134,7 @@ impl<N: DimensionNoises> CarvingContext<'_, N> {
         let min_surface_level = self.min_surface_level(block_x, block_z) + surface_depth - 8;
 
         let water_height = if under_fluid { block_y + 1 } else { i32::MIN };
-        let condition_noise_values: SmallVec<[Cell<f64>; 8]> = N::surface_noise_ids()
+        let condition_noise_values: SmallVec<[Cell<FloatGen>; 8]> = N::surface_noise_ids()
             .iter()
             .map(|_| Cell::new(0.0))
             .collect();

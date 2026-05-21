@@ -4,9 +4,9 @@
 //! allowing generic chunk generation code to work with any dimension's transpiled
 //! density functions.
 
-use crate::BlockStateId;
 use crate::random::RandomSplitter;
 use crate::surface::SurfaceRuleContext;
+use crate::{BlockStateId, FloatGen};
 use rustc_hash::FxHashMap;
 
 use super::NoiseParameters;
@@ -81,15 +81,21 @@ pub trait DimensionNoises: Sized + Send + Sync {
     // ── Router functions ────────────────────────────────────────────────────
 
     /// Final density for terrain generation (positive = solid, negative = air).
-    fn router_final_density(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_final_density(
+        &self,
+        cache: &mut Self::ColumnCache,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> FloatGen;
 
     /// Depth from surface (used for terrain shaping).
-    fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_depth(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     // ── Aquifer router functions ────────────────────────────────────────────
 
     /// Barrier noise for aquifer boundaries.
-    fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_barrier(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     /// Fluid level floodedness for aquifers.
     fn router_fluid_level_floodedness(
@@ -98,7 +104,7 @@ pub trait DimensionNoises: Sized + Send + Sync {
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     /// Fluid level spread for aquifers.
     fn router_fluid_level_spread(
@@ -107,38 +113,47 @@ pub trait DimensionNoises: Sized + Send + Sync {
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     /// Lava placement noise for aquifers.
-    fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_lava(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     // ── Ore vein router functions ───────────────────────────────────────────
 
     /// Vein toggle (sign determines copper vs iron).
-    fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_vein_toggle(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32)
+    -> FloatGen;
 
     /// Vein ridged noise for ore placement.
-    fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_vein_ridged(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32)
+    -> FloatGen;
 
     /// Vein gap noise for ore vs filler placement.
-    fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_vein_gap(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     // ── Climate/biome router functions (Y-independent, cached) ──────────────
 
     /// Erosion value (cached in column cache).
-    fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_erosion(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     /// Continentalness value (cached in column cache).
-    fn router_continentalness(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_continentalness(
+        &self,
+        cache: &mut Self::ColumnCache,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> FloatGen;
 
     /// Temperature value (cached in column cache).
-    fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_temperature(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32)
+    -> FloatGen;
 
     /// Vegetation/humidity value (cached in column cache).
-    fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_vegetation(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     /// Ridges/weirdness value (cached in column cache).
-    fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> f64;
+    fn router_ridges(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32) -> FloatGen;
 
     /// Preliminary surface level (cached in column cache).
     fn router_preliminary_surface_level(
@@ -147,7 +162,7 @@ pub trait DimensionNoises: Sized + Send + Sync {
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     // ── Interpolation functions ─────────────────────────────────────────────
 
@@ -165,7 +180,7 @@ pub trait DimensionNoises: Sized + Send + Sync {
     /// to SIMD-batch the blended noise computation.
     ///
     /// Default: no-op (fills `out` with zeros).
-    fn compute_noise_column(&self, _x: i32, _block_ys: &[i32], _z: i32, out: &mut [f64]) {
+    fn compute_noise_column(&self, _x: i32, _block_ys: &[i32], _z: i32, out: &mut [FloatGen]) {
         out.fill(0.0);
     }
 
@@ -180,39 +195,39 @@ pub trait DimensionNoises: Sized + Send + Sync {
         x: i32,
         y: i32,
         z: i32,
-        blended_noise_value: f64,
-        out: &mut [f64],
+        blended_noise_value: FloatGen,
+        out: &mut [FloatGen],
     );
 
     /// Combine trilinearly interpolated values for `final_density`.
     fn combine_interpolated(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[FloatGen],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     /// Combine trilinearly interpolated values for `vein_toggle`.
     fn combine_vein_toggle(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[FloatGen],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     /// Combine trilinearly interpolated values for `vein_ridged`.
     fn combine_vein_ridged(
         &self,
         cache: &mut Self::ColumnCache,
-        interpolated: &[f64],
+        interpolated: &[FloatGen],
         x: i32,
         y: i32,
         z: i32,
-    ) -> f64;
+    ) -> FloatGen;
 
     // ── Surface rules ───────────────────────────────────────────────────────
 

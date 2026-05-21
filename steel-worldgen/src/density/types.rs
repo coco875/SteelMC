@@ -1,16 +1,18 @@
+use crate::FloatGen;
+
 /// Parameters for creating a noise generator.
 #[derive(Debug, Clone)]
 pub struct NoiseParameters {
     /// The first octave level.
     pub first_octave: i32,
     /// Amplitude multipliers for each octave.
-    pub amplitudes: Vec<f64>,
+    pub amplitudes: Vec<FloatGen>,
 }
 
 impl NoiseParameters {
     /// Create new noise parameters.
     #[must_use]
-    pub const fn new(first_octave: i32, amplitudes: Vec<f64>) -> Self {
+    pub const fn new(first_octave: i32, amplitudes: Vec<FloatGen>) -> Self {
         Self {
             first_octave,
             amplitudes,
@@ -34,7 +36,7 @@ impl RarityValueMapper {
     ///
     /// From vanilla `NoiseRouterData.QuantizedSpaghettiRarity`.
     #[must_use]
-    pub fn get_values(self, rarity: f64) -> f64 {
+    pub fn get_values(self, rarity: FloatGen) -> FloatGen {
         match self {
             Self::Tunnels => {
                 if rarity < -0.5 {

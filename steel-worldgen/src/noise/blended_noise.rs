@@ -11,9 +11,10 @@ use crate::math::clamped_lerp;
 use crate::noise::PerlinNoise;
 use crate::noise::perlin_noise::wrap;
 use crate::random::RandomSource;
+use crate::{FloatGen, Vec4Gen};
 
 /// Base frequency multiplier for all `BlendedNoise` coordinate transforms.
-const COORDINATE_SCALE: f64 = 684.412;
+const COORDINATE_SCALE: FloatGen = 684.412;
 
 /// Runtime `BlendedNoise` sampler with three seeded `PerlinNoise` instances.
 ///
@@ -23,12 +24,12 @@ pub struct BlendedNoise {
     min_limit_noise: PerlinNoise,
     max_limit_noise: PerlinNoise,
     main_noise: PerlinNoise,
-    xz_multiplier: f64,
-    y_multiplier: f64,
-    xz_factor: f64,
-    y_factor: f64,
-    smear_scale_multiplier: f64,
-    max_value: f64,
+    xz_multiplier: FloatGen,
+    y_multiplier: FloatGen,
+    xz_factor: FloatGen,
+    y_factor: FloatGen,
+    smear_scale_multiplier: FloatGen,
+    max_value: FloatGen,
 }
 
 impl BlendedNoise {
@@ -39,11 +40,11 @@ impl BlendedNoise {
     #[must_use]
     pub fn new(
         random: &mut RandomSource,
-        xz_scale: f64,
-        y_scale: f64,
-        xz_factor: f64,
-        y_factor: f64,
-        smear_scale_multiplier: f64,
+        xz_scale: FloatGen,
+        y_scale: FloatGen,
+        xz_factor: FloatGen,
+        y_factor: FloatGen,
+        smear_scale_multiplier: FloatGen,
     ) -> Self {
         // min/max limit: 16 octaves (-15 to 0), main: 8 octaves (-7 to 0)
         let min_limit_noise = PerlinNoise::create_legacy_for_nether(random, -15, &[1.0; 16]);
@@ -69,10 +70,10 @@ impl BlendedNoise {
 
     /// Compute the blended noise value at the given block coordinates.
     #[must_use]
-    pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_y = f64::from(block_y) * self.y_multiplier;
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
+    pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> FloatGen {
+        let limit_x = block_x as FloatGen * self.xz_multiplier;
+        let limit_y = block_y as FloatGen * self.y_multiplier;
+        let limit_z = block_z as FloatGen * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
         let main_y = limit_y / self.y_factor;
         let main_z = limit_z / self.xz_factor;
@@ -96,7 +97,7 @@ impl BlendedNoise {
         }
 
         // Determine blend factor and which limit noises to sample
-        let factor = f64::midpoint(main_noise_value / 10.0, 1.0);
+        let factor = FloatGen::midpoint(main_noise_value / 10.0, 1.0);
         let is_max = factor >= 1.0;
         let is_min = factor <= 0.0;
 
@@ -131,22 +132,23 @@ impl BlendedNoise {
     /// smoothstep, trilinear lerp) across the 4 Y lanes, while sharing
     /// the x/z coordinate work.
     #[must_use]
-    pub fn compute_4x(&self, block_x: i32, block_ys: [i32; 4], block_z: i32) -> [f64; 4] {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_ys = f64x4::from_array(block_ys.map(f64::from)) * f64x4::splat(self.y_multiplier);
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
+    pub fn compute_4x(&self, block_x: i32, block_ys: [i32; 4], block_z: i32) -> [FloatGen; 4] {
+        let limit_x = block_x as FloatGen * self.xz_multiplier;
+        let limit_ys = Vec4Gen::from_array(block_ys.map(|i| i as FloatGen))
+            * Vec4Gen::splat(self.y_multiplier);
+        let limit_z = block_z as FloatGen * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
-        let main_ys = limit_ys / f64x4::splat(self.y_factor);
+        let main_ys = limit_ys / Vec4Gen::splat(self.y_factor);
         let main_z = limit_z / self.xz_factor;
         let limit_smear = self.y_multiplier * self.smear_scale_multiplier;
         let main_smear = limit_smear / self.y_factor;
 
         // Sample main noise (8 octaves)
-        let mut main_noise_values = f64x4::splat(0.0);
+        let mut main_noise_values = Vec4Gen::splat(0.0);
         let mut pow = 1.0;
         for i in 0..8 {
             if let Some(noise) = self.main_noise.get_octave_noise(i) {
-                let pow_v = f64x4::splat(pow);
+                let pow_v = Vec4Gen::splat(pow);
                 let scaled_ys = main_ys * pow_v;
                 main_noise_values += noise.noise_with_y_scale_4x(
                     wrap(main_x * pow),
@@ -161,18 +163,18 @@ impl BlendedNoise {
 
         // Blend factor per lane: midpoint(main/10, 1) = (main/10 + 1) / 2
         let factors =
-            (main_noise_values / f64x4::splat(10.0) + f64x4::splat(1.0)) / f64x4::splat(2.0);
+            (main_noise_values / Vec4Gen::splat(10.0) + Vec4Gen::splat(1.0)) / Vec4Gen::splat(2.0);
 
         // Early exit: skip a limit noise only when ALL 4 lanes agree
-        let all_max = factors.simd_ge(f64x4::splat(1.0)).all();
-        let all_min = factors.simd_le(f64x4::splat(0.0)).all();
+        let all_max = factors.simd_ge(Vec4Gen::splat(1.0)).all();
+        let all_min = factors.simd_le(Vec4Gen::splat(0.0)).all();
 
         // Sample limit noises (16 octaves each)
-        let mut blend_min = f64x4::splat(0.0);
-        let mut blend_max = f64x4::splat(0.0);
+        let mut blend_min = Vec4Gen::splat(0.0);
+        let mut blend_max = Vec4Gen::splat(0.0);
         pow = 1.0;
         for i in 0..16 {
-            let pow_v = f64x4::splat(pow);
+            let pow_v = Vec4Gen::splat(pow);
             let scaled_ys = limit_ys * pow_v;
             let wx = wrap(limit_x * pow);
             let wys = wrap_4x(scaled_ys);
@@ -192,16 +194,22 @@ impl BlendedNoise {
             pow /= 2.0;
         }
 
-        let min_scaled = blend_min / f64x4::splat(512.0);
-        let max_scaled = blend_max / f64x4::splat(512.0);
-        let result = clamped_lerp_4x(min_scaled, max_scaled, factors) / f64x4::splat(128.0);
+        let min_scaled = blend_min / Vec4Gen::splat(512.0);
+        let max_scaled = blend_max / Vec4Gen::splat(512.0);
+        let result = clamped_lerp_4x(min_scaled, max_scaled, factors) / Vec4Gen::splat(128.0);
         result.to_array()
     }
 
     /// Compute blended noise for a column of Y values, returning the results.
     ///
     /// Uses SIMD to process 4 Y values at a time.
-    pub fn compute_column(&self, block_x: i32, block_ys: &[i32], block_z: i32, out: &mut [f64]) {
+    pub fn compute_column(
+        &self,
+        block_x: i32,
+        block_ys: &[i32],
+        block_z: i32,
+        out: &mut [FloatGen],
+    ) {
         let count = block_ys.len().min(out.len());
 
         // SIMD batches of 4
@@ -231,30 +239,30 @@ impl BlendedNoise {
     /// Maximum possible output value.
     #[inline]
     #[must_use]
-    pub const fn max_value(&self) -> f64 {
+    pub const fn max_value(&self) -> FloatGen {
         self.max_value
     }
 
     /// Minimum possible output value (negative of max).
     #[inline]
     #[must_use]
-    pub fn min_value(&self) -> f64 {
+    pub fn min_value(&self) -> FloatGen {
         -self.max_value
     }
 }
 
 /// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
 #[inline]
-fn wrap_4x(x: f64x4) -> f64x4 {
-    let round_off = f64x4::splat(33_554_432.0);
-    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
+fn wrap_4x(x: Vec4Gen) -> Vec4Gen {
+    let round_off = Vec4Gen::splat(33_554_432.0);
+    x - (x / round_off + Vec4Gen::splat(0.5)).floor() * round_off
 }
 
 /// Clamped lerp for 4 lanes.
 #[inline]
-fn clamped_lerp_4x(min: f64x4, max: f64x4, factor: f64x4) -> f64x4 {
-    let zero = f64x4::splat(0.0);
-    let one = f64x4::splat(1.0);
+fn clamped_lerp_4x(min: Vec4Gen, max: Vec4Gen, factor: Vec4Gen) -> Vec4Gen {
+    let zero = Vec4Gen::splat(0.0);
+    let one = Vec4Gen::splat(1.0);
     let below = factor.simd_lt(zero);
     let above = factor.simd_gt(one);
 
@@ -310,7 +318,7 @@ mod tests {
         // 49 Y values like the actual overworld (cell_min_y=-8, corners_y=49, cell_height=8)
         let block_ys: Vec<i32> = (0..49).map(|cy| (cy - 8) * 8).collect();
 
-        let scalar_results: Vec<f64> = block_ys.iter().map(|&y| bn.compute(0, y, 0)).collect();
+        let scalar_results: Vec<FloatGen> = block_ys.iter().map(|&y| bn.compute(0, y, 0)).collect();
 
         let mut column_results = vec![0.0; block_ys.len()];
         bn.compute_column(0, &block_ys, 0, &mut column_results);
@@ -343,10 +351,16 @@ mod tests {
     fn test_blended_noise_spatial_variation() {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
-        let values: Vec<f64> = (-5..5).map(|x| bn.compute(x * 16, 64, 0)).collect();
+        let values: Vec<FloatGen> = (-5..5).map(|x| bn.compute(x * 16, 64, 0)).collect();
 
-        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min = values
+            .iter()
+            .copied()
+            .fold(FloatGen::INFINITY, FloatGen::min);
+        let max = values
+            .iter()
+            .copied()
+            .fold(FloatGen::NEG_INFINITY, FloatGen::max);
         assert!(
             max - min > 1e-6,
             "BlendedNoise should have variation: {values:?}"

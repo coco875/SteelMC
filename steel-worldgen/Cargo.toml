@@ -30,4 +30,6 @@ rustc-hash.workspace = true
 workspace = true
 
 [features]
+default = ["f32_gen", "fmt"]
 fmt = []
+f32_gen = []

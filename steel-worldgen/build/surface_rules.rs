@@ -4,7 +4,7 @@
 //! a `try_apply_surface_rule()` function per dimension that inlines all conditions
 //! and block outputs as Rust code.
 
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use std::mem;
@@ -216,14 +216,14 @@ impl SurfaceRuleTranspiler {
                     if *add_surface_depth {
                         quote! {
                             {
-                                let extra = ((ctx.surface_secondary + 1.0) / 2.0 * #range as f64) as i32;
+                                let extra = ((ctx.surface_secondary + 1.0) / 2.0 * #range as FloatGen) as i32;
                                 #depth_field <= 1 + #offset + ctx.surface_depth + extra
                             }
                         }
                     } else {
                         quote! {
                             {
-                                let extra = ((ctx.surface_secondary + 1.0) / 2.0 * #range as f64) as i32;
+                                let extra = ((ctx.surface_secondary + 1.0) / 2.0 * #range as FloatGen) as i32;
                                 #depth_field <= 1 + #offset + extra
                             }
                         }
@@ -281,8 +281,15 @@ impl SurfaceRuleTranspiler {
                         self.noise_ids.push(noise_key);
                         idx
                     };
-                let min_f = *min_threshold;
-                let max_f = *max_threshold;
+                let mut min_threshold = *min_threshold;
+                let mut max_threshold = *max_threshold;
+                #[cfg(feature = "f32_gen")]
+                {
+                    min_threshold = min_threshold.clamp(f32::MIN as f64, f32::MAX as f64);
+                    max_threshold = max_threshold.clamp(f32::MIN as f64, f32::MAX as f64);
+                }
+                let min_f = Literal::f64_unsuffixed(min_threshold);
+                let max_f = Literal::f64_unsuffixed(max_threshold);
                 quote! {
                     {
                         let v = ctx.condition_noise(#noise_index);

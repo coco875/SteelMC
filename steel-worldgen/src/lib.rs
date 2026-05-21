@@ -2,6 +2,30 @@
 
 #![feature(portable_simd)]
 
+#[cfg(not(feature = "f32_gen"))]
+pub type FloatGen = f64;
+
+#[cfg(feature = "f32_gen")]
+pub type FloatGen = f32;
+
+#[cfg(feature = "f32_gen")]
+use std::simd::f32x4;
+#[cfg(not(feature = "f32_gen"))]
+use std::simd::f64x4;
+
+#[cfg(not(feature = "f32_gen"))]
+pub type Vec4Gen = f64x4;
+#[cfg(feature = "f32_gen")]
+pub type Vec4Gen = f32x4;
+
+#[cfg(not(feature = "f32_gen"))]
+use std::f64::consts::PI;
+
+#[cfg(feature = "f32_gen")]
+use std::f32::consts::PI;
+
+pub const PI_GEN: FloatGen = PI;
+
 extern crate self as steel_worldgen;
 
 pub use steel_utils::{BlockStateId, random};

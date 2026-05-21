@@ -4,16 +4,16 @@
 )]
 
 use std::f32::consts::TAU;
-use std::f64::consts::PI;
 
 use super::super::super::prelude::*;
 use super::super::super::runner::FeatureDecorationRunner;
 use super::{FoliageAttachment, TreePlacement, abs_i32};
+use steel_worldgen::{FloatGen, PI_GEN};
 
-const FANCY_TRUNK_HEIGHT_SCALE: f64 = 0.618;
-const FANCY_CLUSTER_DENSITY_MAGIC: f64 = 1.382;
-const FANCY_BRANCH_SLOPE: f64 = 0.381;
-const FANCY_BRANCH_LENGTH_MAGIC: f64 = 0.328;
+const FANCY_TRUNK_HEIGHT_SCALE: FloatGen = 0.618;
+const FANCY_CLUSTER_DENSITY_MAGIC: FloatGen = 1.382;
+const FANCY_BRANCH_SLOPE: FloatGen = 0.381;
+const FANCY_BRANCH_LENGTH_MAGIC: FloatGen = 0.328;
 
 impl FeatureDecorationRunner {
     pub(super) fn tree_height(random: &mut WorldgenRandom, placer: &TrunkPlacer) -> i32 {
@@ -851,11 +851,11 @@ impl FeatureDecorationRunner {
         placement: &mut TreePlacement,
     ) -> Vec<FoliageAttachment> {
         let height = tree_height + 2;
-        let trunk_height = floor(f64::from(height) * FANCY_TRUNK_HEIGHT_SCALE);
+        let trunk_height = floor(height as FloatGen * FANCY_TRUNK_HEIGHT_SCALE);
         Self::place_below_trunk_block(region, registry, random, origin.below(), config, placement);
 
         let clusters_per_y = 1.min(floor(
-            FANCY_CLUSTER_DENSITY_MAGIC + (f64::from(height) / 13.0).powi(2),
+            FANCY_CLUSTER_DENSITY_MAGIC + (height as FloatGen / 13.0).powi(2),
         ));
         let trunk_top = origin.y() + trunk_height;
         let mut relative_y = height - 5;
@@ -872,9 +872,9 @@ impl FeatureDecorationRunner {
             let tree_shape = Self::fancy_tree_shape(height, relative_y);
             if tree_shape >= 0.0 {
                 for _ in 0..clusters_per_y {
-                    let radius = f64::from(tree_shape)
-                        * (f64::from(random.next_f32()) + FANCY_BRANCH_LENGTH_MAGIC);
-                    let angle = f64::from(random.next_f32() * 2.0_f32) * PI;
+                    let radius = tree_shape as FloatGen
+                        * (random.next_f32() as FloatGen + FANCY_BRANCH_LENGTH_MAGIC);
+                    let angle = (random.next_f32() * 2.0_f32) as FloatGen * PI_GEN;
                     let x = radius * angle.sin() + 0.5;
                     let z = radius * angle.cos() + 0.5;
                     let check_start = origin.offset(floor(x), relative_y - 1, floor(z));
@@ -891,9 +891,9 @@ impl FeatureDecorationRunner {
                     ) {
                         let dx = origin.x() - check_start.x();
                         let dz = origin.z() - check_start.z();
-                        let branch_height = f64::from(check_start.y())
-                            - f64::from(dx * dx + dz * dz).sqrt() * FANCY_BRANCH_SLOPE;
-                        let branch_top = if branch_height > f64::from(trunk_top) {
+                        let branch_height = check_start.y() as FloatGen
+                            - ((dx * dx + dz * dz) as FloatGen).sqrt() * FANCY_BRANCH_SLOPE;
+                        let branch_top = if branch_height > trunk_top as FloatGen {
                             trunk_top
                         } else {
                             branch_height as i32
@@ -994,9 +994,9 @@ impl FeatureDecorationRunner {
         for step in 0..=steps {
             let step = step as f32;
             let pos = start_pos.offset(
-                floor(f64::from(0.5_f32 + step * dx)),
-                floor(f64::from(0.5_f32 + step * dy)),
-                floor(f64::from(0.5_f32 + step * dz)),
+                floor((0.5_f32 + step * dx) as FloatGen),
+                floor((0.5_f32 + step * dy) as FloatGen),
+                floor((0.5_f32 + step * dz) as FloatGen),
             );
             if do_place {
                 let axis = Self::fancy_tree_log_axis(start_pos, pos);
