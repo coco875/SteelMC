@@ -25,14 +25,14 @@ use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
-use steel_worldgen::noise::Beardifier;
-use steel_worldgen::structure::StructureStart;
 use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
 use steel_registry::{dimension_type::DimensionTypeRef, vanilla_dimension_types};
 use steel_utils::types::{Difficulty, GameType};
 use steel_utils::{ChunkPos, Identifier};
+use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::StructureStart;
 use tokio::runtime::Runtime;
 use toml::map::Map;
 
@@ -620,11 +620,9 @@ fn chunk_stage_hashes_inner() {
     use steel_core::behavior::init_behaviors;
     use steel_core::block_entity::init_block_entities;
     use steel_core::entity::init_entities;
-    use steel_core::worldgen::{
-        EndGenerator, NetherGenerator, OverworldGenerator,
-    };
-    use steel_worldgen::biomes::BiomeSourceKind;
+    use steel_core::worldgen::{EndGenerator, NetherGenerator, OverworldGenerator};
     use steel_registry::{REGISTRY, Registry};
+    use steel_worldgen::biomes::BiomeSourceKind;
 
     let mut registry = Registry::new_vanilla();
     registry.freeze();
