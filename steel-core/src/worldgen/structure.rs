@@ -820,7 +820,7 @@ fn vanilla_structure_impls() -> FxHashMap<Identifier, Box<dyn Structure>> {
 mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_biomes};
 
-    use crate::world::structure::placement::{
+    use steel_worldgen::structure::placement::{
         ExclusionZone, FrequencyReductionMethod, PlacementKind, SpreadType,
     };
 

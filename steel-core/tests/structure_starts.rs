@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use steel_core::chunk::chunk_access::ChunkAccess;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
-use steel_core::world::structure::{
+use steel_worldgen::structure::{
     StructurePiece, StructurePiecePayload, StructureReferenceMap, StructureStart, StructureStartMap,
 };
 use steel_registry::structure::LiquidSettingsData;
@@ -218,9 +218,10 @@ const DIMENSION_ORDER: &[&str] = &["overworld", "the_nether", "the_end"];
 )]
 fn structure_starts_inner() {
     use steel_core::worldgen::{
-        BiomeSourceKind, ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator,
+        ChunkGenerator, ChunkGeneratorType, EndGenerator, NetherGenerator,
         OverworldGenerator,
     };
+    use steel_worldgen::biomes::BiomeSourceKind;
     use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 
     let mut registry = Registry::new_vanilla();

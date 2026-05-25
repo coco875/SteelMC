@@ -8,6 +8,10 @@ use steel_utils::BlockStateId;
 pub struct WorldgenStateResolver;
 
 impl WorldgenStateResolver {
+    /// Resolves a block state from data.
+    ///
+    /// # Panics
+    /// Panics if the block is not in the registry or if the state properties are invalid.
     #[must_use]
     pub fn block_state_from_data(
         registry: &Registry,
@@ -28,6 +32,10 @@ impl WorldgenStateResolver {
         )
     }
 
+    /// Resolves a feature block state from data.
+    ///
+    /// # Panics
+    /// Panics if the state properties are invalid.
     #[must_use]
     pub fn feature_block_state_from_data(
         registry: &Registry,

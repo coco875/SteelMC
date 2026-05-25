@@ -172,6 +172,11 @@ pub enum StructureBlockIgnore {
 }
 
 impl StructureBlockIgnore {
+    /// Checks whether the block state should be ignored during placement.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given block state ID is not registered in the blocks registry.
     #[must_use]
     pub fn ignores(self, registry: &Registry, state: BlockStateId) -> bool {
         match self {

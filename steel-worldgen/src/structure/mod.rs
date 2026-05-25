@@ -22,7 +22,9 @@ pub mod shipwreck;
 pub mod single_piece;
 pub mod stronghold;
 pub mod swamp_hut;
+/// Structure piece types and generation stubs.
 pub mod types;
+/// Miscellaneous structure utility functions.
 pub mod utils;
 
 pub use piece::{

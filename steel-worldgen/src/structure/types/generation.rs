@@ -14,7 +14,7 @@ use std::cell::RefCell;
 use steel_registry::biome::BiomeRef;
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
 use steel_utils::Identifier;
-use steel_utils::random::{Random, RandomSplitter};
+use steel_utils::random::RandomSplitter;
 
 /// Per-chunk context shared by every structure's `findGenerationPoint`.
 ///
@@ -61,11 +61,15 @@ where
     pub height_cache: &'ctx mut N::ColumnCache,
     /// Aquifer built on first query; skipped on chunks where no structure needs it.
     pub aquifer: &'ctx mut LazyAquifer<'src, N>,
+    /// Cache for terrain height checks.
     pub terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
+    /// Cache for terrain opacity checks.
     pub terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
+    /// Probes for off-chunk height/opaque checks.
     pub terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
 }
 
+/// An off-chunk height and opacity probe.
 pub struct TerrainProbe<N: DimensionNoises> {
     cache: N::ColumnCache,
     aquifer: Aquifer<N>,

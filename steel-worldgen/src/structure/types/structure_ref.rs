@@ -1,10 +1,8 @@
-use crate::density::DimensionNoises;
 use crate::structure::StructurePiece;
 use core::slice;
 use rustc_hash::FxHashMap;
 use std::vec;
 use steel_registry::structure::TerrainAdjustment;
-use steel_utils::random::Random;
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier};
 
 /// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)

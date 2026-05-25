@@ -24,9 +24,10 @@ use steel_core::entity::init_entities;
 use steel_core::level_data::WorldGenerationSettings;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{
-    BiomeSourceKind, ChunkBiomeSampler, ChunkGenerator, ChunkGeneratorType, EndGenerator,
+    ChunkGenerator, ChunkGeneratorType, EndGenerator,
     NetherGenerator, OverworldGenerator, WorldGenContext, WorldGeneratorRegistry,
 };
+use steel_worldgen::biomes::{BiomeSourceKind, ChunkBiomeSampler};
 use steel_registry::dimension_type::DimensionType;
 use steel_registry::{REGISTRY, Registry, vanilla_dimension_types};
 use steel_utils::locks::SyncMutex;

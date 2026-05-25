@@ -24,9 +24,9 @@ use steel_core::chunk::chunk_pyramid::GENERATION_PYRAMID;
 use steel_core::chunk::proto_chunk::ProtoChunk;
 use steel_core::chunk::section::{ChunkSection, Sections};
 use steel_core::level_data::WorldGenerationSettings;
-use steel_core::world::structure::StructureStart;
 use steel_core::world::{World, WorldConfig, WorldStorageConfig};
-use steel_core::worldgen::noise::beardifier::Beardifier;
+use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::StructureStart;
 use steel_core::worldgen::{ChunkGenerator, ChunkGeneratorType};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::structure::TerrainAdjustment;
@@ -621,8 +621,9 @@ fn chunk_stage_hashes_inner() {
     use steel_core::block_entity::init_block_entities;
     use steel_core::entity::init_entities;
     use steel_core::worldgen::{
-        BiomeSourceKind, EndGenerator, NetherGenerator, OverworldGenerator,
+        EndGenerator, NetherGenerator, OverworldGenerator,
     };
+    use steel_worldgen::biomes::BiomeSourceKind;
     use steel_registry::{REGISTRY, Registry};
 
     let mut registry = Registry::new_vanilla();
