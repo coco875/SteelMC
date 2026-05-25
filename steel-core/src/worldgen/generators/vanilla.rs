@@ -14,7 +14,7 @@ use steel_utils::random::{
 };
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Identifier};
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use steel_worldgen::math::{lerp, lerp2};
+use steel_worldgen::math::lerp2;
 use steel_worldgen::noise_parameters::get_noise_parameters;
 use steel_worldgen::surface::{
     SurfaceBiomeProvider, SurfaceConditionNoiseCache, SurfaceRuleContext,
