@@ -15,11 +15,11 @@ use steel_utils::{BlockPos, BlockStateId, BoundingBox, Direction, Identifier, ty
 use super::StructurePiecePlacer;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{entities::ChestMinecartEntity, next_entity_id};
-use crate::world::structure::mineshaft::{
-    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
-};
 use crate::worldgen::generators::vanilla::fuzzed_biome_at_block;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::mineshaft::{
+    MineshaftPieceKind, MineshaftPiecePayload, MineshaftType,
+};
 
 const ABANDONED_MINESHAFT_LOOT: Identifier =
     Identifier::new_static("minecraft", "chests/abandoned_mineshaft");

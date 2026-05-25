@@ -8,7 +8,7 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BlockPos, BoundingBox, Direction, Identifier};
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
     StructurePiecePayload, make_oriented_piece_bounding_box, random_horizontal_direction,
 };

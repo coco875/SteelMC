@@ -13,6 +13,12 @@ steel-utils.workspace = true
 
 # Data structures
 rustc-hash.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+glam.workspace = true
+simdnbt.workspace = true
+uuid.workspace = true
+flate2.workspace = true
 
 [build-dependencies]
 # Serialization

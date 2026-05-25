@@ -13,7 +13,7 @@ use steel_utils::random::{Random, RandomSource};
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 use steel_worldgen::noise::PerlinSimplexNoise;
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, RuinedPortalProperties, Structure, StructureBlockIgnore,
     StructureGenerationContext, StructureMirror, StructurePiece, StructurePiecePayload,
     TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment, TemplatePlacementClip,

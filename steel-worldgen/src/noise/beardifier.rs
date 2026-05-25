@@ -12,8 +12,8 @@ use steel_registry::template_pool::Projection;
 use steel_utils::BoundingBox;
 use steel_worldgen::math::map_clamped;
 
-use crate::world::structure::StructureStart;
-use crate::world::structure::jigsaw::JigsawJunction;
+use crate::structure::StructureStart;
+use crate::structure::jigsaw::JigsawJunction;
 
 /// A rigid structure piece that modifies terrain density.
 #[derive(Debug)]

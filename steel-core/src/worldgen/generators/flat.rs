@@ -7,11 +7,11 @@ use steel_utils::random::RandomSource;
 use steel_utils::{BlockStateId, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
-use crate::world::structure::{ColumnBlock, StructureGenerationContext};
 use crate::worldgen::generator::{ChunkGenerator, xoroshiro_worldgen_region_random};
-use crate::worldgen::noise::beardifier::Beardifier;
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::structure::StructureGenerator;
+use steel_worldgen::noise::Beardifier;
+use steel_worldgen::structure::{ColumnBlock, StructureGenerationContext};
 
 /// A chunk generator that generates a flat world.
 ///

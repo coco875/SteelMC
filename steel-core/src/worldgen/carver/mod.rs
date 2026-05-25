@@ -25,8 +25,8 @@ use crate::chunk::{
     heightmap::{Heightmap, HeightmapType},
 };
 use crate::worldgen::carving_mask::CarvingMask;
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult};
 use crate::worldgen::surface::SurfaceSystem;
+use steel_worldgen::noise::{Aquifer, AquiferResult};
 
 pub mod canyon;
 pub mod cave;

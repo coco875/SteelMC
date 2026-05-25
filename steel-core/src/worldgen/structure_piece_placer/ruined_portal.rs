@@ -9,8 +9,8 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockPos, BoundingBox, Direction, types::UpdateFlags};
 
 use crate::chunk::heightmap::HeightmapType;
-use crate::world::structure::RuinedPortalProperties;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::RuinedPortalProperties;
 
 use super::StructurePiecePlacer;
 

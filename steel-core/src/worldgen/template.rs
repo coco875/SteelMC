@@ -40,9 +40,9 @@ use uuid::Uuid;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::ENTITIES;
-use crate::world::structure::{StructureBlockIgnore, StructureMirror};
 use crate::worldgen::region::WorldGenRegion;
-use crate::worldgen::state_resolver::WorldgenStateResolver;
+use steel_worldgen::state_resolver::WorldgenStateResolver;
+use steel_worldgen::structure::{StructureBlockIgnore, StructureMirror};
 
 /// Loaded vanilla structure template payload.
 ///
@@ -2339,22 +2339,6 @@ impl StructureTemplate {
         }
         let delta = ((value - min_dist) as f32 / (max_dist - min_dist) as f32).clamp(0.0, 1.0);
         min + delta * (max - min)
-    }
-}
-
-impl StructureBlockIgnore {
-    fn ignores(self, registry: &Registry, state: BlockStateId) -> bool {
-        match self {
-            Self::None => false,
-            Self::StructureBlock => {
-                StructureTemplate::block_for_state(registry, state)
-                    == &vanilla_blocks::STRUCTURE_BLOCK
-            }
-            Self::StructureAndAir => {
-                let block = StructureTemplate::block_for_state(registry, state);
-                block == &vanilla_blocks::STRUCTURE_BLOCK || block == &vanilla_blocks::AIR
-            }
-        }
     }
 }
 

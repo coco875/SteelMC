@@ -1,353 +1,20 @@
-//! Structure start/reference tracking.
-//!
-//! Vanilla keeps two per-chunk maps: `structureStarts` (originating here) and
-//! `structuresReferences` (pointing at nearby origin chunks). The structure key
-//! is `Identifier` until a structure registry is added.
-
-pub mod desert_pyramid;
-pub mod end_city;
-pub mod fortress;
-pub mod igloo;
-pub mod jigsaw;
-pub mod jungle_temple;
-pub mod mansion;
-pub mod mineshaft;
-pub mod nether_fossil;
-pub mod ocean_monument;
-pub mod ocean_ruin;
-mod piece;
-pub mod placement;
-pub mod ruined_portal;
-pub mod shipwreck;
-pub mod single_piece;
-pub mod stronghold;
-pub mod swamp_hut;
-
-use std::{cell::RefCell, slice, vec};
-
+use crate::biomes::ChunkBiomeSampler;
+use crate::density::traits::{ColumnCache, NoiseSettings};
+use crate::noise::AquiferResult;
+use crate::noise::LazyAquifer;
+use crate::structure::StructurePiece;
+use crate::structure::types::ColumnBlock;
+use crate::utils::column_base_height;
+use crate::utils::column_interpolated_density;
+use crate::utils::find_solid_block_below_air;
+use crate::utils::iterate_noise_column_with_aquifer;
+use crate::{density::DimensionNoises, noise::Aquifer};
 use rustc_hash::FxHashMap;
-
-use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::random::{Random, RandomSplitter};
-use steel_utils::{BlockPos, BoundingBox, ChunkPos, Direction, Identifier};
-use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-
+use std::cell::RefCell;
 use steel_registry::biome::BiomeRef;
-use steel_registry::structure::{StructureData, TerrainAdjustment};
 use steel_registry::template_pool::{TemplateData, TemplatePoolData};
-
-use crate::worldgen::ChunkBiomeSampler;
-use crate::worldgen::generators::vanilla::{
-    column_base_height, column_interpolated_density, find_solid_block_below_air,
-    iterate_noise_column_with_aquifer,
-};
-use crate::worldgen::noise::aquifer::{Aquifer, AquiferResult, LazyAquifer};
-
-pub use piece::{
-    ProceduralPieceData, RuinedPortalProperties, StructureBlockIgnore, StructureMirror,
-    StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
-    TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
-};
-
-const VANILLA_HORIZONTAL_DIRECTIONS: [Direction; 4] = [
-    Direction::North,
-    Direction::East,
-    Direction::South,
-    Direction::West,
-];
-
-/// Matches vanilla's `Direction.Plane.HORIZONTAL.getRandomDirection`.
-pub(crate) fn random_horizontal_direction(rng: &mut LegacyRandom) -> Direction {
-    VANILLA_HORIZONTAL_DIRECTIONS[rng.next_i32_bounded(4) as usize]
-}
-
-/// Vanilla's `StructurePiece.makeBoundingBox`: north/south keep width/depth,
-/// east/west swap them.
-pub(crate) const fn make_oriented_piece_bounding_box(
-    chunk_min_x: i32,
-    y: i32,
-    chunk_min_z: i32,
-    orientation: Direction,
-    width: i32,
-    height: i32,
-    depth: i32,
-) -> BoundingBox {
-    let z_axis = matches!(orientation, Direction::North | Direction::South);
-    let (box_width, box_depth) = if z_axis {
-        (width, depth)
-    } else {
-        (depth, width)
-    };
-    BoundingBox::new(
-        chunk_min_x,
-        y,
-        chunk_min_z,
-        chunk_min_x + box_width - 1,
-        y + height - 1,
-        chunk_min_z + box_depth - 1,
-    )
-}
-
-/// A structure start placed in a chunk. Vanilla's `StructureStart` — invalid (empty)
-/// starts are not stored.
-#[derive(Debug, Clone)]
-pub struct StructureStart {
-    /// Structure id (e.g., `minecraft:village`).
-    pub structure: Identifier,
-    /// Origin chunk.
-    pub chunk_pos: ChunkPos,
-    /// Vanilla's map/locate reference counter. This is distinct from
-    /// [`StructureReferenceMap`]; generating per-chunk structure references does
-    /// not increment this counter.
-    pub references: i32,
-    /// Pieces composing this structure.
-    pub pieces: Vec<StructurePiece>,
-    /// Bounding-box inflation applied at construction. Vanilla inflates by 12
-    /// when `terrain_adaptation != NONE`. Stored for serialization parity; the
-    /// inflation is already baked into [`bounding_box`](Self::bounding_box).
-    pub bb_inflate: i32,
-    /// Terrain adaptation mode from the structure registry. Used by Beardifier.
-    pub terrain_adjustment: TerrainAdjustment,
-    /// Cached bounding box matching vanilla's `StructureStart.getBoundingBox()`:
-    /// the union of piece bounding boxes, then `inflatedBy(bb_inflate)`.
-    /// `None` iff `pieces` is empty.
-    pub bounding_box: Option<BoundingBox>,
-}
-
-impl StructureStart {
-    /// Creates a start, computing the inflated piece-union bounding box up-front.
-    #[must_use]
-    pub fn new(
-        structure: Identifier,
-        chunk_pos: ChunkPos,
-        pieces: Vec<StructurePiece>,
-        terrain_adjustment: TerrainAdjustment,
-    ) -> Self {
-        let bb_inflate = terrain_adjustment.bb_inflate();
-        let bounding_box = Self::compute_bounding_box(&pieces, bb_inflate);
-        Self {
-            structure,
-            chunk_pos,
-            references: 0,
-            pieces,
-            bb_inflate,
-            terrain_adjustment,
-            bounding_box,
-        }
-    }
-
-    /// Union of all pieces' bounding boxes, inflated by `bb_inflate` on every
-    /// axis. Returns `None` if `pieces` is empty. Mirrors vanilla's
-    /// `StructureStart.getBoundingBox()` (= `adjustBoundingBox(union)`).
-    #[must_use]
-    pub fn compute_bounding_box(pieces: &[StructurePiece], bb_inflate: i32) -> Option<BoundingBox> {
-        let (first, rest) = pieces.split_first()?;
-        let mut bb = first.bounding_box;
-        for piece in rest {
-            bb = BoundingBox::new(
-                bb.min_x.min(piece.bounding_box.min_x),
-                bb.min_y.min(piece.bounding_box.min_y),
-                bb.min_z.min(piece.bounding_box.min_z),
-                bb.max_x.max(piece.bounding_box.max_x),
-                bb.max_y.max(piece.bounding_box.max_y),
-                bb.max_z.max(piece.bounding_box.max_z),
-            );
-        }
-        Some(bb.inflated_by(bb_inflate, bb_inflate, bb_inflate))
-    }
-
-    /// Vanilla `StructureStart.placeInChunk` reference position: the first
-    /// piece center X/Z and first piece minimum Y.
-    #[must_use]
-    pub fn placement_reference_pos(&self) -> Option<BlockPos> {
-        let first_piece = self.pieces.first()?;
-        let center = first_piece.bounding_box.get_center();
-        Some(BlockPos::new(
-            center.x(),
-            first_piece.bounding_box.min_y,
-            center.z(),
-        ))
-    }
-}
-
-/// Structure starts keyed by structure id.
-pub type StructureStartMap = FxHashMap<Identifier, StructureStart>;
-
-/// Structure references → origin chunk positions.
-///
-/// Vanilla stores these as a fastutil `LongOpenHashSet`, so duplicates are
-/// ignored and feature-stage iteration follows that table order.
-pub type StructureReferenceMap = FxHashMap<Identifier, StructureReferenceSet>;
-
-/// Set of structure-start chunk positions with vanilla iteration order.
-///
-/// Reference generation discovers sources in a stable scan order, but vanilla
-/// stores the packed chunk longs in fastutil's `LongOpenHashSet`. Feature-stage
-/// placement consumes the set through that table iteration order, so Steel keeps
-/// the insertion order for persistence and exposes the vanilla iteration order
-/// for worldgen.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct StructureReferenceSet {
-    insertion_order: Vec<ChunkPos>,
-    iteration_order: Vec<ChunkPos>,
-}
-
-impl StructureReferenceSet {
-    /// Inserts a chunk position if it was not already present.
-    pub fn insert(&mut self, pos: ChunkPos) -> bool {
-        if self.insertion_order.contains(&pos) {
-            return false;
-        }
-        self.insertion_order.push(pos);
-        self.rebuild_iteration_order();
-        true
-    }
-
-    /// Extends this set with insertion-order duplicate removal.
-    pub fn extend(&mut self, positions: impl IntoIterator<Item = ChunkPos>) {
-        for pos in positions {
-            self.insert(pos);
-        }
-    }
-
-    /// Returns an iterator over positions in vanilla `LongOpenHashSet` order.
-    pub fn iter(&self) -> slice::Iter<'_, ChunkPos> {
-        self.iteration_order.iter()
-    }
-
-    /// Returns an iterator over positions in discovery order.
-    pub fn insertion_order_iter(&self) -> slice::Iter<'_, ChunkPos> {
-        self.insertion_order.iter()
-    }
-
-    /// Returns `true` when no positions are stored.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.insertion_order.is_empty()
-    }
-
-    fn rebuild_iteration_order(&mut self) {
-        self.iteration_order = Self::vanilla_long_open_hash_set_order(&self.insertion_order);
-    }
-
-    fn vanilla_long_open_hash_set_order(insertion_order: &[ChunkPos]) -> Vec<ChunkPos> {
-        let Some(table_size) = Self::vanilla_long_open_hash_set_table_size(insertion_order.len())
-        else {
-            return Vec::new();
-        };
-        let mask = (table_size - 1) as u64;
-        let mut table = vec![None; table_size];
-        let mut zero_key = None;
-
-        for &pos in insertion_order {
-            let packed = Self::pack_chunk_pos(pos);
-            if packed == 0 {
-                zero_key = Some(pos);
-                continue;
-            }
-
-            let mut slot = (Self::fastutil_mix(packed) & mask) as usize;
-            loop {
-                if table[slot].is_none() {
-                    table[slot] = Some(pos);
-                    break;
-                }
-                slot = (slot + 1) & (table_size - 1);
-            }
-        }
-
-        let mut ordered = Vec::with_capacity(insertion_order.len());
-        if let Some(pos) = zero_key {
-            ordered.push(pos);
-        }
-        for slot in (0..table_size).rev() {
-            if let Some(pos) = table[slot] {
-                ordered.push(pos);
-            }
-        }
-        ordered
-    }
-
-    fn vanilla_long_open_hash_set_table_size(len: usize) -> Option<usize> {
-        if len == 0 {
-            return None;
-        }
-
-        let mut table_size = Self::fastutil_array_size(16);
-        let mut max_fill = Self::fastutil_max_fill(table_size);
-        let mut size = 0;
-        for _ in 0..len {
-            let old_size = size;
-            size += 1;
-            if old_size >= max_fill {
-                table_size = Self::fastutil_array_size(size + 1);
-                max_fill = Self::fastutil_max_fill(table_size);
-            }
-        }
-        Some(table_size)
-    }
-
-    fn fastutil_array_size(expected: usize) -> usize {
-        let needed = ((expected as f64) / 0.75).ceil() as usize;
-        needed.max(2).next_power_of_two()
-    }
-
-    const fn fastutil_max_fill(table_size: usize) -> usize {
-        let fill = table_size - table_size / 4;
-        if fill < table_size {
-            fill
-        } else {
-            table_size - 1
-        }
-    }
-
-    const fn pack_chunk_pos(pos: ChunkPos) -> u64 {
-        (pos.0.x as u32 as u64) | ((pos.0.y as u32 as u64) << 32)
-    }
-
-    const fn fastutil_mix(value: u64) -> u64 {
-        let mixed = value.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        let mixed = mixed ^ (mixed >> 32);
-        mixed ^ (mixed >> 16)
-    }
-}
-
-impl FromIterator<ChunkPos> for StructureReferenceSet {
-    fn from_iter<T: IntoIterator<Item = ChunkPos>>(iter: T) -> Self {
-        let mut set = Self::default();
-        set.extend(iter);
-        set
-    }
-}
-
-impl<'a> IntoIterator for &'a StructureReferenceSet {
-    type IntoIter = slice::Iter<'a, ChunkPos>;
-    type Item = &'a ChunkPos;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl IntoIterator for StructureReferenceSet {
-    type IntoIter = vec::IntoIter<ChunkPos>;
-    type Item = ChunkPos;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iteration_order.into_iter()
-    }
-}
-
-/// Block classification in the base-noise column (no surface rules).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnBlock {
-    /// Empty.
-    Air,
-    /// Aquifer-placed fluid (lava/water).
-    Fluid,
-    /// Default solid block (stone, netherrack, end stone).
-    Solid,
-}
+use steel_utils::Identifier;
+use steel_utils::random::{Random, RandomSplitter};
 
 /// Per-chunk context shared by every structure's `findGenerationPoint`.
 ///
@@ -374,10 +41,10 @@ where
     /// Sea level for this dimension.
     pub sea_level: i32,
     /// Shared memoisation slot for the chunk-center surface Y.
-    pub(crate) surface_y_cache: &'ctx mut Option<i32>,
+    pub surface_y_cache: &'ctx mut Option<i32>,
     /// Whether `height_cache`'s 5×5 quart grid has been populated. Shared across
     /// per-structure contexts in the same chunk.
-    pub(crate) height_cache_grid_ready: &'ctx mut bool,
+    pub height_cache_grid_ready: &'ctx mut bool,
 
     /// Dimension noise router.
     pub noises: &'src N,
@@ -385,7 +52,7 @@ where
     pub splitter: &'src RandomSplitter,
     /// Template pool registry for jigsaw assembly.
     pub template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
-    /// Structure templates (piece definitions + sizes).
+    /// Template data registry for jigsaw assembly.
     pub templates: &'src FxHashMap<Identifier, TemplateData>,
 
     /// Biome sampler scoped to this chunk.
@@ -394,12 +61,12 @@ where
     pub height_cache: &'ctx mut N::ColumnCache,
     /// Aquifer built on first query; skipped on chunks where no structure needs it.
     pub aquifer: &'ctx mut LazyAquifer<'src, N>,
-    pub(crate) terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
-    pub(crate) terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
-    pub(crate) terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
+    pub terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
+    pub terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
+    pub terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
 }
 
-pub(crate) struct TerrainProbe<N: DimensionNoises> {
+pub struct TerrainProbe<N: DimensionNoises> {
     cache: N::ColumnCache,
     aquifer: Aquifer<N>,
 }
@@ -499,19 +166,6 @@ pub trait StructureGenerationContext {
     fn terrain_surface_height(&self, x: i32, z: i32, ocean_floor: bool) -> i32;
     /// Opaque terrain test for off-chunk terrain queries used by piece placement.
     fn terrain_is_opaque(&self, x: i32, y: i32, z: i32, ocean_floor: bool) -> bool;
-}
-
-/// Vanilla's `Structure::findValidGenerationPoint`. Impls own their RNG order,
-/// collision checks, and biome check.
-pub trait Structure: Send + Sync {
-    /// `structure` carries registry data; per-set metadata stays in placement.
-    /// `rng` is a fresh `LegacyRandom` seeded with `setLargeFeatureSeed`.
-    fn find_generation_point(
-        &self,
-        ctx: &mut dyn StructureGenerationContext,
-        structure: &StructureData,
-        rng: &mut LegacyRandom,
-    ) -> Option<GenerationStub>;
 }
 
 impl<'ctx, 'src, N: DimensionNoises> GenerationContext<'ctx, 'src, N>

@@ -5,10 +5,11 @@ use steel_registry::{Registry, RegistryExt};
 use steel_utils::BlockStateId;
 
 /// Resolves vanilla JSON/NBT block-state data to Steel block-state ids.
-pub(crate) struct WorldgenStateResolver;
+pub struct WorldgenStateResolver;
 
 impl WorldgenStateResolver {
-    pub(crate) fn block_state_from_data(
+    #[must_use]
+    pub fn block_state_from_data(
         registry: &Registry,
         data: &shared_structs::BlockStateData,
         context: &str,
@@ -27,7 +28,8 @@ impl WorldgenStateResolver {
         )
     }
 
-    pub(crate) fn feature_block_state_from_data(
+    #[must_use]
+    pub fn feature_block_state_from_data(
         registry: &Registry,
         data: &feature::BlockStateData,
         context: &str,

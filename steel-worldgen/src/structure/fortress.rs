@@ -9,7 +9,7 @@ use steel_utils::Identifier;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
     StructurePiecePayload,
 };

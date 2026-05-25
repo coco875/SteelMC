@@ -15,7 +15,7 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
 

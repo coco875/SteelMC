@@ -15,7 +15,7 @@ use std::mem;
 use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
 use steel_worldgen::math::lerp;
 
-use crate::worldgen::noise::beardifier::Beardifier;
+use crate::noise::Beardifier;
 
 /// Maximum number of interpolation channels supported.
 /// Overworld uses 8 (1 terrain + 4 noodle caves + 3 vein channels), nether/end use 1.

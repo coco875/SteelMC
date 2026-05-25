@@ -9,8 +9,8 @@ use steel_utils::random::worldgen_random::WorldgenRandom;
 use steel_utils::{BlockStateId, BoundingBox, Direction};
 
 use crate::entity::{entities::RawEntity, next_entity_id};
-use crate::world::structure::swamp_hut::SwampHutPieceData;
 use crate::worldgen::region::WorldGenRegion;
+use steel_worldgen::structure::swamp_hut::SwampHutPieceData;
 
 use super::StructurePiecePlacer;
 use super::scattered_feature::ScatteredFeaturePlacer;

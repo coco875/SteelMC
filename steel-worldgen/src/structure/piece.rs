@@ -11,6 +11,10 @@ use super::{
     swamp_hut,
 };
 
+use steel_registry::Registry;
+use steel_registry::vanilla_blocks;
+use steel_utils::BlockStateId;
+
 /// Vanilla's `StructurePiece` runtime state.
 #[derive(Debug, Clone)]
 pub struct StructurePiece {
@@ -165,6 +169,23 @@ pub enum StructureBlockIgnore {
     StructureBlock,
     /// Ignore structure blocks and air.
     StructureAndAir,
+}
+
+impl StructureBlockIgnore {
+    #[must_use]
+    pub fn ignores(self, registry: &Registry, state: BlockStateId) -> bool {
+        match self {
+            Self::None => false,
+            Self::StructureBlock => {
+                registry.blocks.by_state_id(state).expect("invalid state")
+                    == &vanilla_blocks::STRUCTURE_BLOCK
+            }
+            Self::StructureAndAir => {
+                let block = registry.blocks.by_state_id(state).expect("invalid state");
+                block == &vanilla_blocks::STRUCTURE_BLOCK || block == &vanilla_blocks::AIR
+            }
+        }
+    }
 }
 
 /// Marker handling requested by a template-backed structure piece.

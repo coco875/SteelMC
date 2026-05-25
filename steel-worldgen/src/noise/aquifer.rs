@@ -7,12 +7,12 @@
 //! Barrier pressure between neighboring aquifer cells creates solid rock
 //! walls between fluid pockets.
 
+use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
+use crate::noise_math::{clamp, map, map_clamped};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::random::name_hash::NameHash;
 use steel_utils::random::{PositionalRandom, Random, RandomSplitter};
-use steel_worldgen::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use steel_worldgen::math::{clamp, map, map_clamped};
 
 /// Deferred [`Aquifer`]. Used by `create_structures` so chunks where no structure
 /// queries the aquifer skip its (expensive) `max_preliminary_surface_level` scan.
@@ -901,7 +901,7 @@ fn quantize(value: f64, quantum: i32) -> i32 {
 ///
 /// Vanilla's `NoiseChunk.preliminarySurfaceLevel()` quantizes X/Z to quart
 /// positions before lookup, matching `FlatCache`'s 4-block grid.
-pub(crate) fn preliminary_surface_level<N: DimensionNoises>(
+pub fn preliminary_surface_level<N: DimensionNoises>(
     noises: &N,
     cache: &mut N::ColumnCache,
     x: i32,

@@ -12,7 +12,7 @@ pub use nether_climate_sampler::NetherClimateSampler;
 
 /// Matches vanilla `BiomeManager.obfuscateSeed(long)`.
 #[must_use]
-pub(crate) fn obfuscate_biome_seed(seed: i64) -> i64 {
+pub fn obfuscate_biome_seed(seed: i64) -> i64 {
     let mut hasher = Sha256::new();
     hasher.update(seed.to_le_bytes());
     let result = hasher.finalize();

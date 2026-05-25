@@ -10,7 +10,7 @@ use steel_registry::{Registry, RegistryExt, vanilla_block_tags};
 use steel_utils::Identifier;
 use steel_utils::value_providers::IntProvider;
 
-use crate::world::structure::{RuinedPortalProperties, TemplateProcessorList};
+use steel_worldgen::structure::{RuinedPortalProperties, TemplateProcessorList};
 
 use super::StructurePiecePlacer;
 

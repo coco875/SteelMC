@@ -2,12 +2,12 @@ use super::super::instrumentation::OreFeatureProfile;
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use crate::chunk::section::{BlockStateSectionCounts, ChunkSection};
-use crate::worldgen::state_resolver::WorldgenStateResolver;
 use smallvec::SmallVec;
 use std::f32::consts::PI;
 use std::time::Instant;
 use steel_utils::PackedSectionBlockPos;
 use steel_utils::math::mth;
+use steel_worldgen::state_resolver::WorldgenStateResolver;
 
 impl FeatureDecorationRunner {
     pub(in crate::worldgen::feature) fn place_ore_feature(

@@ -4,7 +4,7 @@ use steel_registry::structure::StructureData;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Identifier};
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, ProceduralPieceData, Structure, StructureGenerationContext, StructurePiece,
     StructurePiecePayload,
 };

@@ -20,13 +20,13 @@ use crate::entity::{
     entities::{ItemFrameEntity, RawEntity},
     next_entity_id,
 };
-use crate::world::structure::{
-    StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
-    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
-};
 use crate::worldgen::region::WorldGenRegion;
 use crate::worldgen::template::{
     StructureDataMarker, StructurePlaceSettings, StructureProcessorRandom, StructureTemplate,
+};
+use steel_worldgen::structure::{
+    StructureMirror, TemplateMarkerHandling, TemplatePieceData, TemplatePlacementAdjustment,
+    TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
 use super::StructurePiecePlacer;

@@ -9,7 +9,7 @@ use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BoundingBox, Direction, Identifier, Rotation};
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
     StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
     TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,

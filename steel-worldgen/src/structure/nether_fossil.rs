@@ -11,7 +11,7 @@ use steel_utils::Rotation;
 use steel_utils::random::Random;
 use steel_utils::random::legacy_random::LegacyRandom;
 
-use crate::world::structure::{
+use crate::structure::{
     GenerationStub, Structure, StructureBlockIgnore, StructureGenerationContext, StructureMirror,
     StructurePiece, StructurePiecePayload, TemplateMarkerHandling, TemplatePieceData,
     TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,

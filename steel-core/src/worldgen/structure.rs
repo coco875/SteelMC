@@ -13,30 +13,30 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::{BlockPos, ChunkPos, Identifier};
 
 use crate::chunk::chunk_access::ChunkAccess;
-use crate::world::structure::desert_pyramid::DesertPyramidStructure;
-use crate::world::structure::end_city::EndCityStructure;
-use crate::world::structure::fortress::NetherFortressStructure;
-use crate::world::structure::igloo::IglooStructure;
-use crate::world::structure::jigsaw::JigsawStructure;
-use crate::world::structure::jungle_temple::JungleTempleStructure;
-use crate::world::structure::mansion::WoodlandMansionStructure;
-use crate::world::structure::mineshaft::MineshaftStructure;
-use crate::world::structure::nether_fossil::NetherFossilStructure;
-use crate::world::structure::ocean_monument::OceanMonumentStructure;
-use crate::world::structure::ocean_ruin::OceanRuinStructure;
-use crate::world::structure::placement::{
+use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::structure::desert_pyramid::DesertPyramidStructure;
+use steel_worldgen::structure::end_city::EndCityStructure;
+use steel_worldgen::structure::fortress::NetherFortressStructure;
+use steel_worldgen::structure::igloo::IglooStructure;
+use steel_worldgen::structure::jigsaw::JigsawStructure;
+use steel_worldgen::structure::jungle_temple::JungleTempleStructure;
+use steel_worldgen::structure::mansion::WoodlandMansionStructure;
+use steel_worldgen::structure::mineshaft::MineshaftStructure;
+use steel_worldgen::structure::nether_fossil::NetherFossilStructure;
+use steel_worldgen::structure::ocean_monument::OceanMonumentStructure;
+use steel_worldgen::structure::ocean_ruin::OceanRuinStructure;
+use steel_worldgen::structure::placement::{
     PlacementKind, StructurePlacement, StructureSelectionEntry, StructureSet,
     generate_ring_positions, load_vanilla_structure_sets,
 };
-use crate::world::structure::ruined_portal::RuinedPortalStructure;
-use crate::world::structure::shipwreck::ShipwreckStructure;
-use crate::world::structure::single_piece::BuriedTreasureStructure;
-use crate::world::structure::stronghold::StrongholdStructure;
-use crate::world::structure::swamp_hut::SwampHutStructure;
-use crate::world::structure::{
+use steel_worldgen::structure::ruined_portal::RuinedPortalStructure;
+use steel_worldgen::structure::shipwreck::ShipwreckStructure;
+use steel_worldgen::structure::single_piece::BuriedTreasureStructure;
+use steel_worldgen::structure::stronghold::StrongholdStructure;
+use steel_worldgen::structure::swamp_hut::SwampHutStructure;
+use steel_worldgen::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructureStart,
 };
-use crate::worldgen::BiomeSourceKind;
 
 const VANILLA_FLAT_RING_POSITION_SEED: i64 = 0;
 
