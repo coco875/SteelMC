@@ -1,10 +1,10 @@
 use crate::density::traits::ColumnCache;
 use crate::density::traits::NoiseSettings;
-use crate::noise_math::lerp;
 use crate::{
     density::DimensionNoises,
     noise::{Aquifer, AquiferResult, preliminary_surface_level},
 };
+use steel_math::lerp;
 
 /// `getBaseHeight(WORLD_SURFACE_WG)`-compatible height scan. Uses
 /// `preliminary_surface_level + 16` as an upper bound to avoid scanning empty

@@ -10,16 +10,8 @@ pub use steel_utils::{BlockStateId, random};
 pub mod biomes;
 /// Density function system for world generation.
 pub mod density;
-/// Math utilities used by vanilla world generation noise.
-pub mod math {
-    pub use crate::noise_math::{
-        bias_towards_extreme, clamp, clamp_i32, clamped_lerp, cube, floor, inverse_lerp, lerp,
-        lerp2, lerp3, lfloor, map, map_clamped, smoothstep, smoothstep_derivative, square,
-    };
-}
 /// Noise generation utilities for world generation.
 pub mod noise;
-mod noise_math;
 /// `state_resolver`
 pub mod state_resolver;
 /// structure

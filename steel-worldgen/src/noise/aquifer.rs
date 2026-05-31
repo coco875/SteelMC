@@ -8,7 +8,7 @@
 //! walls between fluid pockets.
 
 use crate::density::{ColumnCache, DimensionNoises, NoiseSettings};
-use crate::noise_math::{clamp, map, map_clamped};
+use steel_math::{clamp, map, map_clamped};
 use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::random::name_hash::NameHash;
