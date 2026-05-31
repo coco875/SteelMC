@@ -25,48 +25,48 @@ where
     'src: 'ctx,
 {
     /// World seed.
-    pub seed: i64,
+    seed: i64,
     /// Chunk being populated.
-    pub chunk_x: i32,
+    chunk_x: i32,
     /// Chunk being populated.
-    pub chunk_z: i32,
+    chunk_z: i32,
     /// `chunk_x * 16`.
-    pub chunk_min_x: i32,
+    chunk_min_x: i32,
     /// `chunk_z * 16`.
-    pub chunk_min_z: i32,
+    chunk_min_z: i32,
     /// `chunk_min_x + 8`.
-    pub center_block_x: i32,
+    center_block_x: i32,
     /// `chunk_min_z + 8`.
-    pub center_block_z: i32,
+    center_block_z: i32,
     /// Sea level for this dimension.
-    pub sea_level: i32,
+    sea_level: i32,
     /// Shared memoisation slot for the chunk-center surface Y.
-    pub surface_y_cache: &'ctx mut Option<i32>,
+    surface_y_cache: &'ctx mut Option<i32>,
     /// Whether `height_cache`'s 5×5 quart grid has been populated. Shared across
     /// per-structure contexts in the same chunk.
-    pub height_cache_grid_ready: &'ctx mut bool,
+    height_cache_grid_ready: &'ctx mut bool,
 
     /// Dimension noise router.
-    pub noises: &'src N,
+    noises: &'src N,
     /// Positional splitter for per-chunk RNG.
-    pub splitter: &'src RandomSplitter,
+    splitter: &'src RandomSplitter,
     /// Template pool registry for jigsaw assembly.
-    pub template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
+    template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
     /// Template data registry for jigsaw assembly.
-    pub templates: &'src FxHashMap<Identifier, TemplateData>,
+    templates: &'src FxHashMap<Identifier, TemplateData>,
 
     /// Biome sampler scoped to this chunk.
-    pub biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
+    biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
     /// Column cache for height/density queries (grid-initialized on demand).
-    pub height_cache: &'ctx mut N::ColumnCache,
+    height_cache: &'ctx mut N::ColumnCache,
     /// Aquifer built on first query; skipped on chunks where no structure needs it.
-    pub aquifer: &'ctx mut LazyAquifer<'src, N>,
+    aquifer: &'ctx mut LazyAquifer<'src, N>,
     /// Cache for terrain height checks.
-    pub terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
+    terrain_height_cache: RefCell<FxHashMap<(i32, i32, bool), i32>>,
     /// Cache for terrain opacity checks.
-    pub terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
+    terrain_opaque_cache: RefCell<FxHashMap<(i32, i32, i32, bool), bool>>,
     /// Probes for off-chunk height/opaque checks.
-    pub terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
+    terrain_probes: RefCell<FxHashMap<(i32, i32), TerrainProbe<N>>>,
 }
 
 /// An off-chunk height and opacity probe.
@@ -176,6 +176,53 @@ impl<'ctx, 'src, N: DimensionNoises> GenerationContext<'ctx, 'src, N>
 where
     'src: 'ctx,
 {
+    /// Creates a per-chunk structure generation context.
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "borrows all mutable per-chunk generation state without owning it"
+    )]
+    pub fn new(
+        seed: i64,
+        chunk_x: i32,
+        chunk_z: i32,
+        sea_level: i32,
+        noises: &'src N,
+        splitter: &'src RandomSplitter,
+        template_pools: &'src FxHashMap<Identifier, TemplatePoolData>,
+        templates: &'src FxHashMap<Identifier, TemplateData>,
+        biome_sampler: &'ctx mut ChunkBiomeSampler<'src>,
+        height_cache: &'ctx mut N::ColumnCache,
+        aquifer: &'ctx mut LazyAquifer<'src, N>,
+        surface_y_cache: &'ctx mut Option<i32>,
+        height_cache_grid_ready: &'ctx mut bool,
+    ) -> Self {
+        let chunk_min_x = chunk_x * 16;
+        let chunk_min_z = chunk_z * 16;
+        Self {
+            seed,
+            chunk_x,
+            chunk_z,
+            chunk_min_x,
+            chunk_min_z,
+            center_block_x: chunk_min_x + 8,
+            center_block_z: chunk_min_z + 8,
+            sea_level,
+            surface_y_cache,
+            height_cache_grid_ready,
+            noises,
+            splitter,
+            template_pools,
+            templates,
+            biome_sampler,
+            height_cache,
+            aquifer,
+            terrain_height_cache: RefCell::default(),
+            terrain_opaque_cache: RefCell::default(),
+            terrain_probes: RefCell::default(),
+        }
+    }
+
     /// `getBaseHeight(WORLD_SURFACE_WG)` — aquifer-aware, scans from
     /// `preliminary_surface_level + 16`.
     ///

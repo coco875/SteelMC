@@ -2940,20 +2940,16 @@ dependencies = [
 name = "steel-worldgen"
 version = "0.7.0+mc26.1"
 dependencies = [
- "flate2",
- "glam",
  "proc-macro2",
  "quote",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
  "sha2",
- "simdnbt",
  "steel-math",
  "steel-registry",
  "steel-utils",
  "tracing",
- "uuid",
 ]
 
 [[package]]

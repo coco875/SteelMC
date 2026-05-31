@@ -7,6 +7,8 @@
 pub mod desert_pyramid;
 pub mod end_city;
 pub mod fortress;
+/// Structure placement/selection engine.
+pub mod generator;
 pub mod igloo;
 pub mod jigsaw;
 pub mod jungle_temple;
@@ -33,6 +35,11 @@ pub use piece::{
     TemplatePlacementAdjustment, TemplatePlacementClip, TemplatePostProcess, TemplateProcessorList,
 };
 
+pub use generator::{
+    FixedStructureBiomeProvider, StructureBiomeProvider, StructureGenerator,
+    StructureGeneratorAssets, StructureLocateCandidate, StructureLocatePlacement,
+    StructureLocatePlan, squared_distance,
+};
 pub use types::ColumnBlock;
 pub use types::generation::{GenerationContext, GenerationStub, StructureGenerationContext};
 pub use types::structure::Structure;

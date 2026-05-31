@@ -1,7 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    marker::PhantomData,
-};
+use std::{cell::Cell, marker::PhantomData};
 
 use rustc_hash::FxHashSet;
 use smallvec::SmallVec;
@@ -28,7 +25,7 @@ use crate::worldgen::carver::{
 use crate::worldgen::feature::FeatureDecorationRunner;
 use crate::worldgen::generator::{ChunkGenerator, worldgen_region_random_from_splitter};
 use crate::worldgen::region::WorldGenRegion;
-use crate::worldgen::structure::StructureGenerator;
+use crate::worldgen::structure::{StructureGenerator, create_structures};
 use crate::worldgen::surface::SurfaceSystem;
 use steel_worldgen::biomes::BiomeSourceKind;
 use steel_worldgen::biomes::obfuscate_biome_seed;
@@ -203,8 +200,6 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut sampler = self.biome_source.chunk_sampler();
         let chunk_min_x = chunk_x * 16;
         let chunk_min_z = chunk_z * 16;
-        let center_block_x = chunk_min_x + 8;
-        let center_block_z = chunk_min_z + 8;
 
         let mut height_cache = N::ColumnCache::default();
         let sea_level = N::Settings::SEA_LEVEL;
@@ -216,30 +211,23 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
         let mut aquifer = LazyAquifer::new(chunk_min_x, chunk_min_z, &self.splitter, &*self.noises);
         let mut surface_y_cache: Option<i32> = None;
         let mut height_cache_grid_ready = false;
-        let mut ctx = GenerationContext::<'_, '_, N> {
-            seed: self.seed,
+        let mut ctx = GenerationContext::<'_, '_, N>::new(
+            self.seed,
             chunk_x,
             chunk_z,
-            chunk_min_x,
-            chunk_min_z,
-            center_block_x,
-            center_block_z,
             sea_level,
-            surface_y_cache: &mut surface_y_cache,
-            height_cache_grid_ready: &mut height_cache_grid_ready,
-            noises: &self.noises,
-            splitter: &self.splitter,
-            template_pools: self.structure_generator.template_pools(),
-            templates: self.structure_generator.templates(),
-            biome_sampler: &mut sampler,
-            height_cache: &mut height_cache,
-            aquifer: &mut aquifer,
-            terrain_height_cache: RefCell::default(),
-            terrain_opaque_cache: RefCell::default(),
-            terrain_probes: RefCell::default(),
-        };
+            &self.noises,
+            &self.splitter,
+            self.structure_generator.template_pools(),
+            self.structure_generator.templates(),
+            &mut sampler,
+            &mut height_cache,
+            &mut aquifer,
+            &mut surface_y_cache,
+            &mut height_cache_grid_ready,
+        );
 
-        self.structure_generator.create_structures(chunk, &mut ctx);
+        create_structures(&self.structure_generator, chunk, &mut ctx);
     }
 
     fn create_biomes(&self, chunk: &ChunkAccess) {
