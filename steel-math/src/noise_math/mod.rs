@@ -18,13 +18,18 @@ pub use corner_noise_3d::corner_noise_3d;
 pub use cube::cube;
 pub use dot::dot;
 pub use floor::{floor, lfloor};
-pub use grad_dot::{grad_dot, grad_dot_4x};
+pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_8x};
 pub use inverse_lerp::inverse_lerp;
-pub use lerp::{lerp, lerp_4x, lerp2, lerp2_4x, lerp3, lerp3_4x};
+pub use lerp::{
+    lerp, lerp_2x, lerp_3x, lerp_4x, lerp2, lerp2_3x, lerp2_4x, lerp3, lerp3_3x_simd, lerp3_4x,
+    lerp3_simd, lerp3_simd_4x,
+};
 pub use map::{map, map_clamped};
-pub use smoothstep::{smoothstep, smoothstep_4x, smoothstep_derivative};
+pub use smoothstep::{
+    smoothstep, smoothstep_3x, smoothstep_4x, smoothstep_derivative, smoothstep_derivative_3x,
+};
 pub use square::square;
-pub use wrap::{wrap, wrap_4x};
+pub use wrap::{wrap, wrap_3x, wrap_4x};
 
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
 pub const GRADIENT: [[f64; 3]; 16] = [
@@ -44,4 +49,24 @@ pub const GRADIENT: [[f64; 3]; 16] = [
     [0.0, -1.0, 1.0],
     [-1.0, 1.0, 0.0],
     [0.0, -1.0, -1.0],
+];
+
+/// Same as Gradient but with a fourth 0 to be more simd friendly
+pub const GRADIENT_4: [[f64; 4]; 16] = [
+    [1.0, 1.0, 0.0, 0.],
+    [-1.0, 1.0, 0.0, 0.],
+    [1.0, -1.0, 0.0, 0.],
+    [-1.0, -1.0, 0.0, 0.],
+    [1.0, 0.0, 1.0, 0.],
+    [-1.0, 0.0, 1.0, 0.],
+    [1.0, 0.0, -1.0, 0.],
+    [-1.0, 0.0, -1.0, 0.],
+    [0.0, 1.0, 1.0, 0.],
+    [0.0, -1.0, 1.0, 0.],
+    [0.0, 1.0, -1.0, 0.],
+    [0.0, -1.0, -1.0, 0.],
+    [1.0, 1.0, 0.0, 0.],
+    [0.0, -1.0, 1.0, 0.],
+    [-1.0, 1.0, 0.0, 0.],
+    [0.0, -1.0, -1.0, 0.],
 ];

@@ -1,5 +1,7 @@
 use core::simd::f64x4;
 
+use glam::DVec3;
+
 /// Smoothstep - quintic Hermite interpolation (NOT cubic!)
 ///
 /// Formula: 6x^5 - 15x^4 + 10x^3
@@ -13,6 +15,13 @@ pub fn smoothstep(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
+#[must_use]
+pub fn smoothstep_3x(x: DVec3) -> DVec3 {
+    x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
+}
+
 /// Smoothstep derivative for noise with derivatives.
 ///
 /// Formula: 30x^2(x-1)^2
@@ -21,6 +30,12 @@ pub fn smoothstep(x: f64) -> f64 {
 #[inline]
 #[must_use]
 pub fn smoothstep_derivative(x: f64) -> f64 {
+    30.0 * x * x * (x - 1.0) * (x - 1.0)
+}
+
+#[inline]
+#[must_use]
+pub fn smoothstep_derivative_3x(x: DVec3) -> DVec3 {
     30.0 * x * x * (x - 1.0) * (x - 1.0)
 }
 
