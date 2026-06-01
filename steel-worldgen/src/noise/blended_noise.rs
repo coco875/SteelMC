@@ -8,7 +8,7 @@ use std::simd::f64x4;
 
 use crate::noise::PerlinNoise;
 use crate::random::RandomSource;
-use glam::{DVec3, IVec3, Vec3};
+use glam::{DVec3, IVec3};
 use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_3x, wrap_4x};
 
 /// Base frequency multiplier for all `BlendedNoise` coordinate transforms.

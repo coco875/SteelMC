@@ -1,5 +1,5 @@
 use core::simd::f64x4;
-use std::simd::{f64x8, f64x16, simd_swizzle};
+use std::simd::f64x8;
 
 use crate::{
     GRADIENT, GRADIENT_4,

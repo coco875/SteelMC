@@ -1,5 +1,5 @@
-use core::simd::{self, f64x4};
-use std::simd::{Swizzle, f64x2, f64x8, simd_swizzle};
+use core::simd::f64x4;
+use std::simd::{f64x2, f64x8, simd_swizzle};
 
 use glam::DVec3;
 
