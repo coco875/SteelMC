@@ -8,7 +8,8 @@ use std::simd::f64x4;
 
 use crate::noise::PerlinNoise;
 use crate::random::RandomSource;
-use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_4x};
+use glam::{DVec3, IVec3, Vec3};
+use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_3x, wrap_4x};
 
 /// Base frequency multiplier for all `BlendedNoise` coordinate transforms.
 const COORDINATE_SCALE: f64 = 684.412;
@@ -68,12 +69,12 @@ impl BlendedNoise {
     /// Compute the blended noise value at the given block coordinates.
     #[must_use]
     pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_y = f64::from(block_y) * self.y_multiplier;
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
-        let main_x = limit_x / self.xz_factor;
-        let main_y = limit_y / self.y_factor;
-        let main_z = limit_z / self.xz_factor;
+        let block = IVec3::new(block_x, block_y, block_z);
+        let multiplier = DVec3::new(self.xz_multiplier, self.y_multiplier, self.xz_multiplier);
+        let limit = block.as_dvec3() * multiplier;
+        let factor = DVec3::new(self.xz_factor, self.y_factor, self.xz_factor);
+        let main = limit / factor;
+
         let limit_smear = self.y_multiplier * self.smear_scale_multiplier;
         let main_smear = limit_smear / self.y_factor;
 
@@ -82,13 +83,9 @@ impl BlendedNoise {
         let mut pow = 1.0;
         for i in 0..8 {
             if let Some(noise) = self.main_noise.get_octave_noise(i) {
-                main_noise_value += noise.noise_with_y_scale(
-                    wrap(main_x * pow),
-                    wrap(main_y * pow),
-                    wrap(main_z * pow),
-                    main_smear * pow,
-                    main_y * pow,
-                ) / pow;
+                let res = wrap_3x(main * pow);
+                main_noise_value +=
+                    noise.noise_with_y_scale(res, main_smear * pow, main.y * pow) / pow;
             }
             pow /= 2.0;
         }
@@ -103,17 +100,15 @@ impl BlendedNoise {
         let mut blend_max = 0.0;
         pow = 1.0;
         for i in 0..16 {
-            let wx = wrap(limit_x * pow);
-            let wy = wrap(limit_y * pow);
-            let wz = wrap(limit_z * pow);
+            let w = wrap_3x(limit * pow);
             let y_scale_pow = limit_smear * pow;
 
             if !is_max && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
-                blend_min += noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
+                blend_min += noise.noise_with_y_scale(w, y_scale_pow, limit.y * pow) / pow;
             }
 
             if !is_min && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
-                blend_max += noise.noise_with_y_scale(wx, wy, wz, y_scale_pow, limit_y * pow) / pow;
+                blend_max += noise.noise_with_y_scale(w, y_scale_pow, limit.y * pow) / pow;
             }
 
             pow /= 2.0;

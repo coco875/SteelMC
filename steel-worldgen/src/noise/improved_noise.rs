@@ -3,13 +3,17 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::f64x4;
-use std::simd::{Select, StdFloat};
+use std::simd::num::SimdFloat;
+use std::simd::{Select, StdFloat, f64x8, simd_swizzle};
+use std::simd::{f64x2, f64x4, i32x4};
 
 use crate::random::Random;
+use glam::DVec3;
+use steel_math::simd_utils::{concat_4x, splat_4x, transpose, transpose_2x};
 use steel_math::{
-    GRADIENT, floor, grad_dot, grad_dot_4x, lerp2, lerp3, lerp3_4x, smoothstep, smoothstep_4x,
-    smoothstep_derivative,
+    GRADIENT, GRADIENT_4, floor, grad_dot, grad_dot_4x, grad_dot_8x, lerp2, lerp2_3x, lerp3,
+    lerp3_3x_simd, lerp3_4x, lerp3_simd, lerp3_simd_4x, smoothstep, smoothstep_3x, smoothstep_4x,
+    smoothstep_derivative, smoothstep_derivative_3x,
 };
 
 /// Improved Perlin noise generator.
@@ -21,12 +25,8 @@ use steel_math::{
 pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
     p: [u8; 256],
-    /// X offset for the noise coordinates
-    pub xo: f64,
-    /// Y offset for the noise coordinates
-    pub yo: f64,
-    /// Z offset for the noise coordinates
-    pub zo: f64,
+    // offset for the noise coordinates
+    pub offset: DVec3,
 }
 
 impl ImprovedNoise {
@@ -38,6 +38,7 @@ impl ImprovedNoise {
         let xo = random.next_f64() * 256.0;
         let yo = random.next_f64() * 256.0;
         let zo = random.next_f64() * 256.0;
+        let offset = DVec3::new(xo, yo, zo);
 
         let mut p = [0u8; 256];
         #[expect(
@@ -54,7 +55,7 @@ impl ImprovedNoise {
             p.swap(i, i + offset);
         }
 
-        Self { p, xo, yo, zo }
+        Self { p, offset }
     }
 
     /// Sample noise at the given coordinates.
@@ -62,20 +63,13 @@ impl ImprovedNoise {
     /// This is the standard 3D Perlin noise sampling without Y scaling.
     #[inline]
     #[must_use]
-    pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-        let z = z + self.zo;
+    pub fn noise(&self, pos: DVec3) -> f64 {
+        let pos = pos + self.offset;
+        let posf = pos.floor();
+        let r = pos - posf;
 
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
-
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
-
-        self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+        let pos = posf.as_ivec3();
+        self.sample_and_lerp(pos.x, pos.y, pos.z, r.x, r.y, r.z, r.y)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -83,26 +77,13 @@ impl ImprovedNoise {
     /// Returns the noise value and adds the partial derivatives (dx, dy, dz)
     /// into `derivative_out`. Used by `BlendedNoise` for terrain generation.
     #[must_use]
-    pub fn noise_with_derivative(
-        &self,
-        x: f64,
-        y: f64,
-        z: f64,
-        derivative_out: &mut [f64; 3],
-    ) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-        let z = z + self.zo;
+    pub fn noise_with_derivative(&self, pos: DVec3, derivative_out: &mut [f64; 3]) -> f64 {
+        let pos = pos + self.offset;
+        let posf = pos.floor();
+        let r = pos - posf;
 
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
-
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
-
-        self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
+        let pos = posf.as_ivec3();
+        self.sample_with_derivative(pos.x, pos.y, pos.z, r, derivative_out)
     }
 
     /// Sample noise with Y scale and fudge parameters.
@@ -119,18 +100,10 @@ impl ImprovedNoise {
         clippy::similar_names,
         reason = "yr_fudge and y_fudge match vanilla naming"
     )]
-    pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f64 {
-        let x = x + self.xo;
-        let y = y + self.yo;
-        let z = z + self.zo;
-
-        let xf = floor(x);
-        let yf = floor(y);
-        let zf = floor(z);
-
-        let xr = x - f64::from(xf);
-        let yr = y - f64::from(yf);
-        let zr = z - f64::from(zf);
+    pub fn noise_with_y_scale(&self, pos: DVec3, y_scale: f64, y_fudge: f64) -> f64 {
+        let pos = pos + self.offset;
+        let posf = pos.floor();
+        let r = pos - posf;
 
         // Calculate Y fudge for terrain generation
         #[expect(
@@ -138,18 +111,18 @@ impl ImprovedNoise {
             reason = "matches vanilla's conditional structure"
         )]
         let yr_fudge = if y_scale != 0.0 {
-            let fudge_limit = if y_fudge >= 0.0 && y_fudge < yr {
+            let fudge_limit = if y_fudge >= 0.0 && y_fudge < r.y {
                 y_fudge
             } else {
-                yr
+                r.y
             };
             // SHIFT_UP_EPSILON = 1.0E-7F in Java (float literal promoted to double)
             (fudge_limit / y_scale + f64::from(1.0e-7_f32)).floor() * y_scale
         } else {
             0.0
         };
-
-        self.sample_and_lerp(xf, yf, zf, xr, yr - yr_fudge, zr, yr)
+        let posf = posf.as_ivec3();
+        self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y - yr_fudge, r.z, r.y)
     }
 
     /// Look up the permutation value at index x.
@@ -173,29 +146,29 @@ impl ImprovedNoise {
         // Get permutation indices for the 8 corners
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let xy = [
+            self.p(x0 as i32 + y),     // 0 0
+            self.p(x0 as i32 + y + 1), // 0 1
+            self.p(x1 as i32 + y),     // 1 0
+            self.p(x1 as i32 + y + 1), // 1 1
+        ];
 
         // Calculate gradient dot products at each corner
-        let d000 = grad_dot(self.p(xy00 as i32 + z), xr, yr, zr);
-        let d100 = grad_dot(self.p(xy10 as i32 + z), xr - 1.0, yr, zr);
-        let d010 = grad_dot(self.p(xy01 as i32 + z), xr, yr - 1.0, zr);
-        let d110 = grad_dot(self.p(xy11 as i32 + z), xr - 1.0, yr - 1.0, zr);
-        let d001 = grad_dot(self.p(xy00 as i32 + z + 1), xr, yr, zr - 1.0);
-        let d101 = grad_dot(self.p(xy10 as i32 + z + 1), xr - 1.0, yr, zr - 1.0);
-        let d011 = grad_dot(self.p(xy01 as i32 + z + 1), xr, yr - 1.0, zr - 1.0);
-        let d111 = grad_dot(self.p(xy11 as i32 + z + 1), xr - 1.0, yr - 1.0, zr - 1.0);
+        let x4 = f64x4::from_array([xr, xr - 1., xr, xr - 1.]);
+        let y4 = f64x4::from_array([yr, yr, yr - 1., yr - 1.]);
+        let z4 = f64x4::splat(zr);
+
+        let d0 = grad_dot_4x(xy.map(|x| self.p(x as i32 + z)), x4, y4, z4);
+
+        let z4 = z4 - f64x4::splat(1.);
+        let d1 = grad_dot_4x(xy.map(|x| self.p(x as i32 + z + 1)), x4, y4, z4);
 
         // Apply smoothstep interpolation
         let x_alpha = smoothstep(xr);
         let y_alpha = smoothstep(yr_original);
         let z_alpha = smoothstep(zr);
 
-        lerp3(
-            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
-        )
+        lerp3_simd(x_alpha, y_alpha, z_alpha, d0, d1)
     }
 
     // -----------------------------------------------------------------------
@@ -217,15 +190,14 @@ impl ImprovedNoise {
         y_fudges: f64x4,
     ) -> f64x4 {
         // Shared x/z offset and floor
-        let x = x + self.xo;
-        let z = z + self.zo;
-        let xf = floor(x);
-        let zf = floor(z);
-        let xr = x - f64::from(xf);
-        let zr = z - f64::from(zf);
+        let xz = f64x2::from_array([x, z]);
+        let xzo = f64x2::from_array([self.offset.x, self.offset.z]);
+        let xz = xz + xzo;
+        let xzf = xz.floor();
+        let xzr = xz - xzf;
 
         // Per-lane y offset and floor
-        let ys = ys + f64x4::splat(self.yo);
+        let ys = ys + f64x4::splat(self.offset.y);
         let ys_floor = ys.floor();
         let yrs = ys - ys_floor;
 
@@ -243,7 +215,8 @@ impl ImprovedNoise {
 
         let yrs_adjusted = yrs - yr_fudge;
 
-        self.sample_and_lerp_4x(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
+        let xzf = xzf.cast::<i32>();
+        self.sample_and_lerp_4x(xzf[0], xzf[1], xzr[0], xzr[1], ys_floor, yrs_adjusted, yrs)
     }
 
     /// Vectorized sample-and-lerp for 4 Y values sharing x/z grid position.
@@ -302,21 +275,23 @@ impl ImprovedNoise {
             h111[i] = self.p(xy11 as i32 + zf + 1);
         }
 
-        // Vectorized gradient dot products
-        let xr_v = f64x4::splat(xr);
-        let zr_v = f64x4::splat(zr);
-        let xr_m1 = xr_v - f64x4::splat(1.0);
-        let yr_m1 = yrs - f64x4::splat(1.0);
-        let zr_m1 = zr_v - f64x4::splat(1.0);
+        let xr_v0 = f64x4::splat(xr);
+        let xr_v1 = f64x4::splat(xr - 1.0);
+        let zr_v0 = f64x4::splat(zr);
+        let zr_v1 = f64x4::splat(zr - 1.0);
 
-        let d000 = grad_dot_4x(h000, xr_v, yrs, zr_v);
-        let d100 = grad_dot_4x(h100, xr_m1, yrs, zr_v);
-        let d010 = grad_dot_4x(h010, xr_v, yr_m1, zr_v);
-        let d110 = grad_dot_4x(h110, xr_m1, yr_m1, zr_v);
-        let d001 = grad_dot_4x(h001, xr_v, yrs, zr_m1);
-        let d101 = grad_dot_4x(h101, xr_m1, yrs, zr_m1);
-        let d011 = grad_dot_4x(h011, xr_v, yr_m1, zr_m1);
-        let d111 = grad_dot_4x(h111, xr_m1, yr_m1, zr_m1);
+        let yr_v0 = yrs;
+        let yr_v1 = yrs - f64x4::splat(1.0);
+
+        // Pair the hashes exactly as the scalar code does, which has index 1 and 2 swapped
+        let d000 = grad_dot_4x(h000, xr_v0, yr_v0, zr_v0);
+        let d100 = grad_dot_4x(h010, xr_v1, yr_v0, zr_v0);
+        let d010 = grad_dot_4x(h100, xr_v0, yr_v1, zr_v0);
+        let d110 = grad_dot_4x(h110, xr_v1, yr_v1, zr_v0);
+        let d001 = grad_dot_4x(h001, xr_v0, yr_v0, zr_v1);
+        let d101 = grad_dot_4x(h011, xr_v1, yr_v0, zr_v1);
+        let d011 = grad_dot_4x(h101, xr_v0, yr_v1, zr_v1);
+        let d111 = grad_dot_4x(h111, xr_v1, yr_v1, zr_v1);
 
         // Smoothstep — x and z are shared across lanes
         let x_alpha = f64x4::splat(smoothstep(xr));
@@ -335,103 +310,82 @@ impl ImprovedNoise {
         x: i32,
         y: i32,
         z: i32,
-        xr: f64,
-        yr: f64,
-        zr: f64,
+        r: DVec3,
         derivative_out: &mut [f64; 3],
     ) -> f64 {
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let xy = [
+            self.p(x0 as i32 + y),     // 0 0
+            self.p(x0 as i32 + y + 1), // 0 1
+            self.p(x1 as i32 + y),     // 1 0
+            self.p(x1 as i32 + y + 1), // 1 1
+        ];
 
         // Get hashes and gradient vectors for all 8 corners
-        let h000 = self.p(xy00 as i32 + z);
-        let h100 = self.p(xy10 as i32 + z);
-        let h010 = self.p(xy01 as i32 + z);
-        let h110 = self.p(xy11 as i32 + z);
-        let h001 = self.p(xy00 as i32 + z + 1);
-        let h101 = self.p(xy10 as i32 + z + 1);
-        let h011 = self.p(xy01 as i32 + z + 1);
-        let h111 = self.p(xy11 as i32 + z + 1);
+        let h0 = xy.map(|xy| self.p(xy as i32 + z));
+        let h1 = xy.map(|xy| self.p(xy as i32 + z + 1));
 
-        let g000 = &GRADIENT[h000 & 15];
-        let g100 = &GRADIENT[h100 & 15];
-        let g010 = &GRADIENT[h010 & 15];
-        let g110 = &GRADIENT[h110 & 15];
-        let g001 = &GRADIENT[h001 & 15];
-        let g101 = &GRADIENT[h101 & 15];
-        let g011 = &GRADIENT[h011 & 15];
-        let g111 = &GRADIENT[h111 & 15];
+        let g000 = f64x4::from_array(GRADIENT_4[h0[0b00] & 15]);
+        let g100 = f64x4::from_array(GRADIENT_4[h0[0b10] & 15]);
+        let g010 = f64x4::from_array(GRADIENT_4[h0[0b01] & 15]);
+        let g110 = f64x4::from_array(GRADIENT_4[h0[0b11] & 15]);
+        let g001 = f64x4::from_array(GRADIENT_4[h1[0b00] & 15]);
+        let g101 = f64x4::from_array(GRADIENT_4[h1[0b10] & 15]);
+        let g011 = f64x4::from_array(GRADIENT_4[h1[0b01] & 15]);
+        let g111 = f64x4::from_array(GRADIENT_4[h1[0b11] & 15]);
+
+        let (g00, g01, g02, _g03) = transpose(g000, g100, g010, g110);
+        let (g10, g11, g12, _g13) = transpose(g001, g101, g011, g111);
+
+        let x4 = f64x4::from_array([r.x, r.x - 1., r.x, r.x - 1.]);
+        let y4 = f64x4::from_array([r.y, r.y, r.y - 1., r.y - 1.]);
+        let z4 = f64x4::splat(r.z);
 
         // Gradient dot products at each corner
-        let d000 = grad_dot(h000, xr, yr, zr);
-        let d100 = grad_dot(h100, xr - 1.0, yr, zr);
-        let d010 = grad_dot(h010, xr, yr - 1.0, zr);
-        let d110 = grad_dot(h110, xr - 1.0, yr - 1.0, zr);
-        let d001 = grad_dot(h001, xr, yr, zr - 1.0);
-        let d101 = grad_dot(h101, xr - 1.0, yr, zr - 1.0);
-        let d011 = grad_dot(h011, xr, yr - 1.0, zr - 1.0);
-        let d111 = grad_dot(h111, xr - 1.0, yr - 1.0, zr - 1.0);
+        let d0 = grad_dot_4x(h0, x4, y4, z4);
 
-        let x_alpha = smoothstep(xr);
-        let y_alpha = smoothstep(yr);
-        let z_alpha = smoothstep(zr);
+        let z4 = z4 - f64x4::splat(1.);
+        let d1 = grad_dot_4x(h1, x4, y4, z4);
+
+        let alpha = smoothstep_3x(r);
 
         // Interpolate gradient components for direct derivative contribution
-        let d1x = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[0], g100[0], g010[0], g110[0], g001[0], g101[0],
-            g011[0], g111[0],
-        );
-        let d1y = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[1], g100[1], g010[1], g110[1], g001[1], g101[1],
-            g011[1], g111[1],
-        );
-        let d1z = lerp3(
-            x_alpha, y_alpha, z_alpha, g000[2], g100[2], g010[2], g110[2], g001[2], g101[2],
-            g011[2], g111[2],
-        );
+        let d1_v = lerp3_3x_simd(alpha.x, alpha.y, alpha.z, g00, g10, g01, g11, g02, g12);
 
         // Smoothstep correction terms via differences
-        let d2x = lerp2(
-            y_alpha,
-            z_alpha,
-            d100 - d000,
-            d110 - d010,
-            d101 - d001,
-            d111 - d011,
-        );
-        let d2y = lerp2(
-            z_alpha,
-            x_alpha,
-            d010 - d000,
-            d011 - d001,
-            d110 - d100,
-            d111 - d101,
-        );
-        let d2z = lerp2(
-            x_alpha,
-            y_alpha,
-            d001 - d000,
-            d101 - d100,
-            d011 - d010,
-            d111 - d110,
-        );
+        let a1 = DVec3::new(alpha.y, alpha.z, alpha.x);
+        let a2 = DVec3::new(alpha.z, alpha.x, alpha.y);
 
-        let x_sd = smoothstep_derivative(xr);
-        let y_sd = smoothstep_derivative(yr);
-        let z_sd = smoothstep_derivative(zr);
+        let ax1 = simd_swizzle!(d0, d1, [0b10, 0b11, 0b10 + 4, 0b11 + 4]);
+        let ax0 = simd_swizzle!(d0, d1, [0b00, 0b01, 0b00 + 4, 0b01 + 4]);
+        let ax = ax1 - ax0;
+
+        let bx1 = simd_swizzle!(d0, d1, [0b01, 0b01 + 4, 0b11, 0b11 + 4]);
+        let bx0 = simd_swizzle!(d0, d1, [0b00, 0b00 + 4, 0b10, 0b10 + 4]);
+        let bx = bx1 - bx0;
+
+        let cx1 = d1;
+        let cx0 = d0;
+        let cx = cx1 - cx0;
+
+        let x00 = DVec3::new(bx[0b00], ax[0b00], cx[0b00]);
+        let x10 = DVec3::new(bx[0b10], ax[0b10], cx[0b10]);
+        let x01 = DVec3::new(bx[0b01], ax[0b01], cx[0b01]);
+        let x11 = DVec3::new(bx[0b11], ax[0b11], cx[0b11]);
+
+        let d2_v = lerp2_3x(a1, a2, x00, x10, x01, x11);
+
+        let sd = smoothstep_derivative_3x(r);
 
         // Accumulate derivatives (vanilla uses +=)
-        derivative_out[0] += d1x + x_sd * d2x;
-        derivative_out[1] += d1y + y_sd * d2y;
-        derivative_out[2] += d1z + z_sd * d2z;
+        let mut d = DVec3::from_array(*derivative_out);
+        d += d1_v + sd * d2_v;
+        derivative_out[0] = d.x;
+        derivative_out[1] = d.y;
+        derivative_out[2] = d.z;
 
-        lerp3(
-            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
-        )
+        lerp3_simd(alpha.x, alpha.y, alpha.z, d0, d1)
     }
 }
 
@@ -484,7 +438,8 @@ mod tests {
                     );
 
                     for i in 0..4 {
-                        let scalar = noise.noise_with_y_scale(x, ys[i], z, y_scale, y_fudges[i]);
+                        let scalar =
+                            noise.noise_with_y_scale(DVec3::new(x, ys[i], z), y_scale, y_fudges[i]);
                         let simd_val = simd_result[i];
                         assert!(
                             (scalar - simd_val).abs() < 1e-14,
@@ -513,15 +468,13 @@ mod tests {
             reason = "determinism test: identical seeds must produce bit-identical offsets"
         )]
         {
-            assert_eq!(noise1.xo, noise2.xo);
-            assert_eq!(noise1.yo, noise2.yo);
-            assert_eq!(noise1.zo, noise2.zo);
+            assert_eq!(noise1.offset, noise2.offset);
         }
         assert_eq!(noise1.p, noise2.p);
 
         // Same coordinates should produce same values
-        let v1 = noise1.noise(100.0, 64.0, 100.0);
-        let v2 = noise2.noise(100.0, 64.0, 100.0);
+        let v1 = noise1.noise(DVec3::new(100.0, 64.0, 100.0));
+        let v2 = noise2.noise(DVec3::new(100.0, 64.0, 100.0));
         assert!((v1 - v2).abs() < 1e-15);
     }
 
@@ -530,14 +483,12 @@ mod tests {
         let mut rng = Xoroshiro::from_seed(42);
         let noise = ImprovedNoise::new(&mut rng);
 
-        for (x, y, z) in [
-            (0.0, 0.0, 0.0),
-            (1.25, 64.5, -30.75),
-            (-1000.0, -20.25, 4096.5),
+        for pos in [
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(1.25, 64.5, -30.75),
+            DVec3::new(-1000.0, -20.25, 4096.5),
         ] {
-            assert!(
-                (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
-            );
+            assert!((noise.noise(pos) - noise.noise_with_y_scale(pos, 0.0, 0.0)).abs() < 1e-15);
         }
     }
 
@@ -549,7 +500,7 @@ mod tests {
         // Sample at various points and verify output is in reasonable range
         for x in -10..10 {
             for z in -10..10 {
-                let v = noise.noise(f64::from(x) * 10.0, 64.0, f64::from(z) * 10.0);
+                let v = noise.noise(DVec3::new(f64::from(x) * 10.0, 64.0, f64::from(z) * 10.0));
                 // Perlin noise should be in [-1, 1] range roughly
                 assert!(
                     (-1.5..=1.5).contains(&v),
@@ -565,10 +516,10 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
 
         // Noise at different positions should generally be different
-        let v1 = noise.noise(0.0, 0.0, 0.0);
-        let v2 = noise.noise(100.0, 0.0, 0.0);
-        let v3 = noise.noise(0.0, 100.0, 0.0);
-        let v4 = noise.noise(0.0, 0.0, 100.0);
+        let v1 = noise.noise(DVec3::new(0.0, 0.0, 0.0));
+        let v2 = noise.noise(DVec3::new(100.0, 0.0, 0.0));
+        let v3 = noise.noise(DVec3::new(0.0, 100.0, 0.0));
+        let v4 = noise.noise(DVec3::new(0.0, 0.0, 100.0));
 
         // At least some should be different (statistically almost certain)
         #[expect(
@@ -586,18 +537,18 @@ mod tests {
 
         // noise_with_derivative should return the same value as noise()
         // (when no y_scale/y_fudge is used)
-        for &(x, y, z) in &[
-            (0.0, 0.0, 0.0),
-            (1.5, 2.3, 3.7),
-            (-5.2, 64.0, 100.3),
-            (0.25, 0.25, 0.25),
+        for &pos in &[
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(1.5, 2.3, 3.7),
+            DVec3::new(-5.2, 64.0, 100.3),
+            DVec3::new(0.25, 0.25, 0.25),
         ] {
-            let v1 = noise.noise(x, y, z);
+            let v1 = noise.noise(pos);
             let mut deriv = [0.0; 3];
-            let v2 = noise.noise_with_derivative(x, y, z, &mut deriv);
+            let v2 = noise.noise_with_derivative(pos, &mut deriv);
             assert!(
                 (v1 - v2).abs() < 1e-12,
-                "Value mismatch at ({x}, {y}, {z}): {v1} vs {v2}",
+                "Value mismatch at ({pos}): {v1} vs {v2}",
             );
         }
     }
@@ -608,7 +559,7 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
 
         let mut deriv = [0.0; 3];
-        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
+        let _ = noise.noise_with_derivative(DVec3::new(1.5, 2.3, 3.7), &mut deriv);
 
         // At a non-grid point, at least some derivatives should be nonzero
         let any_nonzero = deriv.iter().any(|&d| d.abs() > 1e-15);
@@ -622,13 +573,13 @@ mod tests {
 
         // First call
         let mut deriv = [0.0; 3];
-        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
+        let _ = noise.noise_with_derivative(DVec3::new(1.5, 2.3, 3.7), &mut deriv);
         let first = deriv;
 
         // Second call should accumulate (+=)
-        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv);
+        let _ = noise.noise_with_derivative(DVec3::new(4.1, 5.2, 6.3), &mut deriv);
         let mut deriv2 = [0.0; 3];
-        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv2);
+        let _ = noise.noise_with_derivative(DVec3::new(4.1, 5.2, 6.3), &mut deriv2);
 
         for i in 0..3 {
             let expected = first[i] + deriv2[i];

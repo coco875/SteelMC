@@ -5,7 +5,8 @@
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use steel_math::wrap;
+use glam::DVec3;
+use steel_math::{wrap, wrap_3x};
 
 /// Octave-based Perlin noise generator.
 ///
@@ -175,18 +176,14 @@ impl PerlinNoise {
     /// Sample the noise at the given coordinates.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
+    pub fn get_value(&self, pos: DVec3) -> f64 {
         let mut value = 0.0;
         let mut input_factor = self.lowest_freq_input_factor;
         let mut value_factor = self.lowest_freq_value_factor;
 
         for (i, noise_opt) in self.noise_levels.iter().enumerate() {
             if let Some(noise) = noise_opt {
-                let noise_val = noise.noise(
-                    wrap(x * input_factor),
-                    wrap(y * input_factor),
-                    wrap(z * input_factor),
-                );
+                let noise_val = noise.noise(wrap_3x(pos * input_factor));
                 value += self.amplitudes[i] * noise_val * value_factor;
             }
 
@@ -221,13 +218,15 @@ impl PerlinNoise {
         for (i, noise_opt) in self.noise_levels.iter().enumerate() {
             if let Some(noise) = noise_opt {
                 let noise_val = noise.noise_with_y_scale(
-                    wrap(x * input_factor),
-                    if y_flat_hack {
-                        -noise.yo
-                    } else {
-                        wrap(y * input_factor)
-                    },
-                    wrap(z * input_factor),
+                    DVec3::new(
+                        wrap(x * input_factor),
+                        if y_flat_hack {
+                            -noise.offset.y
+                        } else {
+                            wrap(y * input_factor)
+                        },
+                        wrap(z * input_factor),
+                    ),
                     y_scale * input_factor,
                     y_fudge * input_factor,
                 );
@@ -286,8 +285,8 @@ mod tests {
         let noise1 = PerlinNoise::create(&splitter, -3, &amplitudes);
         let noise2 = PerlinNoise::create(&splitter, -3, &amplitudes);
 
-        let v1 = noise1.get_value(100.0, 64.0, 100.0);
-        let v2 = noise2.get_value(100.0, 64.0, 100.0);
+        let v1 = noise1.get_value(DVec3::new(100.0, 64.0, 100.0));
+        let v2 = noise2.get_value(DVec3::new(100.0, 64.0, 100.0));
         assert!((v1 - v2).abs() < 1e-15);
     }
 
@@ -298,14 +297,14 @@ mod tests {
 
         let noise = PerlinNoise::create(&splitter, -4, &[1.0, 0.0, 1.0, 1.0]);
 
-        for (x, y, z) in [
-            (0.0, 0.0, 0.0),
-            (100.0, 64.0, -100.0),
-            (-4096.25, -32.5, 1024.75),
+        for pos in [
+            DVec3::new(0.0, 0.0, 0.0),
+            DVec3::new(100.0, 64.0, -100.0),
+            DVec3::new(-4096.25, -32.5, 1024.75),
         ] {
             assert!(
-                (noise.get_value(x, y, z)
-                    - noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false))
+                (noise.get_value(pos)
+                    - noise.get_value_with_y_params(pos.x, pos.y, pos.z, 0.0, 0.0, false))
                 .abs()
                     < 1e-15
             );
@@ -321,7 +320,7 @@ mod tests {
 
         // Sample at different locations
         let values: Vec<f64> = (0..10)
-            .map(|i| noise.get_value(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0))
+            .map(|i| noise.get_value(DVec3::new(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0)))
             .collect();
 
         // Check there's variation
@@ -341,8 +340,8 @@ mod tests {
         let noise2 = PerlinNoise::create_from_random(&mut random, -3, &amplitudes);
 
         // These should produce different values since the random state advanced
-        let v1 = noise1.get_value(100.0, 64.0, 100.0);
-        let v2 = noise2.get_value(100.0, 64.0, 100.0);
+        let v1 = noise1.get_value(DVec3::new(100.0, 64.0, 100.0));
+        let v2 = noise2.get_value(DVec3::new(100.0, 64.0, 100.0));
         assert!(
             (v1 - v2).abs() > 0.001,
             "Two PerlinNoise from sequential random should differ: v1={v1}, v2={v2}",

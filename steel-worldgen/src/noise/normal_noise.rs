@@ -3,6 +3,8 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
+use glam::DVec3;
+
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
 
@@ -142,11 +144,9 @@ impl NormalNoise {
     /// The sum is then scaled by the value factor.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
-        let x2 = x * INPUT_FACTOR;
-        let y2 = y * INPUT_FACTOR;
-        let z2 = z * INPUT_FACTOR;
-        (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
+    pub fn get_value(&self, pos: DVec3) -> f64 {
+        let pos2 = pos * INPUT_FACTOR;
+        (self.first.get_value(pos) + self.second.get_value(pos2)) * self.value_factor
     }
 
     /// Get the maximum possible output value.
@@ -184,8 +184,8 @@ mod tests {
         let noise1 = NormalNoise::create(&splitter, "test_noise", -3, &amplitudes);
         let noise2 = NormalNoise::create(&splitter, "test_noise", -3, &amplitudes);
 
-        let v1 = noise1.get_value(100.0, 64.0, 100.0);
-        let v2 = noise2.get_value(100.0, 64.0, 100.0);
+        let v1 = noise1.get_value(DVec3::new(100.0, 64.0, 100.0));
+        let v2 = noise2.get_value(DVec3::new(100.0, 64.0, 100.0));
         assert!((v1 - v2).abs() < 1e-15);
     }
 
@@ -198,7 +198,7 @@ mod tests {
 
         // Sample at different locations
         let values: Vec<f64> = (0..10)
-            .map(|i| noise.get_value(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0))
+            .map(|i| noise.get_value(DVec3::new(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0)))
             .collect();
 
         // Check there's variation
@@ -216,8 +216,8 @@ mod tests {
 
         // The first and second samplers should produce different raw values
         // (but we can only test via the combined output)
-        let v1 = noise.get_value(1000.0, 0.0, 1000.0);
-        let v2 = noise.get_value(1001.0, 0.0, 1000.0);
+        let v1 = noise.get_value(DVec3::new(1000.0, 0.0, 1000.0));
+        let v2 = noise.get_value(DVec3::new(1001.0, 0.0, 1000.0));
         // Values at different coordinates should differ
         assert!((v1 - v2).abs() > 0.0001);
     }
