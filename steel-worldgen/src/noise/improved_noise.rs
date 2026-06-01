@@ -3,15 +3,16 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::num::SimdFloat;
-use std::simd::{Select, StdFloat, simd_swizzle};
+use std::simd::num::{SimdFloat, SimdUint};
+use std::simd::ptr::SimdConstPtr;
+use std::simd::{Select, Simd, StdFloat, simd_swizzle, u32x4, usizex4};
 use std::simd::{f64x2, f64x4};
 
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::simd_utils::transpose;
 use steel_math::{
-    GRADIENT_4, grad_dot_4x, lerp2_3x, lerp3_3x_simd, lerp3_4x, lerp3_simd, smoothstep,
+    GRADIENT, GRADIENT_4, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x, lerp3_4x, smoothstep,
     smoothstep_3x, smoothstep_4x, smoothstep_derivative_3x,
 };
 
@@ -145,29 +146,29 @@ impl ImprovedNoise {
         // Get permutation indices for the 8 corners
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
-        let xy = [
-            self.p(x0 as i32 + y),     // 0 0
-            self.p(x0 as i32 + y + 1), // 0 1
-            self.p(x1 as i32 + y),     // 1 0
-            self.p(x1 as i32 + y + 1), // 1 1
-        ];
+        let xy00 = self.p(x0 as i32 + y);
+        let xy01 = self.p(x0 as i32 + y + 1);
+        let xy10 = self.p(x1 as i32 + y);
+        let xy11 = self.p(x1 as i32 + y + 1);
 
         // Calculate gradient dot products at each corner
-        let x4 = f64x4::from_array([xr, xr - 1., xr, xr - 1.]);
-        let y4 = f64x4::from_array([yr, yr, yr - 1., yr - 1.]);
-        let z4 = f64x4::splat(zr);
-
-        let d0 = grad_dot_4x(xy.map(|x| self.p(x as i32 + z)), x4, y4, z4);
-
-        let z4 = z4 - f64x4::splat(1.);
-        let d1 = grad_dot_4x(xy.map(|x| self.p(x as i32 + z + 1)), x4, y4, z4);
+        let d000 = grad_dot(self.p(xy00 as i32 + z), xr, yr, zr);
+        let d100 = grad_dot(self.p(xy10 as i32 + z), xr - 1.0, yr, zr);
+        let d010 = grad_dot(self.p(xy01 as i32 + z), xr, yr - 1.0, zr);
+        let d110 = grad_dot(self.p(xy11 as i32 + z), xr - 1.0, yr - 1.0, zr);
+        let d001 = grad_dot(self.p(xy00 as i32 + z + 1), xr, yr, zr - 1.0);
+        let d101 = grad_dot(self.p(xy10 as i32 + z + 1), xr - 1.0, yr, zr - 1.0);
+        let d011 = grad_dot(self.p(xy01 as i32 + z + 1), xr, yr - 1.0, zr - 1.0);
+        let d111 = grad_dot(self.p(xy11 as i32 + z + 1), xr - 1.0, yr - 1.0, zr - 1.0);
 
         // Apply smoothstep interpolation
         let x_alpha = smoothstep(xr);
         let y_alpha = smoothstep(yr_original);
         let z_alpha = smoothstep(zr);
 
-        lerp3_simd(x_alpha, y_alpha, z_alpha, d0, d1)
+        lerp3(
+            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -325,17 +326,14 @@ impl ImprovedNoise {
         let h0 = xy.map(|xy| self.p(xy as i32 + z));
         let h1 = xy.map(|xy| self.p(xy as i32 + z + 1));
 
-        let g000 = f64x4::from_array(GRADIENT_4[h0[0b00] & 15]);
-        let g100 = f64x4::from_array(GRADIENT_4[h0[0b10] & 15]);
-        let g010 = f64x4::from_array(GRADIENT_4[h0[0b01] & 15]);
-        let g110 = f64x4::from_array(GRADIENT_4[h0[0b11] & 15]);
-        let g001 = f64x4::from_array(GRADIENT_4[h1[0b00] & 15]);
-        let g101 = f64x4::from_array(GRADIENT_4[h1[0b10] & 15]);
-        let g011 = f64x4::from_array(GRADIENT_4[h1[0b01] & 15]);
-        let g111 = f64x4::from_array(GRADIENT_4[h1[0b11] & 15]);
-
-        let (g00, g01, g02, _g03) = transpose(g000, g100, g010, g110);
-        let (g10, g11, g12, _g13) = transpose(g001, g101, g011, g111);
+        let g000 = DVec3::from_array(GRADIENT[h0[0b00] & 15]);
+        let g100 = DVec3::from_array(GRADIENT[h0[0b10] & 15]);
+        let g010 = DVec3::from_array(GRADIENT[h0[0b01] & 15]);
+        let g110 = DVec3::from_array(GRADIENT[h0[0b11] & 15]);
+        let g001 = DVec3::from_array(GRADIENT[h1[0b00] & 15]);
+        let g101 = DVec3::from_array(GRADIENT[h1[0b10] & 15]);
+        let g011 = DVec3::from_array(GRADIENT[h1[0b01] & 15]);
+        let g111 = DVec3::from_array(GRADIENT[h1[0b11] & 15]);
 
         let x4 = f64x4::from_array([r.x, r.x - 1., r.x, r.x - 1.]);
         let y4 = f64x4::from_array([r.y, r.y, r.y - 1., r.y - 1.]);
@@ -350,7 +348,9 @@ impl ImprovedNoise {
         let alpha = smoothstep_3x(r);
 
         // Interpolate gradient components for direct derivative contribution
-        let d1_v = lerp3_3x_simd(alpha.x, alpha.y, alpha.z, g00, g10, g01, g11, g02, g12);
+        let d1_v = lerp3_3x(
+            alpha.x, alpha.y, alpha.z, g000, g100, g010, g110, g001, g101, g011, g111,
+        );
 
         // Smoothstep correction terms via differences
         let a1 = DVec3::new(alpha.y, alpha.z, alpha.x);
@@ -384,7 +384,10 @@ impl ImprovedNoise {
         derivative_out[1] = d.y;
         derivative_out[2] = d.z;
 
-        lerp3_simd(alpha.x, alpha.y, alpha.z, d0, d1)
+        lerp3(
+            alpha.x, alpha.y, alpha.z, d0[0b00], d0[0b10], d0[0b01], d0[0b11], d1[0b00], d1[0b10],
+            d1[0b01], d1[0b11],
+        )
     }
 }
 

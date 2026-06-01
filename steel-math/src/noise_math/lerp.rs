@@ -69,51 +69,31 @@ pub fn lerp3(
     )
 }
 
-/// Trilinear interpolation using 4-lane SIMD vectors (`f64x4`) for intermediate calculations.
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
-#[must_use]
-pub fn lerp3_simd(a1: f64, a2: f64, a3: f64, x0: f64x4, x1: f64x4) -> f64 {
-    let a1 = f64x4::splat(a1);
-    let a2 = f64x2::splat(a2);
-
-    let res = lerp2_simd(a1, a2, x0, x1);
-    lerp(a3, res[0], res[1])
-}
-
 /// Trilinear interpolation for three separate coordinate dimensions simultaneously using 4-lane SIMD.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn lerp3_3x_simd(
+pub fn lerp3_3x(
     a1: f64,
     a2: f64,
     a3: f64,
-    ax0: f64x4,
-    ax1: f64x4,
-    bx0: f64x4,
-    bx1: f64x4,
-    cx0: f64x4,
-    cx1: f64x4,
+    x000: DVec3,
+    x100: DVec3,
+    x010: DVec3,
+    x110: DVec3,
+    x001: DVec3,
+    x101: DVec3,
+    x011: DVec3,
+    x111: DVec3,
 ) -> DVec3 {
-    let a1 = f64x4::splat(a1);
-    let a2 = f64x2::splat(a2);
-    let res_a = lerp2_simd(a1, a2, ax0, ax1);
-    let res_b = lerp2_simd(a1, a2, bx0, bx1);
-    let res_c = lerp2_simd(a1, a2, cx0, cx1);
-    let a = DVec3::new(res_a[0], res_b[0], res_c[0]);
-    let b = DVec3::new(res_a[1], res_b[1], res_c[1]);
-    lerp_3x(DVec3::splat(a3), a, b)
-}
-
-fn lerp2_simd(a1: f64x4, a2: f64x2, x0: f64x4, x1: f64x4) -> f64x2 {
-    let (a, b) = x0.deinterleave(x1);
-    let res = lerp_4x(a1, a, b);
-
-    let a = simd_swizzle!(res, [0, 2]); // a * (x0 x1)
-    let b = simd_swizzle!(res, [1, 3]); // b * (x0 x1)
-
-    lerp_2x(a2, a, b)
+    let a1 = DVec3::splat(a1);
+    let a2 = DVec3::splat(a2);
+    let a3 = DVec3::splat(a3);
+    lerp_3x(
+        a3,
+        lerp2_3x(a1, a2, x000, x100, x010, x110),
+        lerp2_3x(a1, a2, x001, x101, x011, x111),
+    )
 }
 
 /// Linear interpolation for 2-lane SIMD vectors (`f64x2`).
@@ -212,30 +192,5 @@ mod tests {
         assert!((lerp(0.0, 10.0, 20.0) - 10.0).abs() < 1e-10);
         assert!((lerp(1.0, 10.0, 20.0) - 20.0).abs() < 1e-10);
         assert!((lerp(0.5, 10.0, 20.0) - 15.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_lerp3_simd() {
-        let a1: f64 = 1.0;
-        let a2: f64 = 2.0;
-        let a3: f64 = 3.0;
-        let x000: f64 = 4.0;
-        let x100: f64 = 5.0;
-        let x010: f64 = 6.0;
-        let x110: f64 = 7.0;
-        let x001: f64 = 8.0;
-        let x101: f64 = 9.0;
-        let x011: f64 = 10.0;
-        let x111: f64 = 11.0;
-        assert_eq!(
-            lerp3(a1, a2, a3, x000, x100, x010, x110, x001, x101, x011, x111),
-            lerp3_simd(
-                a1,
-                a2,
-                a3,
-                f64x4::from_array([x000, x100, x010, x110]),
-                f64x4::from_array([x001, x101, x011, x111])
-            )
-        );
     }
 }

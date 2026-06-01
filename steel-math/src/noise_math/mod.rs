@@ -21,8 +21,7 @@ pub use floor::{floor, lfloor};
 pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_8x};
 pub use inverse_lerp::inverse_lerp;
 pub use lerp::{
-    lerp, lerp_2x, lerp_3x, lerp_4x, lerp2, lerp2_3x, lerp2_4x, lerp3, lerp3_3x_simd, lerp3_4x,
-    lerp3_simd, lerp3_simd_4x,
+    lerp, lerp_2x, lerp_3x, lerp_4x, lerp2, lerp2_3x, lerp2_4x, lerp3, lerp3_3x, lerp3_4x,
 };
 pub use map::{map, map_clamped};
 pub use smoothstep::{
