@@ -3,6 +3,7 @@
 //! Translates vanilla's `SurfaceSystem` — holds noise generators, clay band
 //! data, and positional random sources needed by transpiled surface rules.
 
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_registry::biome::TemperatureModifier;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
@@ -169,7 +170,7 @@ impl SurfaceSystem {
     pub fn get_surface_depth(&self, x: i32, z: i32) -> i32 {
         let noise_value = self
             .surface_noise
-            .get_value(f64::from(x), 0.0, f64::from(z));
+            .get_value(DVec3::new(f64::from(x), 0.0, f64::from(z)));
         let jitter = self.noise_random.at(x, 0, z).next_f64() * 0.25;
         (noise_value * 2.75 + 3.0 + jitter) as i32
     }
@@ -178,7 +179,7 @@ impl SurfaceSystem {
     #[must_use]
     pub fn get_surface_secondary(&self, x: i32, z: i32) -> f64 {
         self.surface_secondary_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
+            .get_value(DVec3::new(f64::from(x), 0.0, f64::from(z)))
     }
 
     /// Compute the effective temperature at a position.
@@ -357,27 +358,28 @@ impl SurfaceSystem {
         min_y: i32,
     ) -> i32 {
         let pillar_buffer = f64::min(
-            (self
-                .badlands_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
-                * 8.25)
+            (self.badlands_surface_noise.get_value(DVec3::new(
+                f64::from(block_x),
+                0.0,
+                f64::from(block_z),
+            )) * 8.25)
                 .abs(),
-            self.badlands_pillar_noise.get_value(
+            self.badlands_pillar_noise.get_value(DVec3::new(
                 f64::from(block_x) * 0.2,
                 0.0,
                 f64::from(block_z) * 0.2,
-            ) * 15.0,
+            )) * 15.0,
         );
 
         if pillar_buffer <= 0.0 {
             return height;
         }
 
-        let pillar_floor = (self.badlands_pillar_roof_noise.get_value(
+        let pillar_floor = (self.badlands_pillar_roof_noise.get_value(DVec3::new(
             f64::from(block_x) * 0.75,
             0.0,
             f64::from(block_z) * 0.75,
-        ) * 1.5)
+        )) * 1.5)
             .abs();
 
         let extension_top = 64.0
@@ -442,27 +444,28 @@ impl SurfaceSystem {
         min_y: i32,
     ) {
         let iceberg = f64::min(
-            (self
-                .iceberg_surface_noise
-                .get_value(f64::from(block_x), 0.0, f64::from(block_z))
-                * 8.25)
+            (self.iceberg_surface_noise.get_value(DVec3::new(
+                f64::from(block_x),
+                0.0,
+                f64::from(block_z),
+            )) * 8.25)
                 .abs(),
-            self.iceberg_pillar_noise.get_value(
+            self.iceberg_pillar_noise.get_value(DVec3::new(
                 f64::from(block_x) * 1.28,
                 0.0,
                 f64::from(block_z) * 1.28,
-            ) * 15.0,
+            )) * 15.0,
         );
 
         if iceberg <= 1.8 {
             return;
         }
 
-        let iceberg_roof = (self.iceberg_pillar_roof_noise.get_value(
+        let iceberg_roof = (self.iceberg_pillar_roof_noise.get_value(DVec3::new(
             f64::from(block_x) * 1.17,
             0.0,
             f64::from(block_z) * 1.17,
-        ) * 1.5)
+        )) * 1.5)
             .abs();
 
         let mut top = f64::min(iceberg * iceberg * 1.2, (iceberg_roof * 40.0).ceil() + 14.0);
@@ -519,17 +522,18 @@ impl SurfaceSystem {
 
 impl SurfaceNoiseProvider for SurfaceSystem {
     fn condition_noise(&self, noise_index: usize, x: i32, z: i32) -> f64 {
-        self.condition_noises[noise_index].get_value(f64::from(x), 0.0, f64::from(z))
+        self.condition_noises[noise_index].get_value(DVec3::new(f64::from(x), 0.0, f64::from(z)))
     }
 
     fn get_band(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         // Java: (int)Math.round(noise * 4.0)
-        let offset = (self
-            .clay_bands_offset_noise
-            .get_value(f64::from(x), 0.0, f64::from(z))
-            * 4.0
-            + 0.5)
-            .floor() as i32;
+        let offset =
+            (self
+                .clay_bands_offset_noise
+                .get_value(DVec3::new(f64::from(x), 0.0, f64::from(z)))
+                * 4.0
+                + 0.5)
+                .floor() as i32;
         let index = ((y + offset) % CLAY_BAND_LENGTH as i32 + CLAY_BAND_LENGTH as i32) as usize
             % CLAY_BAND_LENGTH;
         self.clay_bands[index]

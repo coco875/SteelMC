@@ -5,6 +5,7 @@
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
+use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncMutex;
 
@@ -61,9 +62,11 @@ impl FeatureDecorationRunner {
             config.max_gen_offset,
         );
         Self::for_each_vanilla_between_closed(min, max, |pos| {
-            let noise_offset =
-                noise.get_value(f64::from(pos.x()), f64::from(pos.y()), f64::from(pos.z()))
-                    * config.noise_multiplier;
+            let noise_offset = noise.get_value(DVec3::new(
+                f64::from(pos.x()),
+                f64::from(pos.y()),
+                f64::from(pos.z()),
+            )) * config.noise_multiplier;
             let dist_sum_shell =
                 Self::geode_distance_sum(pos, &points, noise_offset, |offset| offset);
             let dist_sum_crack = Self::geode_distance_sum(pos, &crack_points, noise_offset, |_| {
