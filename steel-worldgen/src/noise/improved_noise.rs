@@ -25,7 +25,7 @@ use steel_math::{
 pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
     p: [u8; 256],
-    // offset for the noise coordinates
+    /// Offset for the noise coordinates.
     pub offset: DVec3,
 }
 

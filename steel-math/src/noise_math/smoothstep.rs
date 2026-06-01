@@ -15,6 +15,7 @@ pub fn smoothstep(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
+/// Quintic Hermite interpolation for 3-dimensional double vectors (`DVec3`).
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -33,6 +34,7 @@ pub fn smoothstep_derivative(x: f64) -> f64 {
     30.0 * x * x * (x - 1.0) * (x - 1.0)
 }
 
+/// Smoothstep derivative for 3-dimensional double vectors (`DVec3`).
 #[inline]
 #[must_use]
 pub fn smoothstep_derivative_3x(x: DVec3) -> DVec3 {

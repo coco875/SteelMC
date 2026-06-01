@@ -1,5 +1,6 @@
 use std::simd::{f64x4, f64x8, simd_swizzle};
 
+/// Transposes a 4x4 matrix of 64-bit floats represented by four SIMD vectors (`f64x4`).
 #[inline]
 #[must_use]
 pub fn transpose(
@@ -17,6 +18,7 @@ pub fn transpose(
     (col0, col1, col2, col3)
 }
 
+/// Transposes two 4x4 matrices of 64-bit floats simultaneously using four 8-lane SIMD vectors (`f64x8`).
 #[inline]
 #[must_use]
 pub fn transpose_2x(
@@ -48,12 +50,14 @@ pub fn transpose_2x(
     (col0, col1, col2, col3)
 }
 
+/// Concatenates two 4-lane SIMD vectors (`f64x4`) into a single 8-lane SIMD vector (`f64x8`).
 #[inline]
 #[must_use]
 pub fn concat_4x(a: f64x4, b: f64x4) -> f64x8 {
     simd_swizzle!(a, b, [0, 1, 2, 3, 4, 5, 6, 7])
 }
 
+/// Replicates a 4-lane SIMD vector (`f64x4`) twice into a single 8-lane SIMD vector (`f64x8`).
 #[inline]
 #[must_use]
 pub fn splat_4x(v: f64x4) -> f64x8 {

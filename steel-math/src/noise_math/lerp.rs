@@ -29,6 +29,7 @@ pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
 }
 
+/// Bilinear interpolation for 3-dimensional double vectors (`DVec3`).
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -68,6 +69,7 @@ pub fn lerp3(
     )
 }
 
+/// Trilinear interpolation using 4-lane SIMD vectors (`f64x4`) for intermediate calculations.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -79,6 +81,7 @@ pub fn lerp3_simd(a1: f64, a2: f64, a3: f64, x0: f64x4, x1: f64x4) -> f64 {
     lerp(a3, res[0], res[1])
 }
 
+/// Trilinear interpolation for three separate coordinate dimensions simultaneously using 4-lane SIMD.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -113,6 +116,7 @@ fn lerp2_simd(a1: f64x4, a2: f64x2, x0: f64x4, x1: f64x4) -> f64x2 {
     lerp_2x(a2, a, b)
 }
 
+/// Linear interpolation for 2-lane SIMD vectors (`f64x2`).
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -120,6 +124,7 @@ pub fn lerp_2x(alpha: f64x2, a: f64x2, b: f64x2) -> f64x2 {
     a + alpha * (b - a)
 }
 
+/// Linear interpolation for 3-dimensional double vectors (`DVec3`).
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -177,6 +182,7 @@ pub fn lerp3_4x(
     )
 }
 
+/// Trilinear interpolation for 4 lanes, optimized using 8-lane SIMD vectors (`f64x8`) for bilinear steps.
 #[inline]
 #[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
 #[must_use]

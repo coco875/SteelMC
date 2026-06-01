@@ -30,6 +30,10 @@ pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
     gx * x + gy * y + gz * z
 }
 
+/// Gather gradient components for 8 hashes into separate x/y/z SIMD vectors of size 8,
+/// then compute the dot product with the given position vectors.
+#[inline]
+#[must_use]
 pub fn grad_dot_8x(hashes: [usize; 8], x: f64x8, y: f64x8, z: f64x8) -> f64x8 {
     let h0 = f64x4::from_array(GRADIENT_4[hashes[0] & 15]);
     let h1 = f64x4::from_array(GRADIENT_4[hashes[1] & 15]);
