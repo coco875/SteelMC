@@ -275,23 +275,21 @@ impl ImprovedNoise {
             h111[i] = self.p(xy11 as i32 + zf + 1);
         }
 
-        let xr_v0 = f64x4::splat(xr);
-        let xr_v1 = f64x4::splat(xr - 1.0);
-        let zr_v0 = f64x4::splat(zr);
-        let zr_v1 = f64x4::splat(zr - 1.0);
+        // Vectorized gradient dot products
+        let xr_v = f64x4::splat(xr);
+        let zr_v = f64x4::splat(zr);
+        let xr_m1 = xr_v - f64x4::splat(1.0);
+        let yr_m1 = yrs - f64x4::splat(1.0);
+        let zr_m1 = zr_v - f64x4::splat(1.0);
 
-        let yr_v0 = yrs;
-        let yr_v1 = yrs - f64x4::splat(1.0);
-
-        // Pair the hashes exactly as the scalar code does, which has index 1 and 2 swapped
-        let d000 = grad_dot_4x(h000, xr_v0, yr_v0, zr_v0);
-        let d100 = grad_dot_4x(h010, xr_v1, yr_v0, zr_v0);
-        let d010 = grad_dot_4x(h100, xr_v0, yr_v1, zr_v0);
-        let d110 = grad_dot_4x(h110, xr_v1, yr_v1, zr_v0);
-        let d001 = grad_dot_4x(h001, xr_v0, yr_v0, zr_v1);
-        let d101 = grad_dot_4x(h011, xr_v1, yr_v0, zr_v1);
-        let d011 = grad_dot_4x(h101, xr_v0, yr_v1, zr_v1);
-        let d111 = grad_dot_4x(h111, xr_v1, yr_v1, zr_v1);
+        let d000 = grad_dot_4x(h000, xr_v, yrs, zr_v);
+        let d100 = grad_dot_4x(h100, xr_m1, yrs, zr_v);
+        let d010 = grad_dot_4x(h010, xr_v, yr_m1, zr_v);
+        let d110 = grad_dot_4x(h110, xr_m1, yr_m1, zr_v);
+        let d001 = grad_dot_4x(h001, xr_v, yrs, zr_m1);
+        let d101 = grad_dot_4x(h101, xr_m1, yrs, zr_m1);
+        let d011 = grad_dot_4x(h011, xr_v, yr_m1, zr_m1);
+        let d111 = grad_dot_4x(h111, xr_m1, yr_m1, zr_m1);
 
         // Smoothstep — x and z are shared across lanes
         let x_alpha = f64x4::splat(smoothstep(xr));
