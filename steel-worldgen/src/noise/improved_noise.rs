@@ -315,36 +315,38 @@ impl ImprovedNoise {
     ) -> f64 {
         let x0 = self.p(x);
         let x1 = self.p(x + 1);
-        let xy = [
-            self.p(x0 as i32 + y),     // 0 0
-            self.p(x0 as i32 + y + 1), // 0 1
-            self.p(x1 as i32 + y),     // 1 0
-            self.p(x1 as i32 + y + 1), // 1 1
-        ];
+        let xy00 = self.p(x0 as i32 + y);
+        let xy01 = self.p(x0 as i32 + y + 1);
+        let xy10 = self.p(x1 as i32 + y);
+        let xy11 = self.p(x1 as i32 + y + 1);
 
-        // Get hashes and gradient vectors for all 8 corners
-        let h0 = xy.map(|xy| self.p(xy as i32 + z));
-        let h1 = xy.map(|xy| self.p(xy as i32 + z + 1));
+        let h000 = self.p(xy00 as i32 + z);
+        let h100 = self.p(xy10 as i32 + z);
+        let h010 = self.p(xy01 as i32 + z);
+        let h110 = self.p(xy11 as i32 + z);
+        let h001 = self.p(xy00 as i32 + z + 1);
+        let h101 = self.p(xy10 as i32 + z + 1);
+        let h011 = self.p(xy01 as i32 + z + 1);
+        let h111 = self.p(xy11 as i32 + z + 1);
 
-        let g000 = DVec3::from_array(GRADIENT[h0[0b00] & 15]);
-        let g100 = DVec3::from_array(GRADIENT[h0[0b10] & 15]);
-        let g010 = DVec3::from_array(GRADIENT[h0[0b01] & 15]);
-        let g110 = DVec3::from_array(GRADIENT[h0[0b11] & 15]);
-        let g001 = DVec3::from_array(GRADIENT[h1[0b00] & 15]);
-        let g101 = DVec3::from_array(GRADIENT[h1[0b10] & 15]);
-        let g011 = DVec3::from_array(GRADIENT[h1[0b01] & 15]);
-        let g111 = DVec3::from_array(GRADIENT[h1[0b11] & 15]);
-
-        let x4 = f64x4::from_array([r.x, r.x - 1., r.x, r.x - 1.]);
-        let y4 = f64x4::from_array([r.y, r.y, r.y - 1., r.y - 1.]);
-        let z4 = f64x4::splat(r.z);
+        let g000 = DVec3::from_array(GRADIENT[h000 & 15]);
+        let g100 = DVec3::from_array(GRADIENT[h100 & 15]);
+        let g010 = DVec3::from_array(GRADIENT[h010 & 15]);
+        let g110 = DVec3::from_array(GRADIENT[h110 & 15]);
+        let g001 = DVec3::from_array(GRADIENT[h001 & 15]);
+        let g101 = DVec3::from_array(GRADIENT[h101 & 15]);
+        let g011 = DVec3::from_array(GRADIENT[h011 & 15]);
+        let g111 = DVec3::from_array(GRADIENT[h111 & 15]);
 
         // Gradient dot products at each corner
-        let d0 = grad_dot_4x(h0, x4, y4, z4);
-
-        let z4 = z4 - f64x4::splat(1.);
-        let d1 = grad_dot_4x(h1, x4, y4, z4);
-
+        let d000 = grad_dot(h000, r.x, r.y, r.z);
+        let d100 = grad_dot(h100, r.x - 1.0, r.y, r.z);
+        let d010 = grad_dot(h010, r.x, r.y - 1.0, r.z);
+        let d110 = grad_dot(h110, r.x - 1.0, r.y - 1.0, r.z);
+        let d001 = grad_dot(h001, r.x, r.y, r.z - 1.0);
+        let d101 = grad_dot(h101, r.x - 1.0, r.y, r.z - 1.0);
+        let d011 = grad_dot(h011, r.x, r.y - 1.0, r.z - 1.0);
+        let d111 = grad_dot(h111, r.x - 1.0, r.y - 1.0, r.z - 1.0);
         let alpha = smoothstep_3x(r);
 
         // Interpolate gradient components for direct derivative contribution
@@ -356,22 +358,10 @@ impl ImprovedNoise {
         let a1 = DVec3::new(alpha.y, alpha.z, alpha.x);
         let a2 = DVec3::new(alpha.z, alpha.x, alpha.y);
 
-        let ax1 = simd_swizzle!(d0, d1, [0b10, 0b11, 0b10 + 4, 0b11 + 4]);
-        let ax0 = simd_swizzle!(d0, d1, [0b00, 0b01, 0b00 + 4, 0b01 + 4]);
-        let ax = ax1 - ax0;
-
-        let bx1 = simd_swizzle!(d0, d1, [0b01, 0b01 + 4, 0b11, 0b11 + 4]);
-        let bx0 = simd_swizzle!(d0, d1, [0b00, 0b00 + 4, 0b10, 0b10 + 4]);
-        let bx = bx1 - bx0;
-
-        let cx1 = d1;
-        let cx0 = d0;
-        let cx = cx1 - cx0;
-
-        let x00 = DVec3::new(bx[0b00], ax[0b00], cx[0b00]);
-        let x10 = DVec3::new(bx[0b10], ax[0b10], cx[0b10]);
-        let x01 = DVec3::new(bx[0b01], ax[0b01], cx[0b01]);
-        let x11 = DVec3::new(bx[0b11], ax[0b11], cx[0b11]);
+        let x00 = DVec3::new(d100 - d000, d010 - d000, d001 - d000);
+        let x10 = DVec3::new(d110 - d010, d011 - d001, d101 - d100);
+        let x01 = DVec3::new(d101 - d001, d110 - d100, d011 - d010);
+        let x11 = DVec3::new(d111 - d011, d111 - d101, d111 - d110);
 
         let d2_v = lerp2_3x(a1, a2, x00, x10, x01, x11);
 
@@ -385,8 +375,7 @@ impl ImprovedNoise {
         derivative_out[2] = d.z;
 
         lerp3(
-            alpha.x, alpha.y, alpha.z, d0[0b00], d0[0b10], d0[0b01], d0[0b11], d1[0b00], d1[0b10],
-            d1[0b01], d1[0b11],
+            alpha.x, alpha.y, alpha.z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
 }
