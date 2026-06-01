@@ -143,23 +143,62 @@ impl ImprovedNoise {
         zr: f64,
         yr_original: f64,
     ) -> f64 {
+        let x = x as u8;
+        let y = y as u8;
+        let z = z as u8;
         // Get permutation indices for the 8 corners
-        let x0 = self.p(x);
-        let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let x0 = self.p[x as usize];
+        let x1 = self.p[x.wrapping_add(1) as usize];
+
+        let xy00 = self.p[x0.wrapping_add(y) as usize];
+        let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+        let xy10 = self.p[x1.wrapping_add(y) as usize];
+        let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
 
         // Calculate gradient dot products at each corner
-        let d000 = grad_dot(self.p(xy00 as i32 + z), xr, yr, zr);
-        let d100 = grad_dot(self.p(xy10 as i32 + z), xr - 1.0, yr, zr);
-        let d010 = grad_dot(self.p(xy01 as i32 + z), xr, yr - 1.0, zr);
-        let d110 = grad_dot(self.p(xy11 as i32 + z), xr - 1.0, yr - 1.0, zr);
-        let d001 = grad_dot(self.p(xy00 as i32 + z + 1), xr, yr, zr - 1.0);
-        let d101 = grad_dot(self.p(xy10 as i32 + z + 1), xr - 1.0, yr, zr - 1.0);
-        let d011 = grad_dot(self.p(xy01 as i32 + z + 1), xr, yr - 1.0, zr - 1.0);
-        let d111 = grad_dot(self.p(xy11 as i32 + z + 1), xr - 1.0, yr - 1.0, zr - 1.0);
+        let d000 = grad_dot(self.p[xy00.wrapping_add(z) as usize] as usize, xr, yr, zr);
+        let d100 = grad_dot(
+            self.p[xy10.wrapping_add(z) as usize] as usize,
+            xr - 1.0,
+            yr,
+            zr,
+        );
+        let d010 = grad_dot(
+            self.p[xy01.wrapping_add(z) as usize] as usize,
+            xr,
+            yr - 1.0,
+            zr,
+        );
+        let d110 = grad_dot(
+            self.p[xy11.wrapping_add(z) as usize] as usize,
+            xr - 1.0,
+            yr - 1.0,
+            zr,
+        );
+        let d001 = grad_dot(
+            self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize,
+            xr,
+            yr,
+            zr - 1.0,
+        );
+        let d101 = grad_dot(
+            self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize,
+            xr - 1.0,
+            yr,
+            zr - 1.0,
+        );
+        let d011 = grad_dot(
+            self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize,
+            xr,
+            yr - 1.0,
+            zr - 1.0,
+        );
+        let d111 = grad_dot(
+            self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize,
+            xr - 1.0,
+            yr - 1.0,
+            zr - 1.0,
+        );
 
         // Apply smoothstep interpolation
         let x_alpha = smoothstep(xr);
