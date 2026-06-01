@@ -4,16 +4,15 @@
 
 use std::simd::cmp::SimdPartialOrd;
 use std::simd::num::SimdFloat;
-use std::simd::{Select, StdFloat, f64x8, simd_swizzle};
-use std::simd::{f64x2, f64x4, i32x4};
+use std::simd::{Select, StdFloat, simd_swizzle};
+use std::simd::{f64x2, f64x4};
 
 use crate::random::Random;
 use glam::DVec3;
-use steel_math::simd_utils::{concat_4x, splat_4x, transpose, transpose_2x};
+use steel_math::simd_utils::transpose;
 use steel_math::{
-    GRADIENT, GRADIENT_4, floor, grad_dot, grad_dot_4x, grad_dot_8x, lerp2, lerp2_3x, lerp3,
-    lerp3_3x_simd, lerp3_4x, lerp3_simd, lerp3_simd_4x, smoothstep, smoothstep_3x, smoothstep_4x,
-    smoothstep_derivative, smoothstep_derivative_3x,
+    GRADIENT_4, grad_dot_4x, lerp2_3x, lerp3_3x_simd, lerp3_4x, lerp3_simd, smoothstep,
+    smoothstep_3x, smoothstep_4x, smoothstep_derivative_3x,
 };
 
 /// Improved Perlin noise generator.
