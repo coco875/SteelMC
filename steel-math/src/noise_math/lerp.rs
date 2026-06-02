@@ -1,9 +1,7 @@
 use core::simd::f64x4;
-use std::simd::{f64x2, f64x8, simd_swizzle};
+use std::simd::{f64x2, f64x8};
 
 use glam::DVec3;
-
-use crate::simd_utils::splat_4x;
 
 /// Linear interpolation.
 ///
@@ -160,27 +158,6 @@ pub fn lerp3_4x(
         lerp2_4x(a1, a2, x000, x100, x010, x110),
         lerp2_4x(a1, a2, x001, x101, x011, x111),
     )
-}
-
-/// Trilinear interpolation for 4 lanes, optimized using 8-lane SIMD vectors (`f64x8`) for bilinear steps.
-#[inline]
-#[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
-#[must_use]
-pub fn lerp3_simd_4x(
-    a1: f64x4,
-    a2: f64x4,
-    a3: f64x4,
-    x00: f64x8,
-    x10: f64x8,
-    x01: f64x8,
-    x11: f64x8,
-) -> f64x4 {
-    let a1 = splat_4x(a1);
-    let a2 = splat_4x(a2);
-    let res = lerp2_8x(a1, a2, x00, x10, x01, x11);
-    let lower_half: f64x4 = simd_swizzle!(res, [0, 1, 2, 3]);
-    let upper_half = simd_swizzle!(res, [4, 5, 6, 7]);
-    lerp_4x(a3, lower_half, upper_half)
 }
 
 #[cfg(test)]
