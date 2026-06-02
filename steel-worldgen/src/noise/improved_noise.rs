@@ -125,12 +125,6 @@ impl ImprovedNoise {
         self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y - yr_fudge, r.z, r.y)
     }
 
-    /// Look up the permutation value at index x.
-    #[inline]
-    const fn p(&self, x: i32) -> usize {
-        self.p[(x & 255) as usize] as usize
-    }
-
     /// Sample noise at grid point and interpolate.
     #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
     fn sample_and_lerp(
@@ -277,10 +271,11 @@ impl ImprovedNoise {
         yrs: f64x4,
         yrs_original: f64x4,
     ) -> f64x4 {
+        let xf = xf as u8;
+        let zf = zf as u8;
         // Shared x permutation lookups (2 instead of 2×4)
-        let x0 = self.p(xf);
-        let x1 = self.p(xf + 1);
-
+        let x0 = self.p[xf as usize];
+        let x1 = self.p[xf.wrapping_add(1) as usize];
         // Per-lane y-dependent permutation lookups
         let yf = [
             ys_floor[0] as i32,
@@ -299,19 +294,19 @@ impl ImprovedNoise {
         let mut h111 = [0usize; 4];
 
         for i in 0..4 {
-            let y = yf[i];
-            let xy00 = self.p(x0 as i32 + y);
-            let xy01 = self.p(x0 as i32 + y + 1);
-            let xy10 = self.p(x1 as i32 + y);
-            let xy11 = self.p(x1 as i32 + y + 1);
-            h000[i] = self.p(xy00 as i32 + zf);
-            h100[i] = self.p(xy10 as i32 + zf);
-            h010[i] = self.p(xy01 as i32 + zf);
-            h110[i] = self.p(xy11 as i32 + zf);
-            h001[i] = self.p(xy00 as i32 + zf + 1);
-            h101[i] = self.p(xy10 as i32 + zf + 1);
-            h011[i] = self.p(xy01 as i32 + zf + 1);
-            h111[i] = self.p(xy11 as i32 + zf + 1);
+            let y = yf[i] as u8;
+            let xy00 = self.p[x0.wrapping_add(y) as usize];
+            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+            let xy10 = self.p[x1.wrapping_add(y) as usize];
+            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+            h000[i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
+            h100[i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
+            h010[i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
+            h110[i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
+            h001[i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h101[i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h011[i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h111[i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
         }
 
         // Vectorized gradient dot products
@@ -350,21 +345,25 @@ impl ImprovedNoise {
         r: DVec3,
         derivative_out: &mut [f64; 3],
     ) -> f64 {
-        let x0 = self.p(x);
-        let x1 = self.p(x + 1);
-        let xy00 = self.p(x0 as i32 + y);
-        let xy01 = self.p(x0 as i32 + y + 1);
-        let xy10 = self.p(x1 as i32 + y);
-        let xy11 = self.p(x1 as i32 + y + 1);
+        let x = x as u8;
+        let y = y as u8;
+        let z = z as u8;
 
-        let h000 = self.p(xy00 as i32 + z);
-        let h100 = self.p(xy10 as i32 + z);
-        let h010 = self.p(xy01 as i32 + z);
-        let h110 = self.p(xy11 as i32 + z);
-        let h001 = self.p(xy00 as i32 + z + 1);
-        let h101 = self.p(xy10 as i32 + z + 1);
-        let h011 = self.p(xy01 as i32 + z + 1);
-        let h111 = self.p(xy11 as i32 + z + 1);
+        let x0 = self.p[x as usize];
+        let x1 = self.p[x.wrapping_add(1) as usize];
+        let xy00 = self.p[x0.wrapping_add(y) as usize];
+        let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+        let xy10 = self.p[x1.wrapping_add(y) as usize];
+        let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+
+        let h000 = self.p[xy00.wrapping_add(z) as usize] as usize;
+        let h100 = self.p[xy10.wrapping_add(z) as usize] as usize;
+        let h010 = self.p[xy01.wrapping_add(z) as usize] as usize;
+        let h110 = self.p[xy11.wrapping_add(z) as usize] as usize;
+        let h001 = self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h101 = self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h011 = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
+        let h111 = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
 
         let g000 = DVec3::from_array(GRADIENT[h000 & 15]);
         let g100 = DVec3::from_array(GRADIENT[h100 & 15]);
