@@ -3,7 +3,7 @@ mod clamp;
 mod corner_noise_3d;
 mod cube;
 mod dot;
-mod floor;
+mod fast_floor;
 mod grad_dot;
 mod inverse_lerp;
 mod lerp;
@@ -17,8 +17,8 @@ pub use clamp::{clamp, clamp_i32, clamped_lerp, clamped_lerp_4x};
 pub use corner_noise_3d::corner_noise_3d;
 pub use cube::cube;
 pub use dot::dot;
-pub use floor::{floor, lfloor};
-pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_8x};
+pub use fast_floor::{fast_floor, fast_floor_2x, fast_floor_3x, fast_lfloor};
+pub use grad_dot::{grad_dot, grad_dot_4x};
 pub use inverse_lerp::inverse_lerp;
 pub use lerp::{
     lerp, lerp_2x, lerp_3x, lerp_4x, lerp_8x, lerp2, lerp2_3x, lerp2_4x, lerp2_8x, lerp3, lerp3_3x,

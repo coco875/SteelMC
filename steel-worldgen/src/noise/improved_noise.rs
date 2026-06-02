@@ -3,15 +3,15 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::num::SimdFloat;
+use std::simd::num::{SimdFloat, SimdInt};
 use std::simd::{Select, StdFloat};
 use std::simd::{f64x2, f64x4};
 
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x, lerp3_4x, smoothstep,
-    smoothstep_3x, smoothstep_4x, smoothstep_derivative_3x,
+    GRADIENT, fast_floor_2x, fast_floor_3x, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x,
+    lerp3_4x, smoothstep, smoothstep_3x, smoothstep_4x, smoothstep_derivative_3x,
 };
 
 /// Improved Perlin noise generator.
@@ -63,11 +63,10 @@ impl ImprovedNoise {
     #[must_use]
     pub fn noise(&self, pos: DVec3) -> f64 {
         let pos = pos + self.offset;
-        let posf = pos.floor();
-        let r = pos - posf;
+        let posf = fast_floor_3x(pos);
+        let r = pos - posf.as_dvec3();
 
-        let pos = posf.as_ivec3();
-        self.sample_and_lerp(pos.x, pos.y, pos.z, r.x, r.y, r.z, r.y)
+        self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y, r.z, r.y)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -77,11 +76,10 @@ impl ImprovedNoise {
     #[must_use]
     pub fn noise_with_derivative(&self, pos: DVec3, derivative_out: &mut [f64; 3]) -> f64 {
         let pos = pos + self.offset;
-        let posf = pos.floor();
-        let r = pos - posf;
+        let posf = fast_floor_3x(pos);
+        let r = pos - posf.as_dvec3();
 
-        let pos = posf.as_ivec3();
-        self.sample_with_derivative(pos.x, pos.y, pos.z, r, derivative_out)
+        self.sample_with_derivative(posf.x, posf.y, posf.z, r, derivative_out)
     }
 
     /// Sample noise with Y scale and fudge parameters.
@@ -100,8 +98,8 @@ impl ImprovedNoise {
     )]
     pub fn noise_with_y_scale(&self, pos: DVec3, y_scale: f64, y_fudge: f64) -> f64 {
         let pos = pos + self.offset;
-        let posf = pos.floor();
-        let r = pos - posf;
+        let posf = fast_floor_3x(pos);
+        let r = pos - posf.as_dvec3();
 
         // Calculate Y fudge for terrain generation
         #[expect(
@@ -119,7 +117,6 @@ impl ImprovedNoise {
         } else {
             0.0
         };
-        let posf = posf.as_ivec3();
         self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y - yr_fudge, r.z, r.y)
     }
 
@@ -224,8 +221,8 @@ impl ImprovedNoise {
         let xz = f64x2::from_array([x, z]);
         let xzo = f64x2::from_array([self.offset.x, self.offset.z]);
         let xz = xz + xzo;
-        let xzf = xz.floor();
-        let xzr = xz - xzf;
+        let xzf = fast_floor_2x(xz);
+        let xzr = xz - xzf.cast::<f64>();
 
         // Per-lane y offset and floor
         let ys = ys + f64x4::splat(self.offset.y);
