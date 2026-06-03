@@ -300,9 +300,9 @@ impl WindOffsetter {
 
         let dy = self.origin_y - pos.y();
         pos.offset(
-            floor(wind_x * f64::from(dy)),
+            fast_floor(wind_x * f64::from(dy)),
             0,
-            floor(wind_z * f64::from(dy)),
+            fast_floor(wind_z * f64::from(dy)),
         )
     }
 }
