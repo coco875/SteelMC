@@ -1,9 +1,8 @@
 use core::simd::f64x4;
-use std::simd::f64x8;
 
 use crate::{
     GRADIENT, GRADIENT_4,
-    simd_utils::{concat_4x, transpose, transpose_2x},
+    simd_utils::transpose,
 };
 
 /// Calculate the dot product of a gradient vector and the position vector.

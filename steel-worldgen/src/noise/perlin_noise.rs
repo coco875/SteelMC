@@ -5,8 +5,7 @@
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use glam::DVec3;
-use steel_math::{wrap, wrap_3x};
+use steel_math::wrap;
 
 /// Octave-based Perlin noise generator.
 ///

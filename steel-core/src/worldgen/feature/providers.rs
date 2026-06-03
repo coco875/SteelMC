@@ -1,6 +1,5 @@
 use super::prelude::*;
 use super::runner::FeatureDecorationRunner;
-use glam::DVec3;
 use smallvec::SmallVec;
 use steel_math::map_clamped;
 

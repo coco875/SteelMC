@@ -3,16 +3,14 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::num::{SimdFloat, SimdInt};
 use std::simd::{Select, StdFloat};
-use std::simd::{f64x2, f64x4};
+use std::simd::f64x4;
 
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, fast_floor, fast_floor_2x, fast_floor_3x, grad_dot, grad_dot_4x, lerp2_3x, lerp3,
-    lerp3_3x, lerp3_4x, smoothstep, smoothstep_3x, smoothstep_4x, smoothstep_derivative,
-    smoothstep_derivative_3x,
+    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2_3x, lerp3,
+    lerp3_3x, lerp3_4x, smoothstep, smoothstep_4x, smoothstep_derivative,
 };
 
 /// Improved Perlin noise generator.

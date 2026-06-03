@@ -5,7 +5,6 @@
 
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
-use glam::DVec3;
 use rustc_hash::FxHashMap;
 use steel_utils::locks::SyncMutex;
 
