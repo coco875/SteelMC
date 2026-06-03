@@ -285,8 +285,8 @@ mod tests {
         let noise1 = PerlinNoise::create(&splitter, -3, &amplitudes);
         let noise2 = PerlinNoise::create(&splitter, -3, &amplitudes);
 
-        let v1 = noise1.get_value(DVec3::new(100.0, 64.0, 100.0));
-        let v2 = noise2.get_value(DVec3::new(100.0, 64.0, 100.0));
+        let v1 = noise1.get_value(100.0, 64.0, 100.0);
+        let v2 = noise2.get_value(100.0, 64.0, 100.0);
         assert!((v1 - v2).abs() < 1e-15);
     }
 
@@ -297,14 +297,14 @@ mod tests {
 
         let noise = PerlinNoise::create(&splitter, -4, &[1.0, 0.0, 1.0, 1.0]);
 
-        for pos in [
-            DVec3::new(0.0, 0.0, 0.0),
-            DVec3::new(100.0, 64.0, -100.0),
-            DVec3::new(-4096.25, -32.5, 1024.75),
+        for (x, y, z) in [
+            (0.0, 0.0, 0.0),
+            (100.0, 64.0, -100.0),
+            (-4096.25, -32.5, 1024.75),
         ] {
             assert!(
-                (noise.get_value(pos)
-                    - noise.get_value_with_y_params(pos.x, pos.y, pos.z, 0.0, 0.0, false))
+                (noise.get_value(x, y, z)
+                    - noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false))
                 .abs()
                     < 1e-15
             );
@@ -320,7 +320,7 @@ mod tests {
 
         // Sample at different locations
         let values: Vec<f64> = (0..10)
-            .map(|i| noise.get_value(DVec3::new(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0)))
+            .map(|i| noise.get_value(f64::from(i) * 50.0, 64.0, f64::from(i) * 50.0))
             .collect();
 
         // Check there's variation
@@ -340,8 +340,8 @@ mod tests {
         let noise2 = PerlinNoise::create_from_random(&mut random, -3, &amplitudes);
 
         // These should produce different values since the random state advanced
-        let v1 = noise1.get_value(DVec3::new(100.0, 64.0, 100.0));
-        let v2 = noise2.get_value(DVec3::new(100.0, 64.0, 100.0));
+        let v1 = noise1.get_value(100.0, 64.0, 100.0);
+        let v2 = noise2.get_value(100.0, 64.0, 100.0);
         assert!(
             (v1 - v2).abs() > 0.001,
             "Two PerlinNoise from sequential random should differ: v1={v1}, v2={v2}",

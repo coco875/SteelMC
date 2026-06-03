@@ -3,14 +3,14 @@
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::{Select, StdFloat};
 use std::simd::f64x4;
+use std::simd::{Select, StdFloat};
 
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2_3x, lerp3,
-    lerp3_3x, lerp3_4x, smoothstep, smoothstep_4x, smoothstep_derivative,
+    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x, lerp3_4x, smoothstep,
+    smoothstep_4x, smoothstep_derivative,
 };
 
 /// Improved Perlin noise generator.
@@ -528,13 +528,15 @@ mod tests {
             reason = "determinism test: identical seeds must produce bit-identical offsets"
         )]
         {
-            assert_eq!(noise1.offset, noise2.offset);
+            assert_eq!(noise1.xo, noise2.xo);
+            assert_eq!(noise1.yo, noise2.yo);
+            assert_eq!(noise1.zo, noise2.zo);
         }
         assert_eq!(noise1.p, noise2.p);
 
         // Same coordinates should produce same values
-        let v1 = noise1.noise(DVec3::new(100.0, 64.0, 100.0));
-        let v2 = noise2.noise(DVec3::new(100.0, 64.0, 100.0));
+        let v1 = noise1.noise(100.0, 64.0, 100.0);
+        let v2 = noise2.noise(100.0, 64.0, 100.0);
         assert!((v1 - v2).abs() < 1e-15);
     }
 
@@ -543,12 +545,14 @@ mod tests {
         let mut rng = Xoroshiro::from_seed(42);
         let noise = ImprovedNoise::new(&mut rng);
 
-        for pos in [
-            DVec3::new(0.0, 0.0, 0.0),
-            DVec3::new(1.25, 64.5, -30.75),
-            DVec3::new(-1000.0, -20.25, 4096.5),
+        for (x, y, z) in [
+            (0.0, 0.0, 0.0),
+            (1.25, 64.5, -30.75),
+            (-1000.0, -20.25, 4096.5),
         ] {
-            assert!((noise.noise(pos) - noise.noise_with_y_scale(pos, 0.0, 0.0)).abs() < 1e-15);
+            assert!(
+                (noise.noise(x, y, z) - noise.noise_with_y_scale(x, y, z, 0.0, 0.0)).abs() < 1e-15
+            );
         }
     }
 
@@ -560,7 +564,7 @@ mod tests {
         // Sample at various points and verify output is in reasonable range
         for x in -10..10 {
             for z in -10..10 {
-                let v = noise.noise(DVec3::new(f64::from(x) * 10.0, 64.0, f64::from(z) * 10.0));
+                let v = noise.noise(f64::from(x) * 10.0, 64.0, f64::from(z) * 10.0);
                 // Perlin noise should be in [-1, 1] range roughly
                 assert!(
                     (-1.5..=1.5).contains(&v),
@@ -576,10 +580,10 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
 
         // Noise at different positions should generally be different
-        let v1 = noise.noise(DVec3::new(0.0, 0.0, 0.0));
-        let v2 = noise.noise(DVec3::new(100.0, 0.0, 0.0));
-        let v3 = noise.noise(DVec3::new(0.0, 100.0, 0.0));
-        let v4 = noise.noise(DVec3::new(0.0, 0.0, 100.0));
+        let v1 = noise.noise(0.0, 0.0, 0.0);
+        let v2 = noise.noise(100.0, 0.0, 0.0);
+        let v3 = noise.noise(0.0, 100.0, 0.0);
+        let v4 = noise.noise(0.0, 0.0, 100.0);
 
         // At least some should be different (statistically almost certain)
         #[expect(
@@ -597,18 +601,18 @@ mod tests {
 
         // noise_with_derivative should return the same value as noise()
         // (when no y_scale/y_fudge is used)
-        for &pos in &[
-            DVec3::new(0.0, 0.0, 0.0),
-            DVec3::new(1.5, 2.3, 3.7),
-            DVec3::new(-5.2, 64.0, 100.3),
-            DVec3::new(0.25, 0.25, 0.25),
+        for &(x, y, z) in &[
+            (0.0, 0.0, 0.0),
+            (1.5, 2.3, 3.7),
+            (-5.2, 64.0, 100.3),
+            (0.25, 0.25, 0.25),
         ] {
-            let v1 = noise.noise(pos);
+            let v1 = noise.noise(x, y, z);
             let mut deriv = [0.0; 3];
-            let v2 = noise.noise_with_derivative(pos, &mut deriv);
+            let v2 = noise.noise_with_derivative(x, y, z, &mut deriv);
             assert!(
                 (v1 - v2).abs() < 1e-12,
-                "Value mismatch at ({pos}): {v1} vs {v2}",
+                "Value mismatch at ({x}, {y}, {z}): {v1} vs {v2}",
             );
         }
     }
@@ -619,7 +623,7 @@ mod tests {
         let noise = ImprovedNoise::new(&mut rng);
 
         let mut deriv = [0.0; 3];
-        let _ = noise.noise_with_derivative(DVec3::new(1.5, 2.3, 3.7), &mut deriv);
+        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
 
         // At a non-grid point, at least some derivatives should be nonzero
         let any_nonzero = deriv.iter().any(|&d| d.abs() > 1e-15);
@@ -633,13 +637,13 @@ mod tests {
 
         // First call
         let mut deriv = [0.0; 3];
-        let _ = noise.noise_with_derivative(DVec3::new(1.5, 2.3, 3.7), &mut deriv);
+        let _ = noise.noise_with_derivative(1.5, 2.3, 3.7, &mut deriv);
         let first = deriv;
 
         // Second call should accumulate (+=)
-        let _ = noise.noise_with_derivative(DVec3::new(4.1, 5.2, 6.3), &mut deriv);
+        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv);
         let mut deriv2 = [0.0; 3];
-        let _ = noise.noise_with_derivative(DVec3::new(4.1, 5.2, 6.3), &mut deriv2);
+        let _ = noise.noise_with_derivative(4.1, 5.2, 6.3, &mut deriv2);
 
         for i in 0..3 {
             let expected = first[i] + deriv2[i];
