@@ -705,7 +705,7 @@ impl TranspileContext {
                 let scale = Literal::f64_unsuffixed(*xz_scale);
                 quote! {
                     self.#field = noises.#noise_field.get_value(
-                        glam::DVec3::new(f64::from(x) * #scale, 0.0, f64::from(z) * #scale),
+                        f64::from(x) * #scale, 0.0, f64::from(z) * #scale,
                     );
                 }
             })
@@ -1265,9 +1265,9 @@ impl TranspileContext {
                 let xz_scale = Literal::f64_unsuffixed(n.xz_scale);
                 let y_scale = Literal::f64_unsuffixed(n.y_scale);
                 if is_flat || n.y_scale == 0.0 {
-                    quote! { noises.#field.get_value(glam::DVec3::new(f64::from(x) * #xz_scale, 0.0, f64::from(z) * #xz_scale)) }
+                    quote! { noises.#field.get_value(f64::from(x) * #xz_scale, 0.0, f64::from(z) * #xz_scale) }
                 } else {
-                    quote! { noises.#field.get_value(glam::DVec3::new(f64::from(x) * #xz_scale, f64::from(y) * #y_scale, f64::from(z) * #xz_scale)) }
+                    quote! { noises.#field.get_value(f64::from(x) * #xz_scale, f64::from(y) * #y_scale, f64::from(z) * #xz_scale) }
                 }
             }
 
@@ -1283,11 +1283,10 @@ impl TranspileContext {
                     quote! {{
                         let dx = #dx;
                         let dz = #dz;
-                        noises.#field.get_value(glam::DVec3::new(
+                        noises.#field.get_value(
                             f64::from(x) * #xz_scale + dx,
                             0.0,
                             f64::from(z) * #xz_scale + dz,
-                        )
                         )
                     }}
                 } else {
@@ -1296,11 +1295,9 @@ impl TranspileContext {
                         let dy = #dy;
                         let dz = #dz;
                         noises.#field.get_value(
-                            glam::DVec3::new(
                             f64::from(x) * #xz_scale + dx,
                             f64::from(y) * #y_scale + dy,
                             f64::from(z) * #xz_scale + dz,
-                            )
                         )
                     }}
                 }
@@ -1308,20 +1305,20 @@ impl TranspileContext {
 
             DensityFunction::ShiftA(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value(glam::DVec3::new(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25)) * 4.0 }
+                quote! { noises.#field.get_value(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25) * 4.0 }
             }
 
             DensityFunction::ShiftB(s) => {
                 let field = noise_field_ident(&s.noise_id);
-                quote! { noises.#field.get_value(glam::DVec3::new(f64::from(z) * 0.25, f64::from(x) * 0.25, 0.0)) * 4.0 }
+                quote! { noises.#field.get_value(f64::from(z) * 0.25, f64::from(x) * 0.25, 0.0) * 4.0 }
             }
 
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 if is_flat {
-                    quote! { noises.#field.get_value(glam::DVec3::new(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25)) * 4.0 }
+                    quote! { noises.#field.get_value(f64::from(x) * 0.25, 0.0, f64::from(z) * 0.25) * 4.0 }
                 } else {
-                    quote! { noises.#field.get_value(glam::DVec3::new(f64::from(x) * 0.25, f64::from(y) * 0.25, f64::from(z) * 0.25)) * 4.0 }
+                    quote! { noises.#field.get_value(f64::from(x) * 0.25, f64::from(y) * 0.25, f64::from(z) * 0.25) * 4.0 }
                 }
             }
 
@@ -1448,7 +1445,7 @@ impl TranspileContext {
                     let rarity = #input_expr;
                     let scale = #mapper.get_values(rarity);
                     scale * noises.#field.get_value(
-                        glam::DVec3::new(f64::from(x) / scale, f64::from(y) / scale, f64::from(z) / scale),
+                        f64::from(x) / scale, f64::from(y) / scale, f64::from(z) / scale,
                     ).abs()
                 }}
             }

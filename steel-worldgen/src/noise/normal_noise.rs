@@ -144,9 +144,11 @@ impl NormalNoise {
     /// The sum is then scaled by the value factor.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, pos: DVec3) -> f64 {
-        let pos2 = pos * INPUT_FACTOR;
-        (self.first.get_value(pos) + self.second.get_value(pos2)) * self.value_factor
+    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
+        let x2 = x * INPUT_FACTOR;
+        let y2 = y * INPUT_FACTOR;
+        let z2 = z * INPUT_FACTOR;
+        (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
     }
 
     /// Get the maximum possible output value.

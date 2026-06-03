@@ -176,14 +176,18 @@ impl PerlinNoise {
     /// Sample the noise at the given coordinates.
     #[inline]
     #[must_use]
-    pub fn get_value(&self, pos: DVec3) -> f64 {
+    pub fn get_value(&self, x: f64, y: f64, z: f64) -> f64 {
         let mut value = 0.0;
         let mut input_factor = self.lowest_freq_input_factor;
         let mut value_factor = self.lowest_freq_value_factor;
 
         for (i, noise_opt) in self.noise_levels.iter().enumerate() {
             if let Some(noise) = noise_opt {
-                let noise_val = noise.noise(wrap_3x(pos * input_factor));
+                let noise_val = noise.noise(
+                    wrap(x * input_factor),
+                    wrap(y * input_factor),
+                    wrap(z * input_factor),
+                );
                 value += self.amplitudes[i] * noise_val * value_factor;
             }
 
@@ -193,7 +197,6 @@ impl PerlinNoise {
 
         value
     }
-
     /// Sample the noise with Y scaling parameters.
     ///
     /// # Arguments
@@ -218,15 +221,13 @@ impl PerlinNoise {
         for (i, noise_opt) in self.noise_levels.iter().enumerate() {
             if let Some(noise) = noise_opt {
                 let noise_val = noise.noise_with_y_scale(
-                    DVec3::new(
-                        wrap(x * input_factor),
-                        if y_flat_hack {
-                            -noise.offset.y
-                        } else {
-                            wrap(y * input_factor)
-                        },
-                        wrap(z * input_factor),
-                    ),
+                    wrap(x * input_factor),
+                    if y_flat_hack {
+                        -noise.yo
+                    } else {
+                        wrap(y * input_factor)
+                    },
+                    wrap(z * input_factor),
                     y_scale * input_factor,
                     y_fudge * input_factor,
                 );

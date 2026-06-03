@@ -10,8 +10,9 @@ use std::simd::{f64x2, f64x4};
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, fast_floor_2x, fast_floor_3x, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x,
-    lerp3_4x, smoothstep, smoothstep_3x, smoothstep_4x, smoothstep_derivative_3x,
+    GRADIENT, fast_floor, fast_floor_2x, fast_floor_3x, grad_dot, grad_dot_4x, lerp2_3x, lerp3,
+    lerp3_3x, lerp3_4x, smoothstep, smoothstep_3x, smoothstep_4x, smoothstep_derivative,
+    smoothstep_derivative_3x,
 };
 
 /// Improved Perlin noise generator.
@@ -23,8 +24,12 @@ use steel_math::{
 pub struct ImprovedNoise {
     /// Permutation table (256 bytes)
     p: [u8; 256],
-    /// Offset for the noise coordinates.
-    pub offset: DVec3,
+    /// X offset for the noise coordinates
+    pub xo: f64,
+    /// Y offset for the noise coordinates
+    pub yo: f64,
+    /// Z offset for the noise coordinates
+    pub zo: f64,
 }
 
 impl ImprovedNoise {
@@ -36,7 +41,6 @@ impl ImprovedNoise {
         let xo = random.next_f64() * 256.0;
         let yo = random.next_f64() * 256.0;
         let zo = random.next_f64() * 256.0;
-        let offset = DVec3::new(xo, yo, zo);
 
         let mut p = [0u8; 256];
         #[expect(
@@ -53,7 +57,7 @@ impl ImprovedNoise {
             p.swap(i, i + offset);
         }
 
-        Self { p, offset }
+        Self { p, xo, yo, zo }
     }
 
     /// Sample noise at the given coordinates.
@@ -61,12 +65,20 @@ impl ImprovedNoise {
     /// This is the standard 3D Perlin noise sampling without Y scaling.
     #[inline]
     #[must_use]
-    pub fn noise(&self, pos: DVec3) -> f64 {
-        let pos = pos + self.offset;
-        let posf = fast_floor_3x(pos);
-        let r = pos - posf.as_dvec3();
+    pub fn noise(&self, x: f64, y: f64, z: f64) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+        let z = z + self.zo;
 
-        self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y, r.z, r.y)
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
+
+        let xr = x - xf as f64;
+        let yr = y - yf as f64;
+        let zr = z - zf as f64;
+
+        self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -74,12 +86,26 @@ impl ImprovedNoise {
     /// Returns the noise value and adds the partial derivatives (dx, dy, dz)
     /// into `derivative_out`. Used by `BlendedNoise` for terrain generation.
     #[must_use]
-    pub fn noise_with_derivative(&self, pos: DVec3, derivative_out: &mut [f64; 3]) -> f64 {
-        let pos = pos + self.offset;
-        let posf = fast_floor_3x(pos);
-        let r = pos - posf.as_dvec3();
+    pub fn noise_with_derivative(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        derivative_out: &mut [f64; 3],
+    ) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+        let z = z + self.zo;
 
-        self.sample_with_derivative(posf.x, posf.y, posf.z, r, derivative_out)
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
+
+        let xr = x - xf as f64;
+        let yr = y - yf as f64;
+        let zr = z - zf as f64;
+
+        self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
     }
 
     /// Sample noise with Y scale and fudge parameters.
@@ -96,10 +122,18 @@ impl ImprovedNoise {
         clippy::similar_names,
         reason = "yr_fudge and y_fudge match vanilla naming"
     )]
-    pub fn noise_with_y_scale(&self, pos: DVec3, y_scale: f64, y_fudge: f64) -> f64 {
-        let pos = pos + self.offset;
-        let posf = fast_floor_3x(pos);
-        let r = pos - posf.as_dvec3();
+    pub fn noise_with_y_scale(&self, x: f64, y: f64, z: f64, y_scale: f64, y_fudge: f64) -> f64 {
+        let x = x + self.xo;
+        let y = y + self.yo;
+        let z = z + self.zo;
+
+        let xf = fast_floor(x);
+        let yf = fast_floor(y);
+        let zf = fast_floor(z);
+
+        let xr = x - xf as f64;
+        let yr = y - yf as f64;
+        let zr = z - zf as f64;
 
         // Calculate Y fudge for terrain generation
         #[expect(
@@ -107,17 +141,17 @@ impl ImprovedNoise {
             reason = "matches vanilla's conditional structure"
         )]
         let yr_fudge = if y_scale != 0.0 {
-            let fudge_limit = if y_fudge >= 0.0 && y_fudge < r.y {
+            let fudge_limit = if y_fudge >= 0.0 && y_fudge < yr {
                 y_fudge
             } else {
-                r.y
+                yr
             };
             // SHIFT_UP_EPSILON = 1.0E-7F in Java (float literal promoted to double)
             (fudge_limit / y_scale + f64::from(1.0e-7_f32)).floor() * y_scale
         } else {
             0.0
         };
-        self.sample_and_lerp(posf.x, posf.y, posf.z, r.x, r.y - yr_fudge, r.z, r.y)
+        self.sample_and_lerp(xf, yf, zf, xr, yr - yr_fudge, zr, yr)
     }
 
     /// Sample noise at grid point and interpolate.
@@ -218,14 +252,15 @@ impl ImprovedNoise {
         y_fudges: f64x4,
     ) -> f64x4 {
         // Shared x/z offset and floor
-        let xz = f64x2::from_array([x, z]);
-        let xzo = f64x2::from_array([self.offset.x, self.offset.z]);
-        let xz = xz + xzo;
-        let xzf = fast_floor_2x(xz);
-        let xzr = xz - xzf.cast::<f64>();
+        let x = x + self.xo;
+        let z = z + self.zo;
+        let xf = fast_floor(x);
+        let zf = fast_floor(z);
+        let xr = x - xf as f64;
+        let zr = z - zf as f64;
 
         // Per-lane y offset and floor
-        let ys = ys + f64x4::splat(self.offset.y);
+        let ys = ys + f64x4::splat(self.yo);
         let ys_floor = ys.floor();
         let yrs = ys - ys_floor;
 
@@ -243,8 +278,7 @@ impl ImprovedNoise {
 
         let yrs_adjusted = yrs - yr_fudge;
 
-        let xzf = xzf.cast::<i32>();
-        self.sample_and_lerp_4x(xzf[0], xzf[1], xzr[0], xzr[1], ys_floor, yrs_adjusted, yrs)
+        self.sample_and_lerp_4x(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
     }
 
     /// Vectorized sample-and-lerp for 4 Y values sharing x/z grid position.
@@ -337,7 +371,9 @@ impl ImprovedNoise {
         x: i32,
         y: i32,
         z: i32,
-        r: DVec3,
+        xr: f64,
+        yr: f64,
+        zr: f64,
         derivative_out: &mut [f64; 3],
     ) -> f64 {
         let x = x as u8;
@@ -370,24 +406,27 @@ impl ImprovedNoise {
         let g111 = DVec3::from_array(GRADIENT[h111 & 15]);
 
         // Gradient dot products at each corner
-        let d000 = grad_dot(h000, r.x, r.y, r.z);
-        let d100 = grad_dot(h100, r.x - 1.0, r.y, r.z);
-        let d010 = grad_dot(h010, r.x, r.y - 1.0, r.z);
-        let d110 = grad_dot(h110, r.x - 1.0, r.y - 1.0, r.z);
-        let d001 = grad_dot(h001, r.x, r.y, r.z - 1.0);
-        let d101 = grad_dot(h101, r.x - 1.0, r.y, r.z - 1.0);
-        let d011 = grad_dot(h011, r.x, r.y - 1.0, r.z - 1.0);
-        let d111 = grad_dot(h111, r.x - 1.0, r.y - 1.0, r.z - 1.0);
-        let alpha = smoothstep_3x(r);
+        let d000 = grad_dot(h000, xr, yr, zr);
+        let d100 = grad_dot(h100, xr - 1.0, yr, zr);
+        let d010 = grad_dot(h010, xr, yr - 1.0, zr);
+        let d110 = grad_dot(h110, xr - 1.0, yr - 1.0, zr);
+        let d001 = grad_dot(h001, xr, yr, zr - 1.0);
+        let d101 = grad_dot(h101, xr - 1.0, yr, zr - 1.0);
+        let d011 = grad_dot(h011, xr, yr - 1.0, zr - 1.0);
+        let d111 = grad_dot(h111, xr - 1.0, yr - 1.0, zr - 1.0);
+
+        let alpha_x = smoothstep(xr);
+        let alpha_y = smoothstep(yr);
+        let alpha_z = smoothstep(zr);
 
         // Interpolate gradient components for direct derivative contribution
         let d1_v = lerp3_3x(
-            alpha.x, alpha.y, alpha.z, g000, g100, g010, g110, g001, g101, g011, g111,
+            alpha_x, alpha_y, alpha_z, g000, g100, g010, g110, g001, g101, g011, g111,
         );
 
         // Smoothstep correction terms via differences
-        let a1 = DVec3::new(alpha.y, alpha.z, alpha.x);
-        let a2 = DVec3::new(alpha.z, alpha.x, alpha.y);
+        let a1 = DVec3::new(alpha_y, alpha_z, alpha_x);
+        let a2 = DVec3::new(alpha_z, alpha_x, alpha_y);
 
         let x00 = DVec3::new(d100 - d000, d010 - d000, d001 - d000);
         let x10 = DVec3::new(d110 - d010, d011 - d001, d101 - d100);
@@ -396,17 +435,19 @@ impl ImprovedNoise {
 
         let d2_v = lerp2_3x(a1, a2, x00, x10, x01, x11);
 
-        let sd = smoothstep_derivative_3x(r);
+        let sd_x = smoothstep_derivative(xr);
+        let sd_y = smoothstep_derivative(yr);
+        let sd_z = smoothstep_derivative(zr);
 
         // Accumulate derivatives (vanilla uses +=)
         let mut d = DVec3::from_array(*derivative_out);
-        d += d1_v + sd * d2_v;
+        d += d1_v + DVec3::new(sd_x, sd_y, sd_z) * d2_v;
         derivative_out[0] = d.x;
         derivative_out[1] = d.y;
         derivative_out[2] = d.z;
 
         lerp3(
-            alpha.x, alpha.y, alpha.z, d000, d100, d010, d110, d001, d101, d011, d111,
+            alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
 }
@@ -460,8 +501,7 @@ mod tests {
                     );
 
                     for i in 0..4 {
-                        let scalar =
-                            noise.noise_with_y_scale(DVec3::new(x, ys[i], z), y_scale, y_fudges[i]);
+                        let scalar = noise.noise_with_y_scale(x, ys[i], z, y_scale, y_fudges[i]);
                         let simd_val = simd_result[i];
                         assert!(
                             (scalar - simd_val).abs() < 1e-14,

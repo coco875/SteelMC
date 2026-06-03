@@ -222,11 +222,11 @@ impl FeatureDecorationRunner {
 
     pub(super) fn noise_value(noise: &NormalNoise, pos: BlockPos, scale: f32) -> f64 {
         let scale = f64::from(scale);
-        noise.get_value(DVec3::new(
+        noise.get_value(
             f64::from(pos.x()) * scale,
             f64::from(pos.y()) * scale,
             f64::from(pos.z()) * scale,
-        ))
+        )
     }
 
     pub(super) fn noise_state_by_value(
