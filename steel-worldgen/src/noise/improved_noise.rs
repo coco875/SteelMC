@@ -9,8 +9,8 @@ use std::simd::{Select, StdFloat};
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2_3x, lerp3, lerp3_3x, lerp3_4x, smoothstep,
-    smoothstep_4x, smoothstep_derivative,
+    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2, lerp2_3x, lerp3, lerp3_3x, lerp3_4x,
+    smoothstep, smoothstep_4x, smoothstep_derivative,
 };
 
 /// Improved Perlin noise generator.
@@ -423,27 +423,39 @@ impl ImprovedNoise {
         );
 
         // Smoothstep correction terms via differences
-        let a1 = DVec3::new(alpha_y, alpha_z, alpha_x);
-        let a2 = DVec3::new(alpha_z, alpha_x, alpha_y);
+        let d2x = lerp2(
+            alpha_y,
+            alpha_z,
+            d100 - d000,
+            d110 - d010,
+            d101 - d001,
+            d111 - d011,
+        );
+        let d2y = lerp2(
+            alpha_z,
+            alpha_x,
+            d010 - d000,
+            d011 - d001,
+            d110 - d100,
+            d111 - d101,
+        );
+        let d2z = lerp2(
+            alpha_x,
+            alpha_y,
+            d001 - d000,
+            d101 - d100,
+            d011 - d010,
+            d111 - d110,
+        );
 
-        let x00 = DVec3::new(d100 - d000, d010 - d000, d001 - d000);
-        let x10 = DVec3::new(d110 - d010, d011 - d001, d101 - d100);
-        let x01 = DVec3::new(d101 - d001, d110 - d100, d011 - d010);
-        let x11 = DVec3::new(d111 - d011, d111 - d101, d111 - d110);
-
-        let d2_v = lerp2_3x(a1, a2, x00, x10, x01, x11);
-
-        let sd_x = smoothstep_derivative(xr);
-        let sd_y = smoothstep_derivative(yr);
-        let sd_z = smoothstep_derivative(zr);
+        let x_sd = smoothstep_derivative(xr);
+        let y_sd = smoothstep_derivative(yr);
+        let z_sd = smoothstep_derivative(zr);
 
         // Accumulate derivatives (vanilla uses +=)
-        let mut d = DVec3::from_array(*derivative_out);
-        d += d1_v + DVec3::new(sd_x, sd_y, sd_z) * d2_v;
-        derivative_out[0] = d.x;
-        derivative_out[1] = d.y;
-        derivative_out[2] = d.z;
-
+        derivative_out[0] += d1_v.x + x_sd * d2x;
+        derivative_out[1] += d1_v.y + y_sd * d2y;
+        derivative_out[2] += d1_v.z + z_sd * d2z;
         lerp3(
             alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
