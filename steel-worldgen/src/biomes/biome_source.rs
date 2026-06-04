@@ -363,12 +363,12 @@ impl EndChunkBiomeSampler<'_> {
         {
             return erosion;
         }
-        let weird_block_x = (chunk_x * 2 + 1) * 8;
-        let weird_block_z = (chunk_z * 2 + 1) * 8;
+        let weird_block_x = ((chunk_x * 2 + 1) * 8) as f64;
+        let weird_block_z = ((chunk_z * 2 + 1) * 8) as f64;
         let erosion = self
             .source
             .end_islands
-            .sample(weird_block_x, 0, weird_block_z);
+            .sample(weird_block_x, 0.0, weird_block_z);
         self.cached_erosion = Some((chunk_x, chunk_z, erosion));
         erosion
     }

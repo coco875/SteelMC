@@ -67,10 +67,10 @@ impl BlendedNoise {
 
     /// Compute the blended noise value at the given block coordinates.
     #[must_use]
-    pub fn compute(&self, block_x: i32, block_y: i32, block_z: i32) -> f64 {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_y = f64::from(block_y) * self.y_multiplier;
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
+    pub fn compute(&self, block_x: f64, block_y: f64, block_z: f64) -> f64 {
+        let limit_x = block_x * self.xz_multiplier;
+        let limit_y = block_y * self.y_multiplier;
+        let limit_z = block_z * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
         let main_y = limit_y / self.y_factor;
         let main_z = limit_z / self.xz_factor;
@@ -129,10 +129,10 @@ impl BlendedNoise {
     /// smoothstep, trilinear lerp) across the 4 Y lanes, while sharing
     /// the x/z coordinate work.
     #[must_use]
-    pub fn compute_4x(&self, block_x: i32, block_ys: [i32; 4], block_z: i32) -> [f64; 4] {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_ys = f64x4::from_array(block_ys.map(f64::from)) * f64x4::splat(self.y_multiplier);
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
+    pub fn compute_4x(&self, block_x: f64, block_ys: [f64; 4], block_z: f64) -> [f64; 4] {
+        let limit_x = block_x * self.xz_multiplier;
+        let limit_ys = f64x4::from_array(block_ys) * f64x4::splat(self.y_multiplier);
+        let limit_z = block_z * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
         let main_ys = limit_ys / f64x4::splat(self.y_factor);
         let main_z = limit_z / self.xz_factor;
@@ -199,7 +199,7 @@ impl BlendedNoise {
     /// Compute blended noise for a column of Y values, returning the results.
     ///
     /// Uses SIMD to process 4 Y values at a time.
-    pub fn compute_column(&self, block_x: i32, block_ys: &[i32], block_z: i32, out: &mut [f64]) {
+    pub fn compute_column(&self, block_x: f64, block_ys: &[f64], block_z: f64, out: &mut [f64]) {
         let count = block_ys.len().min(out.len());
 
         // SIMD batches of 4
@@ -255,12 +255,12 @@ mod tests {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
         // Test column of Y values at various (x, z)
-        let test_cases: &[(i32, [i32; 4], i32)] = &[
-            (0, [0, 8, 16, 24], 0),
-            (16, [32, 40, 48, 56], 16),
-            (-8, [-64, -32, 0, 32], 8),
-            (100, [60, 64, 68, 72], -50),
-            (0, [-4, -2, 0, 2], 0),
+        let test_cases: &[(f64, [f64; 4], f64)] = &[
+            (0., [0., 8., 16., 24.], 0.),
+            (16., [32., 40., 48., 56.], 16.),
+            (-8., [-64., -32., 0., 32.], 8.),
+            (100., [60., 64., 68., 72.], -50.),
+            (0., [-4., -2., 0., 2.], 0.),
         ];
 
         for &(x, ys, z) in test_cases {
@@ -283,12 +283,12 @@ mod tests {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
         // 49 Y values like the actual overworld (cell_min_y=-8, corners_y=49, cell_height=8)
-        let block_ys: Vec<i32> = (0..49).map(|cy| (cy - 8) * 8).collect();
+        let block_ys: Vec<f64> = (0..49).map(|cy| ((cy - 8) * 8) as f64).collect();
 
-        let scalar_results: Vec<f64> = block_ys.iter().map(|&y| bn.compute(0, y, 0)).collect();
+        let scalar_results: Vec<f64> = block_ys.iter().map(|&y| bn.compute(0., y, 0.)).collect();
 
         let mut column_results = vec![0.0; block_ys.len()];
-        bn.compute_column(0, &block_ys, 0, &mut column_results);
+        bn.compute_column(0., &block_ys, 0., &mut column_results);
 
         for (i, &y) in block_ys.iter().enumerate() {
             assert!(
@@ -306,8 +306,8 @@ mod tests {
         let bn1 = BlendedNoise::new(&mut make_source(12345), 1.0, 1.0, 80.0, 160.0, 8.0);
         let bn2 = BlendedNoise::new(&mut make_source(12345), 1.0, 1.0, 80.0, 160.0, 8.0);
 
-        let v1 = bn1.compute(0, 64, 0);
-        let v2 = bn2.compute(0, 64, 0);
+        let v1 = bn1.compute(0., 64., 0.);
+        let v2 = bn2.compute(0., 64., 0.);
         assert!(
             (v1 - v2).abs() < 1e-15,
             "BlendedNoise not deterministic: {v1} vs {v2}",
@@ -318,7 +318,9 @@ mod tests {
     fn test_blended_noise_spatial_variation() {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
-        let values: Vec<f64> = (-5..5).map(|x| bn.compute(x * 16, 64, 0)).collect();
+        let values: Vec<f64> = (-5..5)
+            .map(|x| bn.compute((x * 16) as f64, 64., 0.))
+            .collect();
 
         let min = values.iter().copied().fold(f64::INFINITY, f64::min);
         let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -334,7 +336,7 @@ mod tests {
 
         for x in -10..10 {
             for y in (-4..20).step_by(4) {
-                let v = bn.compute(x * 16, y * 4, x * 16);
+                let v = bn.compute((x * 16) as f64, (y * 4) as f64, (x * 16) as f64);
                 assert!(
                     v.abs() <= bn.max_value() + 0.01,
                     "BlendedNoise value {v} exceeds max {} at ({}, {}, {})",

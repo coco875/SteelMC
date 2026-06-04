@@ -53,12 +53,16 @@ impl OverworldClimateSampler {
         quart_z: i32,
         cache: &mut OverworldColumnCache,
     ) -> TargetPoint {
-        let block_x = quart_x << 2;
-        let block_y = quart_y << 2;
-        let block_z = quart_z << 2;
+        let block_x = (quart_x << 2);
+        let block_y = (quart_y << 2);
+        let block_z = (quart_z << 2);
 
         // Ensure column cache is populated for this (x, z)
         cache.ensure(block_x, block_z, &self.noises);
+
+        let block_x = block_x as f64;
+        let block_y = block_y as f64;
+        let block_z = block_z as f64;
 
         // Density functions return f64 but vanilla truncates to float before quantizing.
         // The f64→f32→f64 round-trip through quantize_coord is intentional for parity.
