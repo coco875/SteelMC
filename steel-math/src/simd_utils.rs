@@ -1,4 +1,13 @@
-use std::simd::{f64x4, f64x8, simd_swizzle};
+use std::{
+    ops,
+    simd::{
+        Mask, Simd, SimdCast, SimdElement, StdFloat,
+        cmp::{SimdPartialEq, SimdPartialOrd},
+        f64x4, f64x8,
+        num::SimdFloat,
+        simd_swizzle,
+    },
+};
 
 /// Transposes a 4x4 matrix of 64-bit floats represented by four SIMD vectors (`f64x4`).
 #[inline]
@@ -62,4 +71,19 @@ pub fn concat_4x(a: f64x4, b: f64x4) -> f64x8 {
 #[must_use]
 pub fn splat_4x(v: f64x4) -> f64x8 {
     simd_swizzle!(v, [0, 1, 2, 3, 0, 1, 2, 3])
+}
+
+pub trait SimpleSimdElement: SimdCast + SimdElement {}
+pub trait SimpleSimd<F, const N: usize>:
+    SimdFloat<Cast<i32> = Simd<i32, N>>
+    + SimdPartialOrd
+    + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+    + ops::Add<Output = Simd<F, N>>
+    + ops::Sub<Output = Simd<F, N>>
+    + ops::Mul<Output = Simd<F, N>>
+    + ops::Div<Output = Simd<F, N>>
+    + StdFloat
+where
+    F: SimpleSimdElement,
+{
 }

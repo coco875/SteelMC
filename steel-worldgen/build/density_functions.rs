@@ -337,6 +337,7 @@ use crate::density::{
     DensityFunction, FindTopSurface, Mapped, MappedType, Marker, MarkerType, Noise, RangeChoice,
     RarityValueMapper, Reference, Shift, ShiftA, ShiftB, ShiftedNoise, Spline, SplinePoint,
     SplineValue, TwoArgType, TwoArgumentSimple, WeirdScaledSampler, YClampedGradient,
+    transpile_simd,
 };
 
 /// Convert a JSON density function to a runtime `DensityFunction` value.
@@ -656,6 +657,27 @@ fn transpile_dimension(
     };
 
     transpile(&input)
+}
+
+/// Transpile density functions for a single dimension.
+fn transpile_dimension_simd(
+    dimension: &str,
+    prefix: &str,
+    registry: &BTreeMap<String, DensityFunction>,
+) -> TokenStream {
+    let settings = read_noise_settings(dimension);
+    let router_entries = router_to_entries(&settings.noise_router);
+
+    let cell_width = settings.noise.size_horizontal * 4;
+    let input = TranspilerInput {
+        registry: registry.clone(),
+        router_entries,
+        prefix: prefix.to_string(),
+        cell_width,
+        legacy_random_source: settings.legacy_random_source,
+    };
+
+    transpile_simd(&input)
 }
 
 /// Generate noise settings constants and trait impls for a dimension.
@@ -1017,6 +1039,7 @@ use proc_macro2::{Ident, Span};
 pub(crate) struct DensityFunctionFiles {
     /// Contents for `vanilla_density_functions/overworld.rs`.
     pub overworld: TokenStream,
+    pub overworld_simd: TokenStream,
     /// Contents for `vanilla_density_functions/nether.rs`.
     pub nether: TokenStream,
     /// Contents for `vanilla_density_functions/end.rs`.
@@ -1037,6 +1060,9 @@ pub(crate) fn build() -> DensityFunctionFiles {
 
     let overworld_df = transpile_dimension("overworld", "Overworld", &registry);
     let overworld_settings = generate_noise_settings("overworld", "Overworld");
+
+    let overworld_simd_df = transpile_dimension_simd("overworld", "Overworld", &registry);
+
     let nether_df = transpile_dimension("nether", "Nether", &registry);
     let nether_settings = generate_noise_settings("nether", "Nether");
     let end_df = transpile_dimension("end", "End", &registry);
@@ -1048,6 +1074,14 @@ pub(crate) fn build() -> DensityFunctionFiles {
         use steel_registry::blocks::block_state_ext::BlockStateExt;
 
         #overworld_df
+        #overworld_settings
+    };
+
+    let overworld_simd = quote! {
+        use steel_registry::RegistryExt;
+        use steel_registry::blocks::block_state_ext::BlockStateExt;
+
+        #overworld_simd_df
         #overworld_settings
     };
 
@@ -1070,6 +1104,7 @@ pub(crate) fn build() -> DensityFunctionFiles {
     let index = quote! {
         /// Overworld density functions.
         pub mod overworld;
+        pub mod overworld_simd;
 
         /// Nether density functions.
         pub mod nether;
@@ -1080,6 +1115,7 @@ pub(crate) fn build() -> DensityFunctionFiles {
 
     DensityFunctionFiles {
         overworld,
+        overworld_simd,
         nether,
         end,
         index,
