@@ -283,7 +283,7 @@ mod tests {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
         // 49 Y values like the actual overworld (cell_min_y=-8, corners_y=49, cell_height=8)
-        let block_ys: Vec<f64> = (0..49).map(|cy| ((cy - 8) * 8) as f64).collect();
+        let block_ys: Vec<f64> = (0..49).map(|cy| f64::from((cy - 8) * 8)).collect();
 
         let scalar_results: Vec<f64> = block_ys.iter().map(|&y| bn.compute(0., y, 0.)).collect();
 
@@ -319,7 +319,7 @@ mod tests {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
         let values: Vec<f64> = (-5..5)
-            .map(|x| bn.compute((x * 16) as f64, 64., 0.))
+            .map(|x| bn.compute(f64::from(x * 16), 64., 0.))
             .collect();
 
         let min = values.iter().copied().fold(f64::INFINITY, f64::min);
@@ -336,7 +336,7 @@ mod tests {
 
         for x in -10..10 {
             for y in (-4..20).step_by(4) {
-                let v = bn.compute((x * 16) as f64, (y * 4) as f64, (x * 16) as f64);
+                let v = bn.compute(f64::from(x * 16), f64::from(y * 4), f64::from(x * 16));
                 assert!(
                     v.abs() <= bn.max_value() + 0.01,
                     "BlendedNoise value {v} exceeds max {} at ({}, {}, {})",

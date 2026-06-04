@@ -154,6 +154,7 @@ impl NormalNoise {
         (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
     }
 
+    /// Calculate normal noise value using SIMD vectors.
     #[inline]
     #[must_use]
     pub fn get_value_simd<F, const N: usize>(

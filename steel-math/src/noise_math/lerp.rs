@@ -1,7 +1,6 @@
-use core::simd::f64x4;
 use std::{
     ops,
-    simd::{Simd, SimdElement, f64x2, f64x8},
+    simd::{Simd, SimdElement},
 };
 
 use glam::DVec3;
@@ -18,6 +17,7 @@ pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
     a + alpha * (b - a)
 }
 
+/// SIMD linear interpolation.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -43,6 +43,7 @@ pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
 }
 
+/// SIMD bilinear interpolation.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -103,6 +104,7 @@ pub fn lerp3(
     )
 }
 
+/// SIMD trilinear interpolation.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -140,6 +142,10 @@ where
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
+)]
 pub fn lerp3_3x(
     a1: f64,
     a2: f64,

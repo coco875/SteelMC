@@ -1,4 +1,3 @@
-use core::simd::f64x4;
 use std::{
     ops,
     simd::{Simd, SimdCast, SimdElement, num::SimdFloat},
@@ -19,6 +18,7 @@ pub fn smoothstep(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
+/// SIMD smoothstep function.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]

@@ -1480,8 +1480,8 @@ impl TranspileContext {
                 let upper_expr = self.gen_expr(&fts.upper_bound, input, is_flat);
                 // density uses y — generate with is_flat=false so it references our loop var
                 let density_expr = self.gen_expr(&fts.density, input, false);
-                let cell_height = Literal::f64_unsuffixed(fts.cell_height as f64);
-                let lower_bound = Literal::f64_unsuffixed(fts.lower_bound as f64);
+                let cell_height = Literal::f64_unsuffixed(f64::from(fts.cell_height));
+                let lower_bound = Literal::f64_unsuffixed(f64::from(fts.lower_bound));
                 quote! {{
                     let __upper = #upper_expr;
                     let __top_y = (__upper / #cell_height).floor() * #cell_height;

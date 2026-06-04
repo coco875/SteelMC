@@ -75,9 +75,9 @@ impl NetherClimateSampler {
 
         cache.ensure(block_x, block_z, &self.noises);
 
-        let block_x = block_x as f64;
-        let block_y = block_y as f64;
-        let block_z = block_z as f64;
+        let block_x = f64::from(block_x);
+        let block_y = f64::from(block_y);
+        let block_z = f64::from(block_z);
 
         let temp =
             nether::router_temperature(&self.noises, cache, block_x, block_y, block_z) as f32;

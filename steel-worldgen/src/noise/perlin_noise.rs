@@ -202,6 +202,7 @@ impl PerlinNoise {
         value
     }
 
+    /// Calculate Perlin noise value using SIMD vectors.
     #[inline]
     #[must_use]
     pub fn get_value_simd<F, const N: usize>(

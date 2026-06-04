@@ -363,8 +363,8 @@ impl EndChunkBiomeSampler<'_> {
         {
             return erosion;
         }
-        let weird_block_x = ((chunk_x * 2 + 1) * 8) as f64;
-        let weird_block_z = ((chunk_z * 2 + 1) * 8) as f64;
+        let weird_block_x = f64::from((chunk_x * 2 + 1) * 8);
+        let weird_block_z = f64::from((chunk_z * 2 + 1) * 8);
         let erosion = self
             .source
             .end_islands

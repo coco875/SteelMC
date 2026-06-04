@@ -15,6 +15,7 @@ pub fn grad_dot(hash: usize, x: f64, y: f64, z: f64) -> f64 {
     g[0] * x + g[1] * y + g[2] * z
 }
 
+/// Calculate the dot product of a SIMD gradient vector and position vectors.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]

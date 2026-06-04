@@ -1,8 +1,10 @@
-use std::simd::{
-    Mask, Select, Simd, SimdCast, SimdElement,
-    cmp::{SimdPartialEq, SimdPartialOrd},
-    f64x2, i32x2,
-    num::{SimdFloat, SimdInt},
+use std::{
+    ops,
+    simd::{
+        Mask, Select, Simd, SimdCast, SimdElement,
+        cmp::{SimdPartialEq, SimdPartialOrd},
+        num::{SimdFloat, SimdInt},
+    },
 };
 
 use glam::{DVec3, IVec3};
@@ -23,6 +25,7 @@ pub fn fast_floor(v: f64) -> i32 {
     if v < f64::from(i) { i - 1 } else { i }
 }
 
+/// SIMD implementation of `fast_floor`.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
@@ -33,13 +36,14 @@ where
     Simd<F, N>: SimdFloat<Cast<I> = Simd<I, N>>
         + SimdPartialOrd
         + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>,
-    Simd<I, N>: SimdInt<Cast<F> = Simd<F, N>> + std::ops::Sub<Output = Simd<I, N>>,
+    Simd<I, N>: SimdInt<Cast<F> = Simd<F, N>> + ops::Sub<Output = Simd<I, N>>,
 {
     let i = v.cast::<I>();
     let b = v.simd_lt(i.cast::<F>());
     b.select(i - Simd::splat(1).cast(), i)
 }
 
+/// A 3D vector implementation of `fast_floor` using `DVec3` and `IVec3`.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]

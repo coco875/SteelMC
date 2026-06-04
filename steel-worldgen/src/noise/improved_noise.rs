@@ -75,13 +75,14 @@ impl ImprovedNoise {
         let yf = fast_floor(y);
         let zf = fast_floor(z);
 
-        let xr = x - xf as f64;
-        let yr = y - yf as f64;
-        let zr = z - zf as f64;
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+        let zr = z - f64::from(zf);
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
     }
 
+    /// Calculate Perlin noise using SIMD vectors.
     #[inline]
     #[must_use]
     pub fn noise_simd<F, const N: usize>(
@@ -134,9 +135,9 @@ impl ImprovedNoise {
         let yf = fast_floor(y);
         let zf = fast_floor(z);
 
-        let xr = x - xf as f64;
-        let yr = y - yf as f64;
-        let zr = z - zf as f64;
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+        let zr = z - f64::from(zf);
 
         self.sample_with_derivative(xf, yf, zf, xr, yr, zr, derivative_out)
     }
@@ -164,9 +165,9 @@ impl ImprovedNoise {
         let yf = fast_floor(y);
         let zf = fast_floor(z);
 
-        let xr = x - xf as f64;
-        let yr = y - yf as f64;
-        let zr = z - zf as f64;
+        let xr = x - f64::from(xf);
+        let yr = y - f64::from(yf);
+        let zr = z - f64::from(zf);
 
         // Calculate Y fudge for terrain generation
         #[expect(
@@ -270,6 +271,8 @@ impl ImprovedNoise {
     fn p_simd<const N: usize>(&self, idx: Simd<u8, N>) -> Simd<u8, N> {
         let offset = idx.cast::<usize>();
         let p = Simd::splat(self.p.as_ptr()).wrapping_add(offset);
+        // SAFETY: `idx` is a `Simd<u8, N>`, meaning each lane's index is at most 255.
+        // `self.p` has length 256, so all offsets are guaranteed to be within bounds of `self.p`.
         unsafe { Simd::gather_ptr(p) }
     }
 
@@ -387,8 +390,8 @@ impl ImprovedNoise {
         let z = z + self.zo;
         let xf = fast_floor(x);
         let zf = fast_floor(z);
-        let xr = x - xf as f64;
-        let zr = z - zf as f64;
+        let xr = x - f64::from(xf);
+        let zr = z - f64::from(zf);
 
         // Per-lane y offset and floor
         let ys = ys + f64x4::splat(self.yo);
