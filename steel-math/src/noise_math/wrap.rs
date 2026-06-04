@@ -1,6 +1,8 @@
-use core::simd::f64x4;
 use glam::DVec3;
-use std::simd::StdFloat;
+use std::{
+    ops,
+    simd::{Simd, SimdCast, SimdElement, StdFloat, num::SimdFloat},
+};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
@@ -26,9 +28,17 @@ pub fn wrap(x: f64) -> f64 {
 /// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
 #[inline]
 #[must_use]
-pub fn wrap_4x(x: f64x4) -> f64x4 {
-    let round_off = f64x4::splat(ROUND_OFF);
-    x - (x / round_off + f64x4::splat(0.5)).floor() * round_off
+pub fn wrap_simd<F, const N: usize>(x: Simd<F, N>) -> Simd<F, N>
+where
+    F: SimdElement + SimdCast,
+    Simd<F, N>: ops::Div<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>
+        + ops::Mul<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>
+        + StdFloat,
+{
+    let round_off = Simd::splat(ROUND_OFF).cast::<F>();
+    x - (x / round_off + Simd::splat(0.5).cast::<F>()).floor() * round_off
 }
 
 /// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).

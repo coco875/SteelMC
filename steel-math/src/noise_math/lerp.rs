@@ -1,5 +1,8 @@
 use core::simd::f64x4;
-use std::simd::{f64x2, f64x8};
+use std::{
+    ops,
+    simd::{Simd, SimdElement, f64x2, f64x8},
+};
 
 use glam::DVec3;
 
@@ -15,6 +18,19 @@ pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
     a + alpha * (b - a)
 }
 
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
+#[must_use]
+pub fn lerp_simd<F, const N: usize>(alpha: Simd<F, N>, a: Simd<F, N>, b: Simd<F, N>) -> Simd<F, N>
+where
+    F: SimdElement,
+    Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>,
+{
+    a + alpha * (b - a)
+}
+
 /// Bilinear interpolation.
 ///
 /// Interpolates between 4 values in a 2D grid.
@@ -25,6 +41,26 @@ pub fn lerp(alpha: f64, a: f64, b: f64) -> f64 {
 #[must_use]
 pub fn lerp2(a1: f64, a2: f64, x00: f64, x10: f64, x01: f64, x11: f64) -> f64 {
     lerp(a2, lerp(a1, x00, x10), lerp(a1, x01, x11))
+}
+
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
+#[must_use]
+pub fn lerp2_simd<F, const N: usize>(
+    a1: Simd<F, N>,
+    a2: Simd<F, N>,
+    x00: Simd<F, N>,
+    x10: Simd<F, N>,
+    x01: Simd<F, N>,
+    x11: Simd<F, N>,
+) -> Simd<F, N>
+where
+    F: SimdElement,
+    Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>,
+{
+    lerp_simd(a2, lerp_simd(a1, x00, x10), lerp_simd(a1, x01, x11))
 }
 
 /// Bilinear interpolation for 3-dimensional double vectors (`DVec3`).
@@ -67,6 +103,39 @@ pub fn lerp3(
     )
 }
 
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
+#[must_use]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
+)]
+pub fn lerp3_simd<F, const N: usize>(
+    a1: Simd<F, N>,
+    a2: Simd<F, N>,
+    a3: Simd<F, N>,
+    x000: Simd<F, N>,
+    x100: Simd<F, N>,
+    x010: Simd<F, N>,
+    x110: Simd<F, N>,
+    x001: Simd<F, N>,
+    x101: Simd<F, N>,
+    x011: Simd<F, N>,
+    x111: Simd<F, N>,
+) -> Simd<F, N>
+where
+    F: SimdElement,
+    Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+        + ops::Add<Output = Simd<F, N>>
+        + ops::Sub<Output = Simd<F, N>>,
+{
+    lerp_simd(
+        a3,
+        lerp2_simd(a1, a2, x000, x100, x010, x110),
+        lerp2_simd(a1, a2, x001, x101, x011, x111),
+    )
+}
+
 /// Trilinear interpolation for three separate coordinate dimensions simultaneously using 4-lane SIMD.
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
@@ -94,70 +163,12 @@ pub fn lerp3_3x(
     )
 }
 
-/// Linear interpolation for 2-lane SIMD vectors (`f64x2`).
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
-#[must_use]
-pub fn lerp_2x(alpha: f64x2, a: f64x2, b: f64x2) -> f64x2 {
-    a + alpha * (b - a)
-}
-
 /// Linear interpolation for 3-dimensional double vectors (`DVec3`).
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
 pub fn lerp_3x(alpha: DVec3, a: DVec3, b: DVec3) -> DVec3 {
     a + alpha * (b - a)
-}
-
-/// Linear interpolation for 4 lanes. see lerp.
-#[inline]
-#[must_use]
-pub fn lerp_4x(alpha: f64x4, a: f64x4, b: f64x4) -> f64x4 {
-    a + alpha * (b - a)
-}
-
-#[inline]
-#[must_use]
-pub fn lerp_8x(alpha: f64x8, a: f64x8, b: f64x8) -> f64x8 {
-    a + alpha * (b - a)
-}
-
-/// Bilinear interpolation for 4 lanes. see lerp2.
-#[inline]
-#[must_use]
-pub fn lerp2_4x(a1: f64x4, a2: f64x4, x00: f64x4, x10: f64x4, x01: f64x4, x11: f64x4) -> f64x4 {
-    lerp_4x(a2, lerp_4x(a1, x00, x10), lerp_4x(a1, x01, x11))
-}
-
-#[inline]
-#[must_use]
-pub fn lerp2_8x(a1: f64x8, a2: f64x8, x00: f64x8, x10: f64x8, x01: f64x8, x11: f64x8) -> f64x8 {
-    lerp_8x(a2, lerp_8x(a1, x00, x10), lerp_8x(a1, x01, x11))
-}
-
-/// Trilinear interpolation for 4 lanes. see lerp3.
-#[inline]
-#[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
-#[must_use]
-pub fn lerp3_4x(
-    a1: f64x4,
-    a2: f64x4,
-    a3: f64x4,
-    x000: f64x4,
-    x100: f64x4,
-    x010: f64x4,
-    x110: f64x4,
-    x001: f64x4,
-    x101: f64x4,
-    x011: f64x4,
-    x111: f64x4,
-) -> f64x4 {
-    lerp_4x(
-        a3,
-        lerp2_4x(a1, a2, x000, x100, x010, x110),
-        lerp2_4x(a1, a2, x001, x101, x011, x111),
-    )
 }
 
 #[cfg(test)]

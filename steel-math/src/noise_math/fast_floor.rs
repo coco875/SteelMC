@@ -1,6 +1,6 @@
 use std::simd::{
-    Select, Simd,
-    cmp::SimdPartialOrd,
+    Mask, Select, Simd, SimdCast, SimdElement,
+    cmp::{SimdPartialEq, SimdPartialOrd},
     f64x2, i32x2,
     num::{SimdFloat, SimdInt},
 };
@@ -26,10 +26,18 @@ pub fn fast_floor(v: f64) -> i32 {
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
 #[inline(always)]
 #[must_use]
-pub fn fast_floor_2x(v: f64x2) -> i32x2 {
-    let i = v.cast::<i32>();
-    let b = v.simd_lt(i.cast::<f64>());
-    b.select(i - Simd::splat(1), i)
+pub fn fast_floor_simd<F, I, const N: usize>(v: Simd<F, N>) -> Simd<I, N>
+where
+    F: SimdElement + SimdCast,
+    I: SimdElement + SimdCast,
+    Simd<F, N>: SimdFloat<Cast<I> = Simd<I, N>>
+        + SimdPartialOrd
+        + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>,
+    Simd<I, N>: SimdInt<Cast<F> = Simd<F, N>> + std::ops::Sub<Output = Simd<I, N>>,
+{
+    let i = v.cast::<I>();
+    let b = v.simd_lt(i.cast::<F>());
+    b.select(i - Simd::splat(1).cast(), i)
 }
 
 #[expect(clippy::inline_always, reason = "hot-path noise primitive")]
