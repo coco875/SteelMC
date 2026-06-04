@@ -8,7 +8,7 @@ use std::simd::f64x4;
 
 use crate::noise::PerlinNoise;
 use crate::random::RandomSource;
-use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_4x};
+use steel_math::{clamped_lerp, clamped_lerp_4x, wrap, wrap_simd};
 
 /// Base frequency multiplier for all `BlendedNoise` coordinate transforms.
 const COORDINATE_SCALE: f64 = 684.412;
@@ -148,7 +148,7 @@ impl BlendedNoise {
                 let scaled_ys = main_ys * pow_v;
                 main_noise_values += noise.noise_with_y_scale_4x(
                     wrap(main_x * pow),
-                    wrap_4x(scaled_ys),
+                    wrap_simd(scaled_ys),
                     wrap(main_z * pow),
                     main_smear * pow,
                     scaled_ys,
@@ -173,7 +173,7 @@ impl BlendedNoise {
             let pow_v = f64x4::splat(pow);
             let scaled_ys = limit_ys * pow_v;
             let wx = wrap(limit_x * pow);
-            let wys = wrap_4x(scaled_ys);
+            let wys = wrap_simd(scaled_ys);
             let wz = wrap(limit_z * pow);
             let y_scale_pow = limit_smear * pow;
 

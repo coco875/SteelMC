@@ -2,15 +2,18 @@
 //!
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
-use std::simd::cmp::SimdPartialOrd;
-use std::simd::f64x4;
-use std::simd::{Select, StdFloat};
+use std::ops;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::num::{SimdFloat, SimdInt, SimdUint};
+use std::simd::ptr::SimdConstPtr;
+use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
+use std::simd::{Simd, f64x4};
 
 use crate::random::Random;
 use glam::DVec3;
 use steel_math::{
-    GRADIENT, fast_floor, grad_dot, grad_dot_4x, lerp2, lerp2_3x, lerp3, lerp3_3x, lerp3_4x,
-    smoothstep, smoothstep_4x, smoothstep_derivative,
+    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_4x, grad_dot_simd, lerp2, lerp3,
+    lerp3_3x, lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -77,6 +80,38 @@ impl ImprovedNoise {
         let zr = z - zf as f64;
 
         self.sample_and_lerp(xf, yf, zf, xr, yr, zr, yr)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn noise_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>,
+    {
+        let x = x + Simd::splat(self.xo).cast();
+        let y = y + Simd::splat(self.yo).cast();
+        let z = z + Simd::splat(self.zo).cast();
+
+        let xf = fast_floor_simd::<F, i32, N>(x);
+        let yf = fast_floor_simd::<F, i32, N>(y);
+        let zf = fast_floor_simd::<F, i32, N>(z);
+
+        let xr = x - xf.cast();
+        let yr = y - yf.cast();
+        let zr = z - zf.cast();
+
+        self.sample_and_lerp_simd(xf, yf, zf, xr, yr, zr, yr)
     }
 
     /// Sample noise at the given coordinates, accumulating partial derivatives.
@@ -231,6 +266,104 @@ impl ImprovedNoise {
         )
     }
 
+    #[inline]
+    fn p_simd<const N: usize>(&self, idx: Simd<u8, N>) -> Simd<u8, N> {
+        let offset = idx.cast::<usize>();
+        let p = Simd::splat(self.p.as_ptr()).wrapping_add(offset);
+        unsafe { Simd::gather_ptr(p) }
+    }
+
+    /// Sample noise at grid point and interpolate.
+    #[expect(clippy::too_many_arguments, reason = "matches vanilla signature")]
+    fn sample_and_lerp_simd<F, const N: usize>(
+        &self,
+        x: Simd<i32, N>,
+        y: Simd<i32, N>,
+        z: Simd<i32, N>,
+        xr: Simd<F, N>,
+        yr: Simd<F, N>,
+        zr: Simd<F, N>,
+        yr_original: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: ops::Mul<Output = Simd<F, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>,
+    {
+        let x = x.cast::<u8>();
+        let y = y.cast::<u8>();
+        let z = z.cast::<u8>();
+        // Get permutation indices for the 8 corners
+        let x0 = self.p_simd(x);
+        let x1 = self.p_simd(x + Simd::splat(1));
+
+        let xy00 = self.p_simd(x0 + y);
+        let xy01 = self.p_simd(x0 + y + Simd::splat(1));
+        let xy10 = self.p_simd(x1 + y);
+        let xy11 = self.p_simd(x1 + y + Simd::splat(1));
+
+        let h000 = self.p_simd(xy00 + z).cast::<usize>().to_array();
+        let h100 = self.p_simd(xy10 + z).cast::<usize>().to_array();
+        let h010 = self.p_simd(xy01 + z).cast::<usize>().to_array();
+        let h110 = self.p_simd(xy11 + z).cast::<usize>().to_array();
+        let h001 = self
+            .p_simd(xy00 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h101 = self
+            .p_simd(xy10 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h011 = self
+            .p_simd(xy01 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+        let h111 = self
+            .p_simd(xy11 + z + Simd::splat(1))
+            .cast::<usize>()
+            .to_array();
+
+        // Calculate gradient dot products at each corner
+        let d000 = grad_dot_simd(h000, xr, yr, zr);
+        let d100 = grad_dot_simd(h100, xr - Simd::splat(1.0).cast::<F>(), yr, zr);
+        let d010 = grad_dot_simd(h010, xr, yr - Simd::splat(1.0).cast::<F>(), zr);
+        let d110 = grad_dot_simd(
+            h110,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr,
+        );
+        let d001 = grad_dot_simd(h001, xr, yr, zr - Simd::splat(1.0).cast::<F>());
+        let d101 = grad_dot_simd(
+            h101,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr,
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
+        let d011 = grad_dot_simd(
+            h011,
+            xr,
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
+        let d111 = grad_dot_simd(
+            h111,
+            xr - Simd::splat(1.0).cast::<F>(),
+            yr - Simd::splat(1.0).cast::<F>(),
+            zr - Simd::splat(1.0).cast::<F>(),
+        );
+
+        // Apply smoothstep interpolation
+        let x_alpha = smoothstep_simd(xr);
+        let y_alpha = smoothstep_simd(yr_original);
+        let z_alpha = smoothstep_simd(zr);
+
+        lerp3_simd(
+            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        )
+    }
+
     // -----------------------------------------------------------------------
     // SIMD: process 4 Y values sharing the same (x, z)
     // -----------------------------------------------------------------------
@@ -354,10 +487,10 @@ impl ImprovedNoise {
 
         // Smoothstep — x and z are shared across lanes
         let x_alpha = f64x4::splat(smoothstep(xr));
-        let y_alpha = smoothstep_4x(yrs_original);
+        let y_alpha = smoothstep_simd(yrs_original);
         let z_alpha = f64x4::splat(smoothstep(zr));
 
-        lerp3_4x(
+        lerp3_simd(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }

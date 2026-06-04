@@ -3,9 +3,14 @@
 //! This combines multiple `ImprovedNoise` instances at different frequencies (octaves)
 //! to create more natural-looking noise with detail at multiple scales.
 
+use std::ops;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::num::SimdFloat;
+use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
+
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
-use steel_math::wrap;
+use steel_math::{wrap, wrap_simd};
 
 /// Octave-based Perlin noise generator.
 ///
@@ -196,6 +201,47 @@ impl PerlinNoise {
 
         value
     }
+
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Div<Output = Simd<F, N>>
+            + StdFloat,
+    {
+        let mut value = Simd::splat(0.0).cast::<F>();
+        let mut input_factor = Simd::splat(self.lowest_freq_input_factor).cast::<F>();
+        let mut value_factor = Simd::splat(self.lowest_freq_value_factor).cast::<F>();
+
+        for (i, noise_opt) in self.noise_levels.iter().enumerate() {
+            if let Some(noise) = noise_opt {
+                let noise_val = noise.noise_simd(
+                    wrap_simd(x * input_factor),
+                    wrap_simd(y * input_factor),
+                    wrap_simd(z * input_factor),
+                );
+                value += Simd::splat(self.amplitudes[i]).cast() * noise_val * value_factor;
+            }
+
+            input_factor *= Simd::splat(2.0).cast::<F>();
+            value_factor /= Simd::splat(2.0).cast::<F>();
+        }
+
+        value
+    }
+
     /// Sample the noise with Y scaling parameters.
     ///
     /// # Arguments

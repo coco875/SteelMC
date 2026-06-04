@@ -3,6 +3,11 @@
 //! This combines two `PerlinNoise` samplers with slightly different coordinate scaling
 //! to create smoother, more natural-looking noise. It's used for biome climate parameters.
 
+use std::ops;
+use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::num::SimdFloat;
+use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
+
 use crate::noise::PerlinNoise;
 use crate::random::{PositionalRandom, RandomSource, RandomSplitter, name_hash::NameHash};
 
@@ -147,6 +152,32 @@ impl NormalNoise {
         let y2 = y * INPUT_FACTOR;
         let z2 = z * INPUT_FACTOR;
         (self.first.get_value(x, y, z) + self.second.get_value(x2, y2, z2)) * self.value_factor
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn get_value_simd<F, const N: usize>(
+        &self,
+        x: Simd<F, N>,
+        y: Simd<F, N>,
+        z: Simd<F, N>,
+    ) -> Simd<F, N>
+    where
+        F: SimdElement + SimdCast,
+        Simd<F, N>: SimdFloat<Cast<i32> = Simd<i32, N>>
+            + SimdPartialOrd
+            + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
+            + ops::Add<Output = Simd<F, N>>
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Div<Output = Simd<F, N>>
+            + StdFloat,
+    {
+        let x2 = x * Simd::splat(INPUT_FACTOR).cast::<F>();
+        let y2 = y * Simd::splat(INPUT_FACTOR).cast::<F>();
+        let z2 = z * Simd::splat(INPUT_FACTOR).cast::<F>();
+        (self.first.get_value_simd(x, y, z) + self.second.get_value_simd(x2, y2, z2))
+            * Simd::splat(self.value_factor).cast()
     }
 
     /// Get the maximum possible output value.
