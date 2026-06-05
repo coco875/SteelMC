@@ -10,10 +10,9 @@ use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
 use std::simd::{Simd, f64x4};
 
 use crate::random::Random;
-use glam::DVec3;
 use steel_math::{
     GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_4x, grad_dot_simd, lerp2, lerp3,
-    lerp3_3x, lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
+    lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
