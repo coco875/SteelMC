@@ -3,7 +3,6 @@ use std::{
     simd::{Simd, SimdElement},
 };
 
-
 /// Linear interpolation.
 ///
 /// Formula: a + alpha * (b - a)

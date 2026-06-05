@@ -7,7 +7,6 @@ use std::{
     },
 };
 
-
 /// Floor function that matches Java behavior.
 ///
 /// In Java, `(int)v` truncates toward zero, but we need floor behavior.
