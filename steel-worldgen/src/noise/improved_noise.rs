@@ -599,9 +599,9 @@ impl ImprovedNoise {
         let z_sd = smoothstep_derivative(zr);
 
         // Accumulate derivatives (vanilla uses +=)
-        derivative_out[0] += d1_v.x + x_sd * d2x;
-        derivative_out[1] += d1_v.y + y_sd * d2y;
-        derivative_out[2] += d1_v.z + z_sd * d2z;
+        derivative_out[0] += d1_v[0] + x_sd * d2x;
+        derivative_out[1] += d1_v[1] + y_sd * d2y;
+        derivative_out[2] += d1_v[2] + z_sd * d2z;
         lerp3(
             alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
