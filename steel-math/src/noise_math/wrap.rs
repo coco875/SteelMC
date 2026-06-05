@@ -41,14 +41,6 @@ where
     x - (x / round_off + Simd::splat(0.5).cast::<F>()).floor() * round_off
 }
 
-/// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
-#[inline]
-#[must_use]
-pub fn wrap_3x(x: DVec3) -> DVec3 {
-    let round_off = DVec3::splat(ROUND_OFF);
-    x - (x / round_off + DVec3::splat(0.5)).floor() * round_off
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

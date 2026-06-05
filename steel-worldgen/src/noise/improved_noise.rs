@@ -530,14 +530,14 @@ impl ImprovedNoise {
         let h011 = self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize;
         let h111 = self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize;
 
-        let g000 = DVec3::from_array(GRADIENT[h000 & 15]);
-        let g100 = DVec3::from_array(GRADIENT[h100 & 15]);
-        let g010 = DVec3::from_array(GRADIENT[h010 & 15]);
-        let g110 = DVec3::from_array(GRADIENT[h110 & 15]);
-        let g001 = DVec3::from_array(GRADIENT[h001 & 15]);
-        let g101 = DVec3::from_array(GRADIENT[h101 & 15]);
-        let g011 = DVec3::from_array(GRADIENT[h011 & 15]);
-        let g111 = DVec3::from_array(GRADIENT[h111 & 15]);
+        let g000 = Simd::from_array(GRADIENT[h000 & 15]);
+        let g100 = Simd::from_array(GRADIENT[h100 & 15]);
+        let g010 = Simd::from_array(GRADIENT[h010 & 15]);
+        let g110 = Simd::from_array(GRADIENT[h110 & 15]);
+        let g001 = Simd::from_array(GRADIENT[h001 & 15]);
+        let g101 = Simd::from_array(GRADIENT[h101 & 15]);
+        let g011 = Simd::from_array(GRADIENT[h011 & 15]);
+        let g111 = Simd::from_array(GRADIENT[h111 & 15]);
 
         // Gradient dot products at each corner
         let d000 = grad_dot(h000, xr, yr, zr);
@@ -554,8 +554,18 @@ impl ImprovedNoise {
         let alpha_z = smoothstep(zr);
 
         // Interpolate gradient components for direct derivative contribution
-        let d1_v = lerp3_3x(
-            alpha_x, alpha_y, alpha_z, g000, g100, g010, g110, g001, g101, g011, g111,
+        let d1_v = lerp3_simd(
+            Simd::splat(alpha_x),
+            Simd::splat(alpha_y),
+            Simd::splat(alpha_z),
+            g000,
+            g100,
+            g010,
+            g110,
+            g001,
+            g101,
+            g011,
+            g111,
         );
 
         // Smoothstep correction terms via differences

@@ -17,18 +17,16 @@ pub use clamp::{clamp, clamp_i32, clamped_lerp, clamped_lerp_4x};
 pub use corner_noise_3d::corner_noise_3d;
 pub use cube::cube;
 pub use dot::dot;
-pub use fast_floor::{fast_floor, fast_floor_3x, fast_floor_simd, fast_lfloor};
+pub use fast_floor::{fast_floor, fast_floor_simd, fast_lfloor};
 pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_simd};
 pub use inverse_lerp::inverse_lerp;
-pub use lerp::{
-    lerp, lerp_3x, lerp_simd, lerp2, lerp2_3x, lerp2_simd, lerp3, lerp3_3x, lerp3_simd,
-};
+pub use lerp::{lerp, lerp_simd, lerp2, lerp2_simd, lerp3, lerp3_simd};
 pub use map::{map, map_clamped};
 pub use smoothstep::{
     smoothstep, smoothstep_3x, smoothstep_derivative, smoothstep_derivative_3x, smoothstep_simd,
 };
 pub use square::square;
-pub use wrap::{wrap, wrap_3x, wrap_simd};
+pub use wrap::{wrap, wrap_simd};
 
 /// Gradient vectors shared between Perlin and simplex noise (from vanilla `SimplexNoise.GRADIENT`).
 pub const GRADIENT: [[f64; 3]; 16] = [

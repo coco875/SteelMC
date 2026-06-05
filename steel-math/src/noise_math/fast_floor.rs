@@ -43,16 +43,6 @@ where
     b.select(i - Simd::splat(1).cast(), i)
 }
 
-/// A 3D vector implementation of `fast_floor` using `DVec3` and `IVec3`.
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
-#[must_use]
-pub fn fast_floor_3x(v: DVec3) -> IVec3 {
-    let i = v.as_ivec3();
-    let b = v.cmplt(i.as_dvec3());
-    IVec3::select(b, i - 1, i)
-}
-
 /// Long floor function matching Java behavior.
 ///
 /// Java reference: `Mth.lfloor(double)`
