@@ -439,12 +439,7 @@ impl ImprovedNoise {
         let x0 = self.p[xf as usize];
         let x1 = self.p[xf.wrapping_add(1) as usize];
         // Per-lane y-dependent permutation lookups
-        let yf = [
-            ys_floor[0] as i32,
-            ys_floor[1] as i32,
-            ys_floor[2] as i32,
-            ys_floor[3] as i32,
-        ];
+        let yf = ys_floor.cast();
 
         let mut h000 = [0usize; 4];
         let mut h100 = [0usize; 4];
@@ -455,21 +450,30 @@ impl ImprovedNoise {
         let mut h011 = [0usize; 4];
         let mut h111 = [0usize; 4];
 
-        for i in 0..4 {
-            let y = yf[i] as u8;
-            let xy00 = self.p[x0.wrapping_add(y) as usize];
-            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
-            let xy10 = self.p[x1.wrapping_add(y) as usize];
-            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
-            h000[i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
-            h100[i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
-            h010[i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
-            h110[i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
-            h001[i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h101[i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h011[i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
-            h111[i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+        // Explicit unrolling completely bypasses sequential array allocation overhead,
+        // allowing the CPU to execute memory load pipelines concurrently.
+        macro_rules! lookup_lane {
+            ($i:expr) => {
+                let y = yf[$i];
+                let xy00 = self.p[x0.wrapping_add(y) as usize];
+                let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+                let xy10 = self.p[x1.wrapping_add(y) as usize];
+                let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+                h000[$i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
+                h100[$i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
+                h010[$i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
+                h110[$i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
+                h001[$i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+                h101[$i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+                h011[$i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+                h111[$i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            };
         }
+
+        lookup_lane!(0);
+        lookup_lane!(1);
+        lookup_lane!(2);
+        lookup_lane!(3);
 
         // Vectorized gradient dot products
         let xr_v = f64x4::splat(xr);
