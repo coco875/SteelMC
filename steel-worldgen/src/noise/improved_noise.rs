@@ -6,7 +6,7 @@ use std::ops;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
-use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
+use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat, i32x4};
 use std::simd::{Simd, f64x4};
 
 use crate::random::Random;
@@ -394,8 +394,8 @@ impl ImprovedNoise {
 
         // Per-lane y offset and floor
         let ys = ys + f64x4::splat(self.yo);
-        let ys_floor = ys.floor();
-        let yrs = ys - ys_floor;
+        let ys_floor = fast_floor_simd::<f64, i32, 4>(ys);
+        let yrs = ys - ys_floor.cast();
 
         // Y fudge (per-lane)
         let yr_fudge = if y_scale == 0.0 {
@@ -429,7 +429,7 @@ impl ImprovedNoise {
         zf: i32,
         xr: f64,
         zr: f64,
-        ys_floor: f64x4,
+        ys_floor: i32x4,
         yrs: f64x4,
         yrs_original: f64x4,
     ) -> f64x4 {
