@@ -3,7 +3,6 @@ use std::{
     simd::{Simd, SimdElement},
 };
 
-use glam::DVec3;
 
 /// Linear interpolation.
 ///
