@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CONFIG","DEFAULT_FAVICON","DEFAULT_WORLDS"],"enum":["LogTimeFormat"],"fn":["empty_worlds_config","load_or_create","load_or_create_worlds","validate"],"struct":["LogConfig","ServerConfig","SteelConfig"]};

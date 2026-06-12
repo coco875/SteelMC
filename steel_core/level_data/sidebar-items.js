@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["describe_generation_settings","generation_config_string"],"struct":["LevelData","LevelDataManager","SavedLevelSeed","SpawnPoint","WeatherState","WorldGenerationSettings"]};

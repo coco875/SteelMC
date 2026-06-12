@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEATH_DURATION","SPRINT_SPEED_MODIFIER_AMOUNT"],"struct":["ActiveMobEffect","LivingEntityBase","LivingEntityState","LivingTravelInput"]};

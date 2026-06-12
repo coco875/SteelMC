@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MobEffectCategory"],"struct":["MobEffect","MobEffectRegistry"],"type":["MobEffectRef"]};

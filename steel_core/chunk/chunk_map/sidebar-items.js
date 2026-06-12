@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GENERATION_THREAD_MULTIPLE"],"enum":["GenerationTaskCap"],"struct":["ChunkMap","ChunkMapGameTickTimings","ChunkMapSchedulingTimings","GenerationTaskPriority","RunningGenerationTaskPermit"]};

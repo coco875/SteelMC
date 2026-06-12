@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CREATIVE_BLOCK_RANGE_MODIFIER_AMOUNT","CREATIVE_ENTITY_RANGE_MODIFIER_AMOUNT"],"fn":["strip_formatting_codes","use_item","use_item_on"]};
