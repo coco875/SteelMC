@@ -2,22 +2,23 @@ cargo-features = ["codegen-backend"]
 [workspace]
 resolver = "2"
 members = [
-    "steel",
-    "steel-login",
-    "steel-macros",
-    "steel-protocol",
-    "steel-registry",
-    "steel-worldgen",
-    "steel-utils",
-    "steel-core",
-    "steel-crypto",
+  "steel",
+  "steel-login",
+  "steel-macros",
+  "steel-protocol",
+  "steel-registry",
+  "steel-worldgen",
+  "steel-utils",
+  "steel-core",
+  "steel-crypto",
+  "steel-math",
   "steel-plugin-api",
   "steel-example-plugin",
   "steel-plugin-loader",
 ]
 
 [workspace.package]
-version = "0.6.3+mc26.1"
+version = "0.9.0+mc26.1"
 edition = "2024"
 authors = ["Alve Jeansson"]
 license = "AGPL-3.0-or-later"
@@ -32,8 +33,11 @@ steel-protocol = { path = "steel-protocol" }
 steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
 steel-worldgen = { path = "steel-worldgen" }
+steel-math = { path = "steel-math" }
 steel-plugin-api = { path = "steel-plugin-api" }
 steel-plugin-loader = { path = "steel-plugin-loader" }
+
+# Plugin
 stabby = { version = "72.1.1", features = ["libloading"] }
 libloading = "0.8"
 zip = "8.6"
@@ -166,6 +170,11 @@ debug = 0
 
 
 [profile.dev.package.steel-worldgen]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev.package.steel-math]
 opt-level = 3
 debug-assertions = false
 overflow-checks = false
