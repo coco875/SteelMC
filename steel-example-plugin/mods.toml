@@ -1,0 +1,9 @@
+[package]
+name = "steel-example-plugin"
+version = "1.0.0"
+
+[targets]
+linux-x86_64 = "libsteel_example_plugin.so"
+macos-x86_64 = "libsteel_example_plugin.dylib"
+macos-aarch64 = "libsteel_example_plugin.dylib"
+windows-x86_64 = "steel_example_plugin.dll"

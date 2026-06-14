@@ -1,0 +1,14 @@
+[package]
+name = "steel-plugin-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+stabby.workspace = true
+parking_lot.workspace = true
+rustc-hash.workspace = true
+steel-utils.workspace = true
+steel-macros = { workspace = true }
+log.workspace = true

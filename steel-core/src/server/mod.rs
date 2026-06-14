@@ -37,6 +37,8 @@ use std::{
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
+use steel_plugin_api::hook::{ServerStopAction, ServerTickAction};
+use steel_plugin_loader::hook::get_host_registry;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CRemovePlayerInfo, CSystemChat, CTabList, CTickingState,
@@ -153,6 +155,8 @@ pub struct Server {
     pub pending_world_changes: SyncMutex<Vec<(SharedEntity, WorldChangeRequest)>>,
     /// Queued domain switches to process after world ticks.
     pending_domain_switches: SyncMutex<Vec<DomainSwitchRequest>>,
+    /// Dynamically loaded plugins.
+    pub plugins: Vec<steel_plugin_loader::LoadedPlugin>,
 }
 
 impl Server {
@@ -169,6 +173,7 @@ impl Server {
         worlds_config: WorldsConfig,
     ) -> Result<Self, String> {
         let config = Arc::new(config);
+        let plugins = steel_plugin_loader::load_plugins();
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
         registry.freeze();
@@ -288,6 +293,7 @@ impl Server {
             player_data_storage,
             pending_world_changes: SyncMutex::new(vec![]),
             pending_domain_switches: SyncMutex::new(vec![]),
+            plugins,
         })
     }
 
@@ -590,6 +596,9 @@ impl Server {
             tokio::spawn(async move { s.run_chunk_scheduling_tick(t).await })
         };
         let _ = tokio::join!(game_handle, chunk_send_handle, chunk_sched_handle);
+
+        // Fire ServerStopAction hook
+        get_host_registry().do_action_typed(&ServerStopAction {});
     }
 
     /// The main game tick loop (20 TPS, governed by tick rate manager).
@@ -646,6 +655,11 @@ impl Server {
 
             self.tick_worlds_game(tick_count, runs_normally).await;
             self.tick_jobs(tick_count, runs_normally);
+
+            // Fire ServerTickAction hook
+            if runs_normally {
+                get_host_registry().do_action_typed(&ServerTickAction { tick_count });
+            }
 
             {
                 let server = self.clone();

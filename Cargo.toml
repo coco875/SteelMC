@@ -11,6 +11,9 @@ members = [
     "steel-utils",
     "steel-core",
     "steel-crypto",
+  "steel-plugin-api",
+  "steel-example-plugin",
+  "steel-plugin-loader",
 ]
 
 [workspace.package]
@@ -29,6 +32,11 @@ steel-protocol = { path = "steel-protocol" }
 steel-registry = { path = "steel-registry" }
 steel-utils = { path = "steel-utils" }
 steel-worldgen = { path = "steel-worldgen" }
+steel-plugin-api = { path = "steel-plugin-api" }
+steel-plugin-loader = { path = "steel-plugin-loader" }
+stabby = { version = "72.1.1", features = ["libloading"] }
+libloading = "0.8"
+zip = "8.6"
 
 # Async runtime
 tokio = { version = "1.51", features = [
