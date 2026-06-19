@@ -7,6 +7,8 @@ use std::io::{self, Cursor};
 use crate::{axis::Axis, codec::VarInt, serial::ReadFrom, types::BlockPos};
 
 /// The six cardinal directions in Minecraft.
+#[stabby::stabby]
+#[repr(u32)]
 #[derive(Clone, Copy, Debug)]
 #[derive_const(PartialEq)]
 pub enum Direction {

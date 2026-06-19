@@ -85,6 +85,7 @@ impl simdnbt::FromNbtTag for Identifier {
 }
 
 /// A raw block state id. Using the registry this id can be derived into a block and it's current properties.
+#[stabby::stabby]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct BlockStateId(pub u16);
 
@@ -1374,6 +1375,8 @@ unsafe impl<'de, C: Config> SchemaRead<'de, C> for Identifier {
 }
 
 /// Represents the hand used for an interaction.
+#[stabby::stabby]
+#[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractionHand {
     /// The main hand.

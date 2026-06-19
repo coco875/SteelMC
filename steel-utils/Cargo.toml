@@ -17,6 +17,7 @@ serde.workspace = true
 serde_json.workspace = true
 simdnbt.workspace = true
 wincode.workspace = true
+stabby.workspace = true
 
 # Concurrency
 parking_lot.workspace = true
