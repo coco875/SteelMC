@@ -1,5 +1,6 @@
 use core::simd::f64x4;
 use std::{
+    mem::transmute_copy,
     ops,
     simd::{Simd, SimdCast, SimdElement, num::SimdFloat},
 };
@@ -42,6 +43,10 @@ pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
 /// component assembly.
 #[inline]
 #[must_use]
+#[expect(
+    clippy::similar_names,
+    reason = "gx_4, gy_4, gz_4 match Cartesian coordinate components and are distinct"
+)]
 pub fn grad_dot_simd<F, const N: usize>(
     hashes: [usize; N],
     x: Simd<F, N>,
@@ -74,7 +79,23 @@ where
     }
 
     #[cfg(not(target_feature = "avx512f"))]
-    if N != 4 {
+    if N == 4 {
+        let h0 = Simd::from_array(GRADIENT_4[hashes[0] & 15]).cast::<F>();
+        let h1 = Simd::from_array(GRADIENT_4[hashes[1] & 15]).cast::<F>();
+        let h2 = Simd::from_array(GRADIENT_4[hashes[2] & 15]).cast::<F>();
+        let h3 = Simd::from_array(GRADIENT_4[hashes[3] & 15]).cast::<F>();
+
+        let (gx_4, gy_4, gz_4, _gw) = transpose(h0, h1, h2, h3);
+
+        // SAFETY: N is checked to be 4 in the branch condition, making Simd<F, 4> and Simd<F, N> layout compatible.
+        let gx: Simd<F, N> = unsafe { transmute_copy(&gx_4) };
+        // SAFETY: N is checked to be 4 in the branch condition, making Simd<F, 4> and Simd<F, N> layout compatible.
+        let gy: Simd<F, N> = unsafe { transmute_copy(&gy_4) };
+        // SAFETY: N is checked to be 4 in the branch condition, making Simd<F, 4> and Simd<F, N> layout compatible.
+        let gz: Simd<F, N> = unsafe { transmute_copy(&gz_4) };
+
+        gx * x + gy * y + gz * z
+    } else {
         let mut gx = [0.; N];
         let mut gy = [0.; N];
         let mut gz = [0.; N];
@@ -88,20 +109,6 @@ where
         let gx = Simd::from_array(gx).cast();
         let gy = Simd::from_array(gy).cast();
         let gz = Simd::from_array(gz).cast();
-        gx * x + gy * y + gz * z
-    } else {
-        let h0 = Simd::from_array(GRADIENT_4[hashes[0] & 15]).cast::<F>();
-        let h1 = Simd::from_array(GRADIENT_4[hashes[1] & 15]).cast::<F>();
-        let h2 = Simd::from_array(GRADIENT_4[hashes[2] & 15]).cast::<F>();
-        let h3 = Simd::from_array(GRADIENT_4[hashes[3] & 15]).cast::<F>();
-
-        let (gx_4, gy_4, gz_4, _gw) = transpose(h0, h1, h2, h3);
-
-        // Safely cast from Simd<F, 4> to Simd<F, N> since N == 4 here
-        let gx: Simd<F, N> = unsafe { std::mem::transmute_copy(&gx_4) };
-        let gy: Simd<F, N> = unsafe { std::mem::transmute_copy(&gy_4) };
-        let gz: Simd<F, N> = unsafe { std::mem::transmute_copy(&gz_4) };
-
         gx * x + gy * y + gz * z
     }
 }
