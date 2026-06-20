@@ -39,4 +39,5 @@ steel-registry = { workspace = true, features = ["test-utils"] }
 workspace = true
 
 [features]
+default = ["fmt"]
 fmt = []

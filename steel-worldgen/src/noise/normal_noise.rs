@@ -199,31 +199,20 @@ impl NormalNoise {
         (self.first.get_value_xy(x, y) + self.second.get_value_xy(x2, y2)) * self.value_factor
     }
 
-    /// Sample 4 Y values at fixed `(x, z)` in one call.
+    /// Sample N Y values at fixed `(x, z)` in one call.
     ///
     /// SIMD form of [`Self::get_value`] for transpiled density-function trees
-    /// that batch 4 cell-corner Ys together. Per-lane math is identical to
-    /// the scalar path, so `get_value_4x(x, splat(y), z)[i] == get_value(x, y, z)`
+    /// that batch N cell-corner Ys together. Per-lane math is identical to
+    /// the scalar path, so `get_value_y_simd(x, splat(y), z)[i] == get_value(x, y, z)`
     /// for any finite `y`.
     #[inline]
     #[must_use]
-    pub fn get_value_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
-        let x2 = x * INPUT_FACTOR;
-        let ys2 = ys * f64x4::splat(INPUT_FACTOR);
-        let z2 = z * INPUT_FACTOR;
-        (self
-            .first
-            .get_value_with_y_params_4x(x, ys, z, 0.0, 0.0, false)
-            + self
-                .second
-                .get_value_with_y_params_4x(x2, ys2, z2, 0.0, 0.0, false))
-            * f64x4::splat(self.value_factor)
-    }
-
-    /// Generic N-lane form of [`Self::get_value_4x`].
-    #[inline]
-    #[must_use]
-    pub fn get_value_simd<const N: usize>(&self, x: f64, ys: Simd<f64, N>, z: f64) -> Simd<f64, N> {
+    pub fn get_value_y_simd<const N: usize>(
+        &self,
+        x: f64,
+        ys: Simd<f64, N>,
+        z: f64,
+    ) -> Simd<f64, N> {
         let x2 = x * INPUT_FACTOR;
         let ys2 = ys * Simd::splat(INPUT_FACTOR);
         let z2 = z * INPUT_FACTOR;
@@ -261,6 +250,7 @@ fn expected_deviation(octave_span: i32) -> f64 {
 mod tests {
     use super::*;
     use crate::random::{Random, xoroshiro::Xoroshiro};
+    use std::simd::f64x4;
 
     #[test]
     fn test_normal_noise_deterministic() {
@@ -363,7 +353,7 @@ mod tests {
         ];
 
         for &(x, ys, z) in test_cases {
-            let simd = noise.get_value_4x(x, f64x4::from_array(ys), z);
+            let simd = noise.get_value_y_simd(x, f64x4::from_array(ys), z);
             for i in 0..4 {
                 let scalar = noise.get_value(x, ys[i], z);
                 let simd_val = simd[i];

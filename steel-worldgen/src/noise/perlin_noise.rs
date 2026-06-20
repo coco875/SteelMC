@@ -6,7 +6,7 @@
 use std::ops;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
 use std::simd::num::SimdFloat;
-use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
+use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat, f64x4};
 
 use crate::noise::ImprovedNoise;
 use crate::random::{PositionalRandom, Random, RandomSource, RandomSplitter, name_hash::NameHash};
@@ -278,22 +278,16 @@ impl PerlinNoise {
             + ops::Div<Output = Simd<F, N>>
             + StdFloat,
     {
-        let mut value = Simd::splat(0.0).cast::<F>();
-        let mut input_factor = Simd::splat(self.lowest_freq_input_factor).cast::<F>();
-        let mut value_factor = Simd::splat(self.lowest_freq_value_factor).cast::<F>();
+        let mut value = Simd::splat(0.0).cast();
 
-        for (i, noise_opt) in self.noise_levels.iter().enumerate() {
-            if let Some(noise) = noise_opt {
-                let noise_val = noise.noise_simd(
-                    wrap_simd(x * input_factor),
-                    wrap_simd(y * input_factor),
-                    wrap_simd(z * input_factor),
-                );
-                value += Simd::splat(self.amplitudes[i]).cast() * noise_val * value_factor;
-            }
-
-            input_factor *= Simd::splat(2.0).cast::<F>();
-            value_factor /= Simd::splat(2.0).cast::<F>();
+        for octave in &self.active_octaves {
+            let input_factor = Simd::splat(octave.input_factor).cast();
+            let noise_val = octave.noise.noise_simd(
+                wrap_simd(x * input_factor),
+                wrap_simd(y * input_factor),
+                wrap_simd(z * input_factor),
+            );
+            value += Simd::splat(octave.output_factor).cast() * noise_val;
         }
 
         value
@@ -365,10 +359,10 @@ impl PerlinNoise {
             let ys_for_call = if y_flat_hack {
                 f64x4::splat(-noise.yo)
             } else {
-                wrap_4x(ys * f64x4::splat(input_factor))
+                wrap_simd(ys * f64x4::splat(input_factor))
             };
             let y_fudges = f64x4::splat(y_fudge * input_factor);
-            let noise_val = noise.noise_with_y_scale_4x(
+            let noise_val = noise.noise_with_y_scale_simd(
                 x_w,
                 ys_for_call,
                 z_w,
@@ -403,10 +397,10 @@ impl PerlinNoise {
             let ys_for_call = if y_flat_hack {
                 Simd::splat(-noise.yo)
             } else {
-                wrap_simd::<N>(ys * Simd::splat(input_factor))
+                wrap_simd(ys * Simd::splat(input_factor))
             };
             let y_fudges = Simd::splat(y_fudge * input_factor);
-            let noise_val = noise.noise_with_y_scale_simd::<N>(
+            let noise_val = noise.noise_with_y_scale_simd(
                 x_w,
                 ys_for_call,
                 z_w,

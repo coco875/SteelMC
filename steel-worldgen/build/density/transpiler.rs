@@ -944,7 +944,7 @@ impl TranspileContext {
     fn fn_params_4x(&self) -> TokenStream {
         let noises = &self.noises_ident;
         let cache = &self.cache_ident;
-        quote! { noises: &#noises, cache: &#cache, x: i32, ys: f64x4, z: i32 }
+        quote! { noises: &#noises, cache: &#cache, x: f64, ys: f64x4, z: f64 }
     }
 
     /// Generate the function parameter list for a router entry point.
@@ -1269,8 +1269,8 @@ impl TranspileContext {
                 blended_noise_value_v: f64x4,
                 out: &mut [f64],
             ) {
-                let x = cache.x;
-                let z = cache.z;
+                let x = cache.x as f64;
+                let z = cache.z as f64;
                 #(#inner_stmts_4x)*
             }
 
@@ -1424,7 +1424,6 @@ impl TranspileContext {
             DensityFunction::ShiftB(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 quote! { noises.#field.get_value_xy(z * 0.25, x * 0.25) * 4.0 }
-                quote! { noises.#field.get_value_xy(f64::from(z) * 0.25, f64::from(x) * 0.25) * 4.0 }
             }
 
             DensityFunction::Shift(s) => {
@@ -1968,15 +1967,15 @@ impl TranspileContext {
                 if n.y_scale == 0.0 {
                     quote! {
                         f64x4::splat(noises.#field.get_value_xz(
-                            f64::from(x) * #xz_scale, f64::from(z) * #xz_scale,
+                            x * #xz_scale, z * #xz_scale,
                         ))
                     }
                 } else {
                     quote! {
-                        noises.#field.get_value_4x(
-                            f64::from(x) * #xz_scale,
+                        noises.#field.get_value_y_simd(
+                            x * #xz_scale,
                             ys * f64x4::splat(#y_scale),
-                            f64::from(z) * #xz_scale,
+                            z * #xz_scale,
                         )
                     }
                 }
@@ -2050,7 +2049,7 @@ impl TranspileContext {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
                     f64x4::splat(noises.#field.get_value_xz(
-                        f64::from(x) * 0.25, f64::from(z) * 0.25,
+                        x * 0.25, z * 0.25,
                     ) * 4.0)
                 }
             }
@@ -2059,7 +2058,7 @@ impl TranspileContext {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
                     f64x4::splat(noises.#field.get_value_xy(
-                        f64::from(z) * 0.25, f64::from(x) * 0.25,
+                        z * 0.25, x * 0.25,
                     ) * 4.0)
                 }
             }
@@ -2067,10 +2066,10 @@ impl TranspileContext {
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
-                    noises.#field.get_value_4x(
-                        f64::from(x) * 0.25,
+                    noises.#field.get_value_y_simd(
+                        x * 0.25,
                         ys * f64x4::splat(0.25),
-                        f64::from(z) * 0.25,
+                        z * 0.25,
                     ) * f64x4::splat(4.0)
                 }
             }
@@ -2080,7 +2079,7 @@ impl TranspileContext {
                 // (x, y, z). When all three shifts are Y-independent (typical
                 // vanilla case — they're flat-cached `shift_x`/`shift_z` and
                 // a constant `shift_y`), evaluate them as scalar splats and
-                // call `get_value_4x(`. Otherwise fall back to scalar 4×.
+                // call `get_value_y_simd(`. Otherwise fall back to scalar 4×.
                 if self.is_y_independent(&sn.shift_x)
                     && self.is_y_independent(&sn.shift_y)
                     && self.is_y_independent(&sn.shift_z)
@@ -2097,8 +2096,8 @@ impl TranspileContext {
                             let dx = #dx;
                             let dz = #dz;
                             f64x4::splat(noises.#field.get_value_xz(
-                                f64::from(x) * #xz_scale + dx,
-                                f64::from(z) * #xz_scale + dz,
+                                x * #xz_scale + dx,
+                                z * #xz_scale + dz,
                             ))
                         }}
                     } else {
@@ -2106,10 +2105,10 @@ impl TranspileContext {
                             let dx = #dx;
                             let dy = #dy;
                             let dz = #dz;
-                            noises.#field.get_value_4x(
-                                f64::from(x) * #xz_scale + dx,
+                            noises.#field.get_value_y_simd(
+                                x * #xz_scale + dx,
                                 ys * f64x4::splat(#y_scale) + f64x4::splat(dy),
-                                f64::from(z) * #xz_scale + dz,
+                                z * #xz_scale + dz,
                             )
                         }}
                     }
@@ -2190,11 +2189,11 @@ impl TranspileContext {
                         let rarity = __rarity_arr[#i_lit];
                         let scale = #mapper.get_values(rarity);
                         #[allow(clippy::cast_possible_truncation)]
-                        let y = __ys_arr[#i_lit] as i32;
+                        let y = __ys_arr[#i_lit];
                         scale * noises.#field.get_value(
-                            f64::from(x) / scale,
-                            f64::from(y) / scale,
-                            f64::from(z) / scale,
+                            x / scale,
+                            y / scale,
+                            z / scale,
                         ).abs()
                     }}
                 };
@@ -2292,7 +2291,7 @@ impl TranspileContext {
                 // only on (block_x, block_z). All 4 lanes get the same value, so
                 // we evaluate scalar once and splat. This skips the 25×25
                 // simplex-noise neighborhood scan three out of four times.
-                quote! { f64x4::splat(noises.end_islands.sample(x, 0, z)) }
+                quote! { f64x4::splat(noises.end_islands.sample(x, 0.0, z)) }
             }
 
             DensityFunction::RangeChoice(rc) => {
@@ -2392,7 +2391,7 @@ impl TranspileContext {
             };
             quote! {{
                 #[allow(clippy::cast_possible_truncation)]
-                let y = __ys_arr[#i_lit] as i32;
+                let y = __ys_arr[#i_lit];
                 #bv_decl
                 #scalar
             }}

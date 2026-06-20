@@ -15,7 +15,7 @@ use crate::{GRADIENT, GRADIENT_4, simd_utils::transpose};
 pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
     #[cfg(target_feature = "avx512f")]
     {
-        grad_dot_simd::<4>(hashes, x, y, z)
+        grad_dot_simd(hashes, x, y, z)
     }
 
     #[cfg(not(target_feature = "avx512f"))]
@@ -42,12 +42,16 @@ pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
 /// component assembly.
 #[inline]
 #[must_use]
-pub fn grad_dot_simd<const N: usize>(
+pub fn grad_dot_simd<F, const N: usize>(
     hashes: [usize; N],
-    x: Simd<f64, N>,
-    y: Simd<f64, N>,
-    z: Simd<f64, N>,
-) -> Simd<f64, N> {
+    x: Simd<F, N>,
+    y: Simd<F, N>,
+    z: Simd<F, N>,
+) -> Simd<F, N>
+where
+    F: SimdElement + SimdCast,
+    Simd<F, N>: ops::Mul<Output = Simd<F, N>> + ops::Add<Output = Simd<F, N>>,
+{
     #[cfg(target_feature = "avx512f")]
     {
         let hash_lanes = Simd::<i64, N>::from_array(hashes.map(|value| (value & 15) as i64));
@@ -76,14 +80,14 @@ pub fn grad_dot_simd<const N: usize>(
         let mut gz = [0.; N];
 
         for i in 0..N {
-            let g = &GRADIENT[hash[i] & 15];
+            let g = &GRADIENT[hashes[i] & 15];
             gx[i] = g[0];
             gy[i] = g[1];
             gz[i] = g[2];
         }
-        let gx = Simd::from_array(gx);
-        let gy = Simd::from_array(gy);
-        let gz = Simd::from_array(gz);
+        let gx = Simd::from_array(gx).cast();
+        let gy = Simd::from_array(gy).cast();
+        let gz = Simd::from_array(gz).cast();
         gx * x + gy * y + gz * z
     }
 }

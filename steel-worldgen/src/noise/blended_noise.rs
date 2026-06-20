@@ -3,8 +3,8 @@
 //! Combines three `PerlinNoise` instances (min limit, max limit, main) for terrain generation.
 //! The main noise determines the blend factor between the min and max limit noises.
 
+use std::simd::Simd;
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::{Simd, f64x4};
 
 use crate::noise::PerlinNoise;
 use crate::random::RandomSource;
@@ -122,91 +122,22 @@ impl BlendedNoise {
         clamped_lerp(blend_min / 512.0, blend_max / 512.0, factor) / 128.0
     }
 
-    /// Compute blended noise for 4 points sharing the same (x, z) but with
+    /// Compute blended noise for N points sharing the same (x, z) but with
     /// different y values. Returns results as an array.
     ///
     /// This uses SIMD to vectorize the math-heavy portions (gradient dots,
-    /// smoothstep, trilinear lerp) across the 4 Y lanes, while sharing
+    /// smoothstep, trilinear lerp) across the N Y lanes, while sharing
     /// the x/z coordinate work.
-    #[must_use]
-    pub fn compute_4x(&self, block_x: f64, block_ys: [f64; 4], block_z: f64) -> [f64; 4] {
-        let limit_x = block_x * self.xz_multiplier;
-        let limit_ys = f64x4::from_array(block_ys) * f64x4::splat(self.y_multiplier);
-        let limit_z = block_z * self.xz_multiplier;
-        let main_x = limit_x / self.xz_factor;
-        let main_ys = limit_ys / f64x4::splat(self.y_factor);
-        let main_z = limit_z / self.xz_factor;
-        let limit_smear = self.y_multiplier * self.smear_scale_multiplier;
-        let main_smear = limit_smear / self.y_factor;
-
-        // Sample main noise (8 octaves)
-        let mut main_noise_values = f64x4::splat(0.0);
-        let mut pow = 1.0;
-        for i in 0..8 {
-            if let Some(noise) = self.main_noise.get_octave_noise(i) {
-                let pow_v = f64x4::splat(pow);
-                let scaled_ys = main_ys * pow_v;
-                main_noise_values += noise.noise_with_y_scale_4x(
-                    wrap(main_x * pow),
-                    wrap_simd(scaled_ys),
-                    wrap(main_z * pow),
-                    main_smear * pow,
-                    scaled_ys,
-                ) / pow_v;
-            }
-            pow /= 2.0;
-        }
-
-        // Blend factor per lane: midpoint(main/10, 1) = (main/10 + 1) / 2
-        let factors =
-            (main_noise_values / f64x4::splat(10.0) + f64x4::splat(1.0)) / f64x4::splat(2.0);
-
-        // Early exit: skip a limit noise only when ALL 4 lanes agree
-        let all_max = factors.simd_ge(f64x4::splat(1.0)).all();
-        let all_min = factors.simd_le(f64x4::splat(0.0)).all();
-
-        // Sample limit noises (16 octaves each)
-        let mut blend_min = f64x4::splat(0.0);
-        let mut blend_max = f64x4::splat(0.0);
-        pow = 1.0;
-        for i in 0..16 {
-            let pow_v = f64x4::splat(pow);
-            let scaled_ys = limit_ys * pow_v;
-            let wx = wrap(limit_x * pow);
-            let wys = wrap_simd(scaled_ys);
-            let wz = wrap(limit_z * pow);
-            let y_scale_pow = limit_smear * pow;
-
-            if !all_max && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
-                blend_min +=
-                    noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
-            }
-
-            if !all_min && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
-                blend_max +=
-                    noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
-            }
-
-            pow /= 2.0;
-        }
-
-        let min_scaled = blend_min / f64x4::splat(512.0);
-        let max_scaled = blend_max / f64x4::splat(512.0);
-        let result = clamped_lerp_simd::<4>(min_scaled, max_scaled, factors) / f64x4::splat(128.0);
-        result.to_array()
-    }
-
-    /// Generic N-lane form of [`Self::compute_4x`].
     #[must_use]
     pub fn compute_simd<const N: usize>(
         &self,
-        block_x: i32,
-        block_ys: [i32; N],
-        block_z: i32,
+        block_x: f64,
+        block_ys: [f64; N],
+        block_z: f64,
     ) -> [f64; N] {
-        let limit_x = f64::from(block_x) * self.xz_multiplier;
-        let limit_ys = Simd::from_array(block_ys.map(f64::from)) * Simd::splat(self.y_multiplier);
-        let limit_z = f64::from(block_z) * self.xz_multiplier;
+        let limit_x = block_x * self.xz_multiplier;
+        let limit_ys = Simd::from_array(block_ys) * Simd::splat(self.y_multiplier);
+        let limit_z = block_z * self.xz_multiplier;
         let main_x = limit_x / self.xz_factor;
         let main_ys = limit_ys / Simd::splat(self.y_factor);
         let main_z = limit_z / self.xz_factor;
@@ -219,9 +150,9 @@ impl BlendedNoise {
             if let Some(noise) = self.main_noise.get_octave_noise(i) {
                 let pow_v = Simd::splat(pow);
                 let scaled_ys = main_ys * pow_v;
-                main_noise_values += noise.noise_with_y_scale_simd::<N>(
+                main_noise_values += noise.noise_with_y_scale_simd(
                     wrap(main_x * pow),
-                    wrap_simd::<N>(scaled_ys),
+                    wrap_simd(scaled_ys),
                     wrap(main_z * pow),
                     main_smear * pow,
                     scaled_ys,
@@ -242,18 +173,18 @@ impl BlendedNoise {
             let pow_v = Simd::splat(pow);
             let scaled_ys = limit_ys * pow_v;
             let wx = wrap(limit_x * pow);
-            let wys = wrap_simd::<N>(scaled_ys);
+            let wys = wrap_simd(scaled_ys);
             let wz = wrap(limit_z * pow);
             let y_scale_pow = limit_smear * pow;
 
             if !all_max && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
                 blend_min +=
-                    noise.noise_with_y_scale_simd::<N>(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
+                    noise.noise_with_y_scale_simd(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
             }
 
             if !all_min && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
                 blend_max +=
-                    noise.noise_with_y_scale_simd::<N>(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
+                    noise.noise_with_y_scale_simd(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
             }
 
             pow /= 2.0;
@@ -261,7 +192,7 @@ impl BlendedNoise {
 
         let min_scaled = blend_min / Simd::splat(512.0);
         let max_scaled = blend_max / Simd::splat(512.0);
-        let result = clamped_lerp_simd::<N>(min_scaled, max_scaled, factors) / Simd::splat(128.0);
+        let result = clamped_lerp_simd(min_scaled, max_scaled, factors) / Simd::splat(128.0);
         result.to_array()
     }
 
@@ -281,7 +212,7 @@ impl BlendedNoise {
                 block_ys[base + 2],
                 block_ys[base + 3],
             ];
-            out[base..base + 4].copy_from_slice(&self.compute_4x(block_x, batch_ys, block_z));
+            out[base..base + 4].copy_from_slice(&self.compute_simd(block_x, batch_ys, block_z));
         }
 
         // Scalar remainder
@@ -333,7 +264,7 @@ mod tests {
         ];
 
         for &(x, ys, z) in test_cases {
-            let simd = bn.compute_4x(x, ys, z);
+            let simd = bn.compute_simd(x, ys, z);
             for i in 0..4 {
                 let scalar = bn.compute(x, ys[i], z);
                 assert!(
