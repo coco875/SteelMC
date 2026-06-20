@@ -525,7 +525,7 @@ impl ImprovedNoise {
         let x0 = self.p[xf as usize];
         let x1 = self.p[xf.wrapping_add(1) as usize];
 
-        let yf = ys_floor.cast();
+        let yf = ys_floor.cast::<i32>().cast();
 
         // Per-lane y-dependent permutation lookups
         let mut h000 = [0usize; N];
