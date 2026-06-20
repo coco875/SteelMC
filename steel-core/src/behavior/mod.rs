@@ -64,6 +64,7 @@ pub mod weathering;
 pub use block::{
     BlockBehavior, BlockBehaviorRegistry, BlockCollisionContext, DefaultBlockBehavior,
     EntityFallDamage, EntityFallOnContext, EntityFallOnFacts, EntityLandingContext,
+    PluginBlockBehaviorWrapper,
 };
 use block_behaviors::register_block_behaviors;
 pub use context::{
@@ -80,6 +81,7 @@ pub use items::{
 use std::ops::Deref;
 use std::sync::OnceLock;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::RegistryExt;
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_utils::BlockStateId;
@@ -136,16 +138,123 @@ pub static BLOCK_BEHAVIORS: BlockBehaviorLock = BlockBehaviorLock(OnceLock::new(
 ///
 /// Access behaviors directly via deref: `ITEM_BEHAVIORS.get_behavior(item)`
 pub static ITEM_BEHAVIORS: ItemBehaviorLock = ItemBehaviorLock(OnceLock::new());
+/// Host-side wrapper that implements the plugin API's `PluginBehaviorRegistry` trait.
+pub struct HostBehaviorRegistry {
+    /// Opaque pointer to the underlying block behavior registry.
+    pub block_registry: *mut BlockBehaviorRegistry,
+    /// Opaque pointer to the underlying item behavior registry.
+    pub item_registry: *mut ItemBehaviorRegistry,
+}
+
+// SAFETY: HostBehaviorRegistry is only used synchronously during initialization on a single thread.
+unsafe impl Send for HostBehaviorRegistry {}
+// SAFETY: HostBehaviorRegistry is only used synchronously during initialization on a single thread.
+unsafe impl Sync for HostBehaviorRegistry {}
+
+struct DummyPluginBlockBehavior;
+impl steel_plugin_api::hook::PluginBlockBehavior for DummyPluginBlockBehavior {
+    extern "C" fn get_original(&self) -> steel_plugin_api::hook::PluginBlockBehaviorRef {
+        panic!("dummy behavior has no original behavior")
+    }
+}
+
+struct DummyPluginItemBehavior;
+impl steel_plugin_api::hook::PluginItemBehavior for DummyPluginItemBehavior {
+    extern "C" fn get_original(&self) -> steel_plugin_api::hook::PluginItemBehaviorRef {
+        panic!("dummy behavior has no original behavior")
+    }
+}
+
+impl steel_plugin_api::hook::PluginBehaviorRegistry for HostBehaviorRegistry {
+    extern "C" fn register_block_behavior(
+        &self,
+        namespace: steel_plugin_api::AbiStr<'_>,
+        path: steel_plugin_api::AbiStr<'_>,
+        behavior: extern "C" fn(steel_plugin_api::hook::PluginBlockBehaviorRef) -> steel_plugin_api::hook::PluginBlockBehaviorRef,
+    ) -> steel_plugin_api::hook::PluginBlockBehaviorRef {
+        // SAFETY: The host guarantees that `block_registry` points to a valid `BlockBehaviorRegistry` during the hook execution.
+        let registry = unsafe { &mut *self.block_registry };
+        let identifier = steel_utils::Identifier::new(namespace.as_str().to_string(), path.as_str().to_string());
+        if let Some(block) = steel_registry::REGISTRY.blocks.by_key(&identifier) {
+            let mut prev_ref_opt = None;
+            registry.replace_behavior_with(block, |original| {
+                let original_ref: &'static dyn BlockBehavior = Box::leak(original);
+                let wrapper = block::BlockBehaviorWrapper { inner: original_ref };
+                let leaked_prev = stabby::sync::Arc::new(wrapper);
+                let prev_ref = steel_plugin_api::hook::PluginBlockBehaviorRef(leaked_prev.into());
+                prev_ref_opt = Some(prev_ref.clone());
+
+                let new_behavior_ref = behavior(prev_ref);
+
+                Box::new(PluginBlockBehaviorWrapper {
+                    inner: new_behavior_ref,
+                    original: original_ref,
+                })
+            });
+            prev_ref_opt.expect("block exists, behavior closure must be executed")
+        } else {
+            let dummy_arc = stabby::sync::Arc::new(DummyPluginBlockBehavior);
+            steel_plugin_api::hook::PluginBlockBehaviorRef(dummy_arc.into())
+        }
+    }
+
+    extern "C" fn register_item_behavior(
+        &self,
+        namespace: steel_plugin_api::AbiStr<'_>,
+        path: steel_plugin_api::AbiStr<'_>,
+        behavior: extern "C" fn(steel_plugin_api::hook::PluginItemBehaviorRef) -> steel_plugin_api::hook::PluginItemBehaviorRef,
+    ) -> steel_plugin_api::hook::PluginItemBehaviorRef {
+        // SAFETY: The host guarantees that `item_registry` points to a valid `ItemBehaviorRegistry` during the hook execution.
+        let registry = unsafe { &mut *self.item_registry };
+        let identifier = steel_utils::Identifier::new(namespace.as_str().to_string(), path.as_str().to_string());
+        if let Some(item) = steel_registry::REGISTRY.items.by_key(&identifier) {
+            let mut prev_ref_opt = None;
+            registry.replace_behavior_with(item, |original| {
+                let original_ref: &'static dyn ItemBehavior = Box::leak(original);
+                let wrapper = item::ItemBehaviorWrapper { inner: original_ref };
+                let leaked_prev = stabby::sync::Arc::new(wrapper);
+                let prev_ref = steel_plugin_api::hook::PluginItemBehaviorRef(leaked_prev.into());
+                prev_ref_opt = Some(prev_ref.clone());
+
+                let new_behavior_ref = behavior(prev_ref);
+
+                Box::new(item::PluginItemBehaviorWrapper {
+                    inner: new_behavior_ref,
+                    original: original_ref,
+                })
+            });
+            prev_ref_opt.expect("item exists, behavior closure must be executed")
+        } else {
+            let dummy_arc = stabby::sync::Arc::new(DummyPluginItemBehavior);
+            steel_plugin_api::hook::PluginItemBehaviorRef(dummy_arc.into())
+        }
+    }
+}
 
 /// Initializes the global behavior registries.
 ///
 /// This should be called after the main registry is frozen. Repeated calls are a no-op.
 pub fn init_behaviors() {
-    BLOCK_BEHAVIORS.0.get_or_init(|| {
-        let mut block_behaviors = BlockBehaviorRegistry::new();
-        register_block_behaviors(&mut block_behaviors);
-        block_behaviors
-    });
+    let mut block_behaviors = BlockBehaviorRegistry::new();
+    register_block_behaviors(&mut block_behaviors);
+
+    let mut item_behaviors = ItemBehaviorRegistry::new();
+    register_item_behaviors(&mut item_behaviors);
+
+    let host_behavior_registry: &'static HostBehaviorRegistry = Box::leak(Box::new(HostBehaviorRegistry {
+        block_registry: &raw mut block_behaviors,
+        item_registry: &raw mut item_behaviors,
+    }));
+    let registry_dynptr = host_behavior_registry.into();
+
+    // Fire behavior initialization hook
+    let hook_registry = steel_plugin_loader::hook::get_host_registry();
+    let action_args = steel_plugin_api::hook::BehaviorInitAction {
+        registry: registry_dynptr,
+    };
+    hook_registry.do_action_typed(&action_args);
+
+    BLOCK_BEHAVIORS.0.get_or_init(|| block_behaviors);
 
     FLUID_BEHAVIORS.0.get_or_init(|| {
         let mut fluid_behaviors = FluidBehaviorRegistry::new();
@@ -164,9 +273,5 @@ pub fn init_behaviors() {
         fluid_behaviors
     });
 
-    ITEM_BEHAVIORS.0.get_or_init(|| {
-        let mut item_behaviors = ItemBehaviorRegistry::new();
-        register_item_behaviors(&mut item_behaviors);
-        item_behaviors
-    });
+    ITEM_BEHAVIORS.0.get_or_init(|| item_behaviors);
 }

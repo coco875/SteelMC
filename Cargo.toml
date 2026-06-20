@@ -13,8 +13,8 @@ members = [
   "steel-crypto",
   "steel-math",
   "steel-plugin-api",
-  "steel-example-plugin",
   "steel-plugin-loader",
+  "steel-example-plugin",
 ]
 
 [workspace.package]
@@ -39,7 +39,7 @@ steel-plugin-loader = { path = "steel-plugin-loader" }
 
 # Plugin
 stabby = { version = "72.1.1", features = ["libloading"] }
-libloading = "0.8"
+libloading = "0.9"
 zip = "8.6"
 
 # Async runtime

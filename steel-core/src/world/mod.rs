@@ -3433,6 +3433,61 @@ impl ScheduledTickAccess for Arc<World> {
     }
 }
 
+/// Host world implementation of `PluginWorld` that owns its Arc reference to be 'static.
+pub struct HostWorld {
+    /// Reference to the internal world.
+    pub world: std::sync::Arc<World>,
+}
+
+impl steel_plugin_api::hook::PluginWorld for HostWorld {
+    extern "C" fn get_block_state(&self, x: i32, y: i32, z: i32) -> u16 {
+        self.world.get_block_state(BlockPos::new(x, y, z)).0
+    }
+
+    extern "C" fn set_block_state(&self, x: i32, y: i32, z: i32, state: u16) {
+        self.world.set_block(
+            BlockPos::new(x, y, z),
+            BlockStateId(state),
+            steel_utils::types::UpdateFlags::UPDATE_ALL,
+        );
+    }
+
+    extern "C" fn get_raw_world_ptr(&self) -> *const std::ffi::c_void {
+        let ptr: *const std::sync::Arc<World> = &self.world;
+        ptr.cast::<std::ffi::c_void>()
+    }
+
+    extern "C" fn play_sound(
+        &self,
+        sound_name: steel_plugin_api::AbiStr<'_>,
+        x: f64,
+        y: f64,
+        z: f64,
+        volume: f32,
+        pitch: f32,
+        exclude_player_id: i32,
+    ) {
+        use std::str::FromStr;
+        let sound_str = sound_name.as_str();
+        let Ok(identifier) = steel_utils::Identifier::from_str(sound_str) else {
+            return;
+        };
+        let Some(sound_ref) = steel_registry::REGISTRY.sound_events.by_key(&identifier) else {
+            return;
+        };
+        let pos = glam::DVec3::new(x, y, z);
+        let exclude = if exclude_player_id >= 0 { Some(exclude_player_id) } else { None };
+        self.world.play_sound_at(
+            sound_ref,
+            crate::world::SoundSource::Players,
+            pos,
+            volume,
+            pitch,
+            exclude,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3518,3 +3573,4 @@ mod tests {
         assert_vec3_close(hit.location, DVec3::new(0.5, 0.5, 0.5));
     }
 }
+

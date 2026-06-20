@@ -3,6 +3,10 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
+use steel_plugin_api::hook::{
+    InteractionResult as AbiInteractionResult, PluginBlockBehavior, PluginBlockBehaviorRef,
+    PluginWorld, PluginWorldRef,
+};
 use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction};
@@ -1110,6 +1114,18 @@ impl BlockBehaviorRegistry {
         self.behaviors[id] = behavior;
     }
 
+    /// Replaces the behavior for a block, passing the original behavior to a closure to construct the new one.
+    pub fn replace_behavior_with<F>(&mut self, block: BlockRef, f: F)
+    where
+        F: FnOnce(Box<dyn BlockBehavior>) -> Box<dyn BlockBehavior>,
+    {
+        let id = block.id();
+        let dummy = Box::new(DefaultBlockBehavior::new(block));
+        let original = std::mem::replace(&mut self.behaviors[id], dummy);
+        let new_behavior = f(original);
+        self.behaviors[id] = new_behavior;
+    }
+
     /// Gets the behavior for a block.
     #[must_use]
     pub fn get_behavior(&self, block: BlockRef) -> &dyn BlockBehavior {
@@ -1134,6 +1150,630 @@ impl BlockBehaviorRegistry {
 impl Default for BlockBehaviorRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Host-side wrapper that sits in the `BlockBehaviorRegistry` for plugin-overridden blocks.
+///
+/// For methods exposed via plugin ABI, calls the plugin first. If the plugin returns
+/// `Fallback`, delegates to the original host behavior. For all other `BlockBehavior`
+/// methods not in the plugin ABI, delegates directly to the original.
+pub struct PluginBlockBehaviorWrapper {
+    pub(super) inner: PluginBlockBehaviorRef,
+    pub(super) original: &'static dyn BlockBehavior,
+}
+
+impl BlockBehavior for PluginBlockBehaviorWrapper {
+    #[cfg(feature = "flint")]
+    fn type_name(&self) -> &'static str {
+        self.original.type_name()
+    }
+
+    fn pickup_block(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        player: Option<&Player>,
+    ) -> Option<PickupResult> {
+        self.original.pickup_block(world, pos, state, player)
+    }
+
+    fn update_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn ScheduledTickAccess,
+        pos: BlockPos,
+        direction: Direction,
+        neighbor_pos: BlockPos,
+        neighbor_state: BlockStateId,
+    ) -> BlockStateId {
+        self.original
+            .update_shape(state, world, pos, direction, neighbor_pos, neighbor_state)
+    }
+
+    fn can_survive(&self, state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
+        self.original.can_survive(state, world, pos)
+    }
+
+    fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
+        self.original.get_state_for_placement(context)
+    }
+
+    fn set_placed_by(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: Option<&Player>,
+        inv: &InventoryAccess,
+    ) {
+        self.original.set_placed_by(state, world, pos, player, inv);
+    }
+
+    fn affect_neighbors_after_removal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        moved_by_piston: bool,
+    ) {
+        self.original
+            .affect_neighbors_after_removal(state, world, pos, moved_by_piston);
+    }
+
+    fn handle_neighbor_changed(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        source_block: BlockRef,
+        moved_by_piston: bool,
+    ) {
+        self.original
+            .handle_neighbor_changed(state, world, pos, source_block, moved_by_piston);
+    }
+
+    fn get_clone_item_stack(
+        &self,
+        block: BlockRef,
+        state: BlockStateId,
+        include_data: bool,
+    ) -> Option<ItemStack> {
+        self.original
+            .get_clone_item_stack(block, state, include_data)
+    }
+
+    fn is_randomly_ticking(&self, state: BlockStateId) -> bool {
+        self.original.is_randomly_ticking(state)
+    }
+
+    fn get_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        context: BlockCollisionContext,
+    ) -> VoxelShape {
+        self.original
+            .get_collision_shape(state, world, pos, context)
+    }
+
+    fn get_entity_inside_collision_shape(
+        &self,
+        state: BlockStateId,
+        world: &dyn LevelReader,
+        pos: BlockPos,
+        entity: &dyn Entity,
+    ) -> VoxelShape {
+        self.original
+            .get_entity_inside_collision_shape(state, world, pos, entity)
+    }
+
+    fn entity_inside(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        effect_collector: &mut InsideBlockEffectCollector,
+        is_precise: bool,
+    ) {
+        self.original
+            .entity_inside(state, world, pos, entity, effect_collector, is_precise);
+    }
+
+    fn fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityFallOnContext<'_>,
+    ) -> Option<EntityFallDamage> {
+        self.original.fall_on(state, world, pos, context)
+    }
+
+    fn after_fall_on_damage(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        entity: &dyn Entity,
+        fall_damage: &EntityFallDamage,
+        damage_applied: bool,
+    ) {
+        self.original
+            .after_fall_on_damage(state, world, pos, entity, fall_damage, damage_applied);
+    }
+
+    fn update_entity_movement_after_fall_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        context: EntityLandingContext,
+    ) -> DVec3 {
+        self.original
+            .update_entity_movement_after_fall_on(state, world, pos, context)
+    }
+
+    fn has_block_entity(&self) -> bool {
+        self.original.has_block_entity()
+    }
+
+    fn new_block_entity(
+        &self,
+        level: Weak<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+    ) -> Option<SharedBlockEntity> {
+        self.original.new_block_entity(level, pos, state)
+    }
+
+    fn should_keep_block_entity(&self, old_state: BlockStateId, new_state: BlockStateId) -> bool {
+        self.original.should_keep_block_entity(old_state, new_state)
+    }
+
+    fn has_analog_output_signal(&self, state: BlockStateId) -> bool {
+        self.original.has_analog_output_signal(state)
+    }
+
+    fn get_analog_output_signal(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+    ) -> i32 {
+        self.original.get_analog_output_signal(state, world, pos)
+    }
+
+    fn get_fluid_state(&self, state: BlockStateId) -> FluidState {
+        self.original.get_fluid_state(state)
+    }
+
+    fn can_place_liquid(&self, state: BlockStateId, fluid: FluidRef) -> bool {
+        self.original.can_place_liquid(state, fluid)
+    }
+
+    fn place_liquid(
+        &self,
+        world: &Arc<World>,
+        pos: BlockPos,
+        state: BlockStateId,
+        fluid_state: FluidState,
+    ) -> bool {
+        self.original.place_liquid(world, pos, state, fluid_state)
+    }
+
+    fn as_bonemealable(&self) -> Option<&dyn Bonemealable> {
+        self.original.as_bonemealable()
+    }
+
+    // --- Plugin-ABI methods: call plugin, fallback to original ---
+
+    fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        hand: InteractionHand,
+        hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        let face_u8 = hit_result.direction as u8;
+
+        let res = self.inner.use_item_on(
+            state,
+            host_world_static.into(),
+            player.id(),
+            hand,
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            face_u8,
+            hit_result.location.x,
+            hit_result.location.y,
+            hit_result.location.z,
+        );
+        match res {
+            AbiInteractionResult::Success => InteractionResult::Success,
+            AbiInteractionResult::Fail => InteractionResult::Fail,
+            AbiInteractionResult::Pass => InteractionResult::Pass,
+            AbiInteractionResult::TryEmptyHandInteraction => {
+                InteractionResult::TryEmptyHandInteraction
+            }
+        }
+    }
+
+    fn use_without_item(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+        hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
+    ) -> InteractionResult {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+        let face_u8 = hit_result.direction as u8;
+
+        let res = self.inner.use_without_item(
+            state,
+            host_world_static.into(),
+            player.id(),
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            face_u8,
+            hit_result.location.x,
+            hit_result.location.y,
+            hit_result.location.z,
+        );
+
+        match res {
+            AbiInteractionResult::Success => InteractionResult::Success,
+            AbiInteractionResult::Fail => InteractionResult::Fail,
+            AbiInteractionResult::Pass => InteractionResult::Pass,
+            AbiInteractionResult::TryEmptyHandInteraction => {
+                InteractionResult::TryEmptyHandInteraction
+            }
+        }
+    }
+
+    fn step_on(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos, entity: &dyn Entity) {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        self.inner.step_on(
+            state,
+            host_world_static.into(),
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            entity.id(),
+        );
+    }
+
+    fn tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        self.inner
+            .tick(state, host_world_static.into(), pos.x(), pos.y(), pos.z());
+    }
+
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        self.inner
+            .random_tick(state, host_world_static.into(), pos.x(), pos.y(), pos.z());
+    }
+
+    fn on_place(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        old_state: BlockStateId,
+        moved_by_piston: bool,
+    ) {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        self.inner.on_place(
+            state,
+            host_world_static.into(),
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            old_state.0,
+            moved_by_piston,
+        );
+    }
+
+    fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: &Arc<World>,
+        pos: BlockPos,
+        player: &Player,
+    ) -> BlockStateId {
+        let host_world = crate::world::HostWorld {
+            world: world.clone(),
+        };
+        // SAFETY: HostWorld lives on the stack for the duration of this call;
+        // the plugin ABI call is synchronous and does not retain the reference.
+        let host_world_static: &'static crate::world::HostWorld =
+            unsafe { std::mem::transmute(&host_world) };
+
+        self.inner.player_will_destroy(
+            state,
+            host_world_static.into(),
+            pos.x(),
+            pos.y(),
+            pos.z(),
+            player.id(),
+        )
+    }
+}
+
+pub(super) struct BlockBehaviorWrapper {
+    pub(super) inner: &'static dyn BlockBehavior,
+}
+
+impl PluginBlockBehavior for BlockBehaviorWrapper {
+    extern "C" fn get_original(&self) -> PluginBlockBehaviorRef {
+        panic!("BlockBehaviorWrapper has no original behavior")
+    }
+
+    extern "C" fn use_item_on(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        player_id: i32,
+        hand: InteractionHand,
+        x: i32,
+        y: i32,
+        z: i32,
+        face: u8,
+        hit_x: f64,
+        hit_y: f64,
+        hit_z: f64,
+    ) -> AbiInteractionResult {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return AbiInteractionResult::Pass;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let Some(player) = world_arc.players.get_by_entity_id(player_id) else {
+            return AbiInteractionResult::Pass;
+        };
+
+        let pos = BlockPos::new(x, y, z);
+        let direction = match face {
+            0 => Direction::Down,
+            1 => Direction::Up,
+            2 => Direction::North,
+            3 => Direction::South,
+            4 => Direction::West,
+            5 => Direction::East,
+            _ => Direction::Up,
+        };
+        let hit_result = BlockHitResult {
+            block_pos: pos,
+            direction,
+            location: glam::DVec3::new(hit_x, hit_y, hit_z),
+            inside: false,
+            world_border_hit: false,
+            miss: false,
+        };
+        let mut inv = InventoryAccess::new(player.inventory.clone(), hand);
+
+        let res =
+            self.inner
+                .use_item_on(state, world_arc, pos, &player, hand, &hit_result, &mut inv);
+        match res {
+            InteractionResult::Success => AbiInteractionResult::Success,
+            InteractionResult::Fail => AbiInteractionResult::Fail,
+            InteractionResult::Pass => AbiInteractionResult::Pass,
+            InteractionResult::TryEmptyHandInteraction => {
+                AbiInteractionResult::TryEmptyHandInteraction
+            }
+        }
+    }
+
+    extern "C" fn use_without_item(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        player_id: i32,
+        x: i32,
+        y: i32,
+        z: i32,
+        face: u8,
+        hit_x: f64,
+        hit_y: f64,
+        hit_z: f64,
+    ) -> AbiInteractionResult {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return AbiInteractionResult::Pass;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let Some(player) = world_arc.players.get_by_entity_id(player_id) else {
+            return AbiInteractionResult::Pass;
+        };
+
+        let pos = BlockPos::new(x, y, z);
+        let direction = match face {
+            0 => Direction::Down,
+            1 => Direction::Up,
+            2 => Direction::North,
+            3 => Direction::South,
+            4 => Direction::West,
+            5 => Direction::East,
+            _ => Direction::Up,
+        };
+        let hit_result = BlockHitResult {
+            block_pos: pos,
+            direction,
+            location: glam::DVec3::new(hit_x, hit_y, hit_z),
+            inside: false,
+            world_border_hit: false,
+            miss: false,
+        };
+        let mut inv = InventoryAccess::new(player.inventory.clone(), InteractionHand::MainHand);
+
+        let res =
+            self.inner
+                .use_without_item(state, world_arc, pos, &player, &hit_result, &mut inv);
+        match res {
+            InteractionResult::Success => AbiInteractionResult::Success,
+            InteractionResult::Fail => AbiInteractionResult::Fail,
+            InteractionResult::Pass => AbiInteractionResult::Pass,
+            InteractionResult::TryEmptyHandInteraction => {
+                AbiInteractionResult::TryEmptyHandInteraction
+            }
+        }
+    }
+
+    extern "C" fn step_on(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        x: i32,
+        y: i32,
+        z: i32,
+        entity_id: i32,
+    ) {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let Some(entity) = world_arc.get_entity_by_id(entity_id) else {
+            return;
+        };
+
+        let pos = BlockPos::new(x, y, z);
+        self.inner.step_on(state, world_arc, pos, entity.as_ref());
+    }
+
+    extern "C" fn tick(&self, state: BlockStateId, world: PluginWorldRef, x: i32, y: i32, z: i32) {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let pos = BlockPos::new(x, y, z);
+        self.inner.tick(state, world_arc, pos);
+    }
+
+    extern "C" fn random_tick(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let pos = BlockPos::new(x, y, z);
+        self.inner.random_tick(state, world_arc, pos);
+    }
+
+    extern "C" fn on_place(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        x: i32,
+        y: i32,
+        z: i32,
+        old_state: u16,
+        moved_by_piston: bool,
+    ) {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return;
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let pos = BlockPos::new(x, y, z);
+        self.inner.on_place(
+            state,
+            world_arc,
+            pos,
+            BlockStateId(old_state),
+            moved_by_piston,
+        );
+    }
+
+    extern "C" fn player_will_destroy(
+        &self,
+        state: BlockStateId,
+        world: PluginWorldRef,
+        x: i32,
+        y: i32,
+        z: i32,
+        player_id: i32,
+    ) -> BlockStateId {
+        let world_ptr = world.get_raw_world_ptr();
+        if world_ptr.is_null() {
+            return BlockStateId(0xFFFF);
+        }
+        // SAFETY: The pointer returned by HostWorld is a valid *const Arc<World>.
+        let world_arc = unsafe { &*world_ptr.cast::<Arc<World>>() };
+        let Some(player) = world_arc.players.get_by_entity_id(player_id) else {
+            return BlockStateId(0xFFFF);
+        };
+        let pos = BlockPos::new(x, y, z);
+        self.inner
+            .player_will_destroy(state, world_arc, pos, &player)
     }
 }
 

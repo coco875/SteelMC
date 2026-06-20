@@ -11,4 +11,5 @@ crate-type = ["cdylib"]
 [dependencies]
 stabby.workspace = true
 steel-plugin-api = { path = "../steel-plugin-api" }
+steel-utils = { workspace = true }
 log = { workspace = true }

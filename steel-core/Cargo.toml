@@ -23,6 +23,7 @@ steel-worldgen.workspace = true
 steel-math.workspace = true
 steel-plugin-api.workspace = true
 steel-plugin-loader.workspace = true
+stabby.workspace = true
 
 # Async runtime
 tokio.workspace = true

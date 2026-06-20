@@ -45,7 +45,7 @@ pub struct LoadedPlugin {
 }
 
 /// Scans `./plugins`, loads all compatible zip plugins, and returns the loaded plugins.
-pub fn load_plugins() -> Vec<LoadedPlugin> {
+pub fn load_plugins(registry_api: steel_plugin_api::hook::PluginRegistryApiVtableRef) -> Vec<LoadedPlugin> {
     let mut loaded = Vec::new();
     let plugins_dir = Path::new("plugins");
     let temp_dir = Path::new(".tmp/plugins");
@@ -68,7 +68,7 @@ pub fn load_plugins() -> Vec<LoadedPlugin> {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("zip") {
             let name = path.file_name().unwrap_or_default().to_string_lossy();
-            match load_zip_plugin(&path, temp_dir) {
+            match load_zip_plugin(&path, temp_dir, registry_api) {
                 Ok(plugin) => {
                     log::info!("Successfully loaded plugin from {name}");
                     loaded.push(plugin);
@@ -84,7 +84,11 @@ pub fn load_plugins() -> Vec<LoadedPlugin> {
 }
 
 /// Extracts and loads a single zip plugin.
-fn load_zip_plugin(zip_path: &Path, temp_dir: &Path) -> Result<LoadedPlugin, String> {
+fn load_zip_plugin(
+    zip_path: &Path,
+    temp_dir: &Path,
+    registry_api: steel_plugin_api::hook::PluginRegistryApiVtableRef,
+) -> Result<LoadedPlugin, String> {
     let file = File::open(zip_path).map_err(|e| format!("failed to open plugin zip: {e}"))?;
     let mut archive =
         ZipArchive::new(file).map_err(|e| format!("failed to read zip archive: {e}"))?;
@@ -133,10 +137,14 @@ fn load_zip_plugin(zip_path: &Path, temp_dir: &Path) -> Result<LoadedPlugin, Str
     
     let plugin_id = steel_plugin_api::AbiString::from(mods_config.package.name.clone());
     let registry = hook::get_host_registry();
+    let host_api = hook::HookApiVtableRef(registry.into());
     let init_ctx = PluginInitContext {
         hook_api: steel_plugin_api::hook::HookApi {
-            host_api: hook::HookApiVtableRef(registry.into()),
+            host_api,
             plugin_id,
+            registry: steel_plugin_api::hook::PluginRegistryApi {
+                api: registry_api,
+            },
         },
     };
 

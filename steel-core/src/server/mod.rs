@@ -43,15 +43,17 @@ use std::{
 };
 use steel_crypto::key_store::KeyStore;
 use steel_plugin_api::hook::{ServerStopAction, ServerTickAction};
-use steel_plugin_loader::hook::get_host_registry;
 use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSystemChat, CTabList, CTickingState, CTickingStep,
     CommonPlayerSpawnInfo, GameEventType,
 };
+use std::ffi::c_void;
+use steel_plugin_loader::hook::get_host_registry;
+use steel_plugin_api::hook::{RegistryInitAction, PluginRegistryApiVtable, PluginRegistryApiVtableRef};
 use steel_registry::game_rules::GameRuleValue;
 use steel_registry::vanilla_game_rules::{IMMEDIATE_RESPAWN, LIMITED_CRAFTING, REDUCED_DEBUG_INFO};
-use steel_registry::{REGISTRY, Registry, RegistryEntry};
+use steel_registry::{REGISTRY, Registry, RegistryEntry, RegistryExt};
 use steel_utils::locks::SyncMutex;
 use steel_utils::{ChunkPos, Identifier, entity_events::EntityStatus, locks::SyncRwLock};
 use text_components::{Modifier, TextComponent, format::Color};
@@ -342,6 +344,25 @@ pub struct Server {
     pub plugins: Vec<steel_plugin_loader::LoadedPlugin>,
 }
 
+struct HostRegistryApi;
+
+impl PluginRegistryApiVtable for HostRegistryApi {
+    extern "C" fn get_block_state_id(
+        &self,
+        namespace: steel_plugin_api::AbiStr<'_>,
+        path: steel_plugin_api::AbiStr<'_>,
+    ) -> u16 {
+        let ident = Identifier::new(namespace.to_string(), path.to_string());
+        if let Some(block) = REGISTRY.blocks.by_key(&ident) {
+            REGISTRY.blocks.get_default_state_id(block).0
+        } else {
+            0
+        }
+    }
+}
+
+static HOST_REGISTRY_API: HostRegistryApi = HostRegistryApi;
+
 impl Server {
     /// Creates a new server.
     ///
@@ -356,9 +377,18 @@ impl Server {
         worlds_config: WorldsConfig,
     ) -> Result<Self, String> {
         let config = Arc::new(config);
-        let plugins = steel_plugin_loader::load_plugins();
+        let registry_api_ref = PluginRegistryApiVtableRef((&HOST_REGISTRY_API).into());
+        let plugins = steel_plugin_loader::load_plugins(registry_api_ref);
         let start = Instant::now();
         let mut registry = Registry::new_vanilla();
+
+        // Fire registry initialization hook
+        let hook_registry = get_host_registry();
+        let action_args = RegistryInitAction {
+            registry: (&raw mut registry).cast::<c_void>(),
+        };
+        hook_registry.do_action_typed(&action_args);
+
         registry.freeze();
         log::info!("Vanilla registry loaded in {:?}", start.elapsed());
 

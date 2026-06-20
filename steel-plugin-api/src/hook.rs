@@ -1,6 +1,18 @@
 use crate::AbiString;
 pub use crate::logging::LogLevel;
 
+pub use crate::hook_types::{
+    BehaviorInitAction, CommandInitAction, PluginBehaviorRegistry, PluginBlockBehavior,
+    PluginBlockBehaviorRef, PluginCommandDispatcher, PluginItemBehavior, PluginItemBehaviorRef,
+    PluginRegistryApi, PluginRegistryApiVtable, PluginRegistryApiVtableRef, PluginWorld,
+    PluginWorldRef, RegistryInitAction, PluginCommandHandler,
+    PluginCommandHandlerRef, FnCommandHandler, PluginCommandHandlerDyn,
+    PluginCommandNodeBuffer, PluginCommandNodeBufferRef, PluginCommandNodeBufferDyn,
+    PluginCommandRootChildren, PluginCommandRootChildrenRef, PluginCommandRootChildrenDyn,
+    PluginCommandSender, PluginCommandSenderRef, PluginCommandSenderDyn,
+};
+pub use crate::types::InteractionResult;
+
 /// An Action represents a point of execution where callbacks can run side-effects.
 /// All Action types must be FFI-stable.
 pub trait Action: stabby::abi::IStable + Sized {
@@ -100,9 +112,11 @@ pub struct PluginInitContext {
 
 /// Scoped API for action and filter hook registrations and executions.
 #[stabby::stabby]
+#[derive(Clone)]
 pub struct HookApi {
     pub host_api: HookApiVtableRef,
     pub plugin_id: crate::AbiString,
+    pub registry: PluginRegistryApi,
 }
 
 impl HookApi {
@@ -262,8 +276,6 @@ impl FilterBuilder {
         });
     }
 }
-
-// No global HookApi or OnceLock is maintained in the stateless plugin API.
 
 /// Action fired on every game server tick.
 #[stabby::stabby]

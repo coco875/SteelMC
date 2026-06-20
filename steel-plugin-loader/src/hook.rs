@@ -284,6 +284,8 @@ fn topological_sort(nodes: &FxHashSet<String>, edges: &FxHashSet<(String, String
     order
 }
 
+
+
 static HOST_HOOK_REGISTRY: OnceLock<HostHookRegistry> = OnceLock::new();
 
 /// Retrieves the global static instance of the `HostHookRegistry`.
@@ -295,7 +297,10 @@ pub fn get_host_registry() -> &'static HostHookRegistry {
 mod tests {
     use super::*;
     use steel_plugin_api::AbiString;
-    use steel_plugin_api::hook::{Action, Filter, HookApi};
+    use steel_plugin_api::hook::{
+        Action, Filter, HookApi, PluginRegistryApi, PluginRegistryApiVtable,
+        PluginRegistryApiVtableRef,
+    };
 
     #[stabby::stabby]
     struct PlayerJoinAction {
@@ -348,18 +353,37 @@ mod tests {
         chat_value.message = AbiString::from(msg);
     }
 
+    struct TestRegistryApi;
+    impl PluginRegistryApiVtable for TestRegistryApi {
+        extern "C" fn get_block_state_id(
+            &self,
+            _namespace: steel_plugin_api::AbiStr<'_>,
+            _path: steel_plugin_api::AbiStr<'_>,
+        ) -> u16 {
+            0
+        }
+    }
+    static TEST_REGISTRY_API: TestRegistryApi = TestRegistryApi;
+
     #[test]
     fn test_generic_actions_and_filters() {
         let registry = get_host_registry();
         let stable_api = HookApiVtableRef(registry.into());
+        let test_registry_api_ref = PluginRegistryApiVtableRef((&TEST_REGISTRY_API).into());
 
         let api_a = HookApi {
             host_api: stable_api,
             plugin_id: AbiString::from("plugin_a"),
+            registry: PluginRegistryApi {
+                api: test_registry_api_ref,
+            },
         };
         let api_b = HookApi {
             host_api: stable_api,
             plugin_id: AbiString::from("plugin_b"),
+            registry: PluginRegistryApi {
+                api: test_registry_api_ref,
+            },
         };
 
         // Test Action Hook

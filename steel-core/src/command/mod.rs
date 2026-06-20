@@ -7,13 +7,23 @@ pub mod sender;
 
 use std::sync::Arc;
 
-use steel_protocol::packets::game::{CCommandSuggestions, CCommands, CommandNode, SuggestionEntry};
+use steel_protocol::packets::game::{
+    ArgumentType, ArgumentStringTypeBehavior, CCommandSuggestions, CCommands, CommandNode,
+    CommandNodeInfo, SuggestionEntry,
+};
+use steel_plugin_api::hook::{
+    CommandInitAction, PluginCommandHandlerRef, PluginCommandHandlerDyn,
+    PluginCommandNodeBuffer, PluginCommandRootChildren,
+    PluginCommandSender,
+};
+use steel_plugin_loader::hook::get_host_registry;
 use text_components::{Modifier, TextComponent, format::Color};
 
 use crate::command::commands::CommandHandlerDyn;
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
 use crate::command::sender::CommandSender;
+use crate::entity::Entity;
 use crate::player::Player;
 use crate::server::Server;
 
@@ -51,6 +61,19 @@ impl CommandDispatcher {
         dispatcher.register(commands::difficulty::command_handler());
         dispatcher.register(commands::steel::command_handler());
         dispatcher.register(commands::xp::command_handler());
+
+        // Fire command initialization hook
+        let host_dispatcher: &'static HostCommandDispatcher = Box::leak(Box::new(HostCommandDispatcher {
+            dispatcher: &raw const dispatcher,
+        }));
+        let dispatcher_dynptr = host_dispatcher.into();
+
+        let hook_registry = get_host_registry();
+        let action_args = CommandInitAction {
+            dispatcher: dispatcher_dynptr,
+        };
+        hook_registry.do_action_typed(&action_args);
+
         dispatcher
     }
 
@@ -262,5 +285,218 @@ impl CommandDispatcher {
 
         suggestions.sort_by(|a, b| a.text.cmp(&b.text));
         suggestions
+    }
+}
+
+struct PluginCommandHandler {
+    names: &'static [&'static str],
+    handler: PluginCommandHandlerRef,
+}
+
+struct HostCommandNodeBuffer<'a> {
+    buffer: std::cell::RefCell<&'a mut Vec<CommandNode>>,
+}
+
+impl<'a> PluginCommandNodeBuffer for HostCommandNodeBuffer<'a> {
+    extern "C" fn add_literal(&self, name: steel_plugin_api::AbiStr<'_>, is_executable: bool) -> i32 {
+        let mut buffer = self.buffer.borrow_mut();
+        let index = buffer.len() as i32;
+        buffer.push(CommandNode::new_literal(
+            if is_executable {
+                CommandNodeInfo::new_executable()
+            } else {
+                CommandNodeInfo::new(vec![])
+            },
+            name.to_string(),
+        ));
+        index
+    }
+
+    extern "C" fn add_argument(&self, name: steel_plugin_api::AbiStr<'_>, is_executable: bool) -> i32 {
+        let mut buffer = self.buffer.borrow_mut();
+        let index = buffer.len() as i32;
+        buffer.push(CommandNode::new_argument(
+            if is_executable {
+                CommandNodeInfo::new_executable()
+            } else {
+                CommandNodeInfo::new(vec![])
+            },
+            name.to_string(),
+            (
+                ArgumentType::String {
+                    behavior: ArgumentStringTypeBehavior::GreedyPhrase,
+                },
+                None,
+            ),
+        ));
+        index
+    }
+
+    extern "C" fn link_child(&self, parent_index: i32, child_index: i32) {
+        let mut buffer = self.buffer.borrow_mut();
+        if let Some(parent) = buffer.get_mut(parent_index as usize) {
+            match parent {
+                CommandNode::Root { children } => {
+                    children.push(child_index);
+                }
+                CommandNode::Literal { children, .. } => {
+                    children.push(child_index);
+                }
+                CommandNode::Argument { children, .. } => {
+                    children.push(child_index);
+                }
+            }
+        }
+    }
+}
+
+struct HostCommandRootChildren<'a> {
+    root_children: std::cell::RefCell<&'a mut Vec<i32>>,
+}
+
+impl<'a> PluginCommandRootChildren for HostCommandRootChildren<'a> {
+    extern "C" fn push(&self, node_index: i32) {
+        self.root_children.borrow_mut().push(node_index);
+    }
+}
+
+struct HostCommandSender<'a> {
+    sender: &'a CommandSender,
+}
+
+impl<'a> PluginCommandSender for HostCommandSender<'a> {
+    extern "C" fn send_message(&self, message: steel_plugin_api::AbiStr<'_>) {
+        self.sender.send_message(&TextComponent::from(message.as_str().to_string()));
+    }
+
+    extern "C" fn sender_type(&self) -> steel_plugin_api::types::CommandSenderType {
+        match self.sender {
+            CommandSender::Player(_) => steel_plugin_api::types::CommandSenderType::Player,
+            CommandSender::Console => steel_plugin_api::types::CommandSenderType::Console,
+            CommandSender::Rcon => steel_plugin_api::types::CommandSenderType::Rcon,
+        }
+    }
+
+    extern "C" fn name(&self) -> steel_plugin_api::AbiString {
+        steel_plugin_api::AbiString::from(self.sender.to_string())
+    }
+
+    extern "C" fn player_id(&self) -> i32 {
+        if let CommandSender::Player(player) = self.sender {
+            player.id()
+        } else {
+            -1
+        }
+    }
+
+    extern "C" fn uuid(&self) -> steel_plugin_api::types::PluginUuid {
+        if let CommandSender::Player(player) = self.sender {
+            steel_plugin_api::types::PluginUuid {
+                bytes: player.uuid().into_bytes(),
+            }
+        } else {
+            steel_plugin_api::types::PluginUuid { bytes: [0; 16] }
+        }
+    }
+
+    extern "C" fn kick(&self, reason: steel_plugin_api::AbiStr<'_>) -> bool {
+        if let CommandSender::Player(player) = self.sender {
+            player.disconnect(reason.as_str().to_string());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl CommandHandlerDyn for PluginCommandHandler {
+    fn names(&self) -> &'static [&'static str] {
+        self.names
+    }
+
+    fn description(&self) -> &'static str {
+        self.handler.description().as_str()
+    }
+
+    fn permission(&self) -> &'static str {
+        self.handler.permission().as_str()
+    }
+
+    fn execute(
+        &self,
+        command_args: &[&str],
+        context: &mut CommandContext,
+        _server: &Arc<Server>,
+    ) -> Result<(), CommandError> {
+        let abi_args: Vec<steel_plugin_api::AbiStr<'_>> = command_args
+            .iter()
+            .map(|s| steel_plugin_api::AbiStr::from(*s))
+            .collect();
+
+        let host_sender = HostCommandSender {
+            sender: &context.sender,
+        };
+
+        // SAFETY: The FFI call is synchronous, so the reference to the stack-allocated structure is guaranteed to remain valid.
+        let host_sender_static_ref = unsafe {
+            std::mem::transmute::<&HostCommandSender<'_>, &'static HostCommandSender<'static>>(&host_sender)
+        };
+        let host_sender_ref = host_sender_static_ref.into();
+
+        let args_ptr = abi_args.as_ptr().cast::<steel_plugin_api::AbiStr<'static>>();
+        self.handler.execute(host_sender_ref, args_ptr, abi_args.len());
+        Ok(())
+    }
+
+    fn usage(&self, buffer: &mut Vec<CommandNode>, root_children: &mut Vec<i32>) {
+        let node_buffer = HostCommandNodeBuffer {
+            buffer: std::cell::RefCell::new(buffer),
+        };
+        let node_root_children = HostCommandRootChildren {
+            root_children: std::cell::RefCell::new(root_children),
+        };
+
+        // SAFETY: The FFI call is synchronous, so the reference to the stack-allocated structures is guaranteed to remain valid.
+        let node_buffer_static_ref = unsafe {
+            std::mem::transmute::<&HostCommandNodeBuffer<'_>, &'static HostCommandNodeBuffer<'static>>(&node_buffer)
+        };
+        let node_root_children_static_ref = unsafe {
+            std::mem::transmute::<&HostCommandRootChildren<'_>, &'static HostCommandRootChildren<'static>>(&node_root_children)
+        };
+
+        let node_buffer_ref = node_buffer_static_ref.into();
+        let node_root_children_ref = node_root_children_static_ref.into();
+
+        self.handler.usage(node_buffer_ref, node_root_children_ref);
+    }
+}
+
+/// Host-side wrapper that implements the plugin API's `PluginCommandDispatcher` trait.
+pub struct HostCommandDispatcher {
+    /// Opaque pointer to the underlying command dispatcher.
+    pub dispatcher: *const CommandDispatcher,
+}
+
+// SAFETY: HostCommandDispatcher is only used synchronously during initialization.
+unsafe impl Send for HostCommandDispatcher {}
+// SAFETY: HostCommandDispatcher is only used synchronously during initialization.
+unsafe impl Sync for HostCommandDispatcher {}
+
+impl steel_plugin_api::hook::PluginCommandDispatcher for HostCommandDispatcher {
+    extern "C" fn register_command(
+        &self,
+        handler: PluginCommandHandlerRef,
+    ) {
+        // SAFETY: The host guarantees that `dispatcher` points to a valid `CommandDispatcher`.
+        let dispatcher = unsafe { &*self.dispatcher };
+
+        let name = handler.name().as_str();
+        let leaked_names: &'static [&'static str] = Box::leak(Box::new([name]));
+
+        let host_handler = PluginCommandHandler {
+            names: leaked_names,
+            handler,
+        };
+        dispatcher.register(host_handler);
     }
 }
