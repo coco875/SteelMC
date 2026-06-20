@@ -1,7 +1,4 @@
-use std::{
-    ops,
-    simd::{Simd, SimdElement},
-};
+use core::simd::{Simd, f64x4};
 
 /// Linear interpolation.
 ///
@@ -94,37 +91,27 @@ pub fn lerp3(
     )
 }
 
-/// SIMD trilinear interpolation.
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
+/// Trilinear interpolation for N lanes. see lerp3.
+#[inline]
+#[expect(clippy::too_many_arguments, reason = "mirrors lerp3 with SIMD vectors")]
 #[must_use]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "matches vanilla's Mth.lerp3 signature with 8 grid corner values"
-)]
-pub fn lerp3_simd<F, const N: usize>(
-    a1: Simd<F, N>,
-    a2: Simd<F, N>,
-    a3: Simd<F, N>,
-    x000: Simd<F, N>,
-    x100: Simd<F, N>,
-    x010: Simd<F, N>,
-    x110: Simd<F, N>,
-    x001: Simd<F, N>,
-    x101: Simd<F, N>,
-    x011: Simd<F, N>,
-    x111: Simd<F, N>,
-) -> Simd<F, N>
-where
-    F: SimdElement,
-    Simd<F, N>: ops::Mul<Output = Simd<F, N>>
-        + ops::Add<Output = Simd<F, N>>
-        + ops::Sub<Output = Simd<F, N>>,
-{
-    lerp_simd(
+pub fn lerp3_simd<const N: usize>(
+    a1: Simd<f64, N>,
+    a2: Simd<f64, N>,
+    a3: Simd<f64, N>,
+    x000: Simd<f64, N>,
+    x100: Simd<f64, N>,
+    x010: Simd<f64, N>,
+    x110: Simd<f64, N>,
+    x001: Simd<f64, N>,
+    x101: Simd<f64, N>,
+    x011: Simd<f64, N>,
+    x111: Simd<f64, N>,
+) -> Simd<f64, N> {
+    lerp_simd::<N>(
         a3,
-        lerp2_simd(a1, a2, x000, x100, x010, x110),
-        lerp2_simd(a1, a2, x001, x101, x011, x111),
+        lerp2_simd::<N>(a1, a2, x000, x100, x010, x110),
+        lerp2_simd::<N>(a1, a2, x001, x101, x011, x111),
     )
 }
 

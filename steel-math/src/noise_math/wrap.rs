@@ -1,12 +1,25 @@
-use std::{
-    ops,
-    simd::{Simd, SimdCast, SimdElement, StdFloat, num::SimdFloat},
-};
+use std::simd::StdFloat;
+use std::simd::cmp::SimdPartialOrd;
+use std::simd::{Simd, f64x4};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
 /// This is 2^25 = 33554432.
 const ROUND_OFF: f64 = 33_554_432.0;
 const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
+
+/// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
+#[inline]
+#[must_use]
+pub fn wrap_simd<const N: usize>(x: Simd<f64, N>) -> Simd<f64, N> {
+    let in_fast_range =
+        x.simd_ge(Simd::splat(-HALF_ROUND_OFF)) & x.simd_lt(Simd::splat(HALF_ROUND_OFF));
+    if in_fast_range.all() {
+        return x;
+    }
+
+    let round_off = Simd::splat(ROUND_OFF);
+    x - (x / round_off + Simd::splat(0.5)).floor() * round_off
+}
 
 /// Wrap a coordinate to prevent precision loss at large values.
 ///
@@ -22,22 +35,6 @@ pub fn wrap(x: f64) -> f64 {
     }
 
     x - (x / ROUND_OFF + 0.5).floor() * ROUND_OFF
-}
-
-/// Wrap 4 coordinates to prevent precision loss (SIMD version of [`wrap`]).
-#[inline]
-#[must_use]
-pub fn wrap_simd<F, const N: usize>(x: Simd<F, N>) -> Simd<F, N>
-where
-    F: SimdElement + SimdCast,
-    Simd<F, N>: ops::Div<Output = Simd<F, N>>
-        + ops::Add<Output = Simd<F, N>>
-        + ops::Mul<Output = Simd<F, N>>
-        + ops::Sub<Output = Simd<F, N>>
-        + StdFloat,
-{
-    let round_off = Simd::splat(ROUND_OFF).cast::<F>();
-    x - (x / round_off + Simd::splat(0.5).cast::<F>()).floor() * round_off
 }
 
 #[cfg(test)]
@@ -70,6 +67,34 @@ mod tests {
             -100_000_000.0,
         ] {
             assert!((wrap(x) - wrap_reference(x)).abs() < 1e-15);
+        }
+    }
+
+    #[test]
+    fn test_wrap_4x_matches_scalar_wrap() {
+        let cases = [
+            [0.0, 1.0, -1.0, HALF_ROUND_OFF - 1.0],
+            [
+                -HALF_ROUND_OFF,
+                -HALF_ROUND_OFF + 1.0,
+                HALF_ROUND_OFF - 1.0,
+                HALF_ROUND_OFF,
+            ],
+            [ROUND_OFF, -ROUND_OFF, 100_000_000.0, -100_000_000.0],
+            [1.25, HALF_ROUND_OFF, -20.5, -HALF_ROUND_OFF],
+        ];
+
+        for case in cases {
+            let wrapped = wrap_4x(f64x4::from_array(case)).to_array();
+            for (input, actual) in case.into_iter().zip(wrapped) {
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "SIMD wrap must be bit-identical to scalar wrap per lane"
+                )]
+                {
+                    assert_eq!(actual, wrap(input));
+                }
+            }
         }
     }
 }
