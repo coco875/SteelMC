@@ -2,14 +2,15 @@
 //!
 //! This is the base noise generator used by `PerlinNoise` for octave-based noise.
 
+use crate::random::Random;
 use std::ops;
 use std::simd::Simd;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+#[cfg(target_feature = "avx512f")]
+use std::simd::f64x4;
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
 use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
-
-use crate::random::Random;
 use steel_math::{
     GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3, lerp3_simd,
     smoothstep, smoothstep_derivative, smoothstep_simd,
@@ -296,8 +297,8 @@ impl ImprovedNoise {
                 let zr_v0 = f64x4::splat(zr);
                 let zr_v1 = f64x4::splat(zr - 1.0);
 
-                let [d000, d100, d010, d110] = grad_dot_4x(h_z0, xr_v, yr_v, zr_v0).to_array();
-                let [d001, d101, d011, d111] = grad_dot_4x(h_z1, xr_v, yr_v, zr_v1).to_array();
+                let [d000, d100, d010, d110] = grad_dot_simd(h_z0, xr_v, yr_v, zr_v0).to_array();
+                let [d001, d101, d011, d111] = grad_dot_simd(h_z1, xr_v, yr_v, zr_v1).to_array();
                 (d000, d100, d010, d110, d001, d101, d011, d111)
             }
 
