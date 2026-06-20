@@ -74,7 +74,7 @@ where
     }
 
     #[cfg(not(target_feature = "avx512f"))]
-    {
+    if N != 4 {
         let mut gx = [0.; N];
         let mut gy = [0.; N];
         let mut gz = [0.; N];
@@ -88,6 +88,20 @@ where
         let gx = Simd::from_array(gx).cast();
         let gy = Simd::from_array(gy).cast();
         let gz = Simd::from_array(gz).cast();
+        gx * x + gy * y + gz * z
+    } else {
+        let h0 = Simd::from_array(GRADIENT_4[hashes[0] & 15]).cast::<F>();
+        let h1 = Simd::from_array(GRADIENT_4[hashes[1] & 15]).cast::<F>();
+        let h2 = Simd::from_array(GRADIENT_4[hashes[2] & 15]).cast::<F>();
+        let h3 = Simd::from_array(GRADIENT_4[hashes[3] & 15]).cast::<F>();
+
+        let (gx_4, gy_4, gz_4, _gw) = transpose(h0, h1, h2, h3);
+
+        // Safely cast from Simd<F, 4> to Simd<F, N> since N == 4 here
+        let gx: Simd<F, N> = unsafe { std::mem::transmute_copy(&gx_4) };
+        let gy: Simd<F, N> = unsafe { std::mem::transmute_copy(&gy_4) };
+        let gz: Simd<F, N> = unsafe { std::mem::transmute_copy(&gz_4) };
+
         gx * x + gy * y + gz * z
     }
 }
