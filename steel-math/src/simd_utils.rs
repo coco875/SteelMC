@@ -1,14 +1,17 @@
-use std::simd::{f64x4, f64x8, simd_swizzle};
+use std::simd::{Simd, SimdElement, f64x4, f64x8, simd_swizzle};
 
 /// Transposes a 4x4 matrix of 64-bit floats represented by four SIMD vectors (`f64x4`).
 #[inline]
 #[must_use]
-pub fn transpose(
-    r0: f64x4, // [a0, a1, a2, a3]
-    r1: f64x4, // [b0, b1, b2, b3]
-    r2: f64x4, // [c0, c1, c2, c3]
-    r3: f64x4, // [d0, d1, d2, d3]
-) -> (f64x4, f64x4, f64x4, f64x4) {
+pub fn transpose<F>(
+    r0: Simd<F, 4>, // [a0, a1, a2, a3]
+    r1: Simd<F, 4>, // [b0, b1, b2, b3]
+    r2: Simd<F, 4>, // [c0, c1, c2, c3]
+    r3: Simd<F, 4>, // [d0, d1, d2, d3]
+) -> (Simd<F, 4>, Simd<F, 4>, Simd<F, 4>, Simd<F, 4>)
+where
+    F: SimdElement,
+{
     let (t0, t1) = r0.deinterleave(r1); // t0 = [a0, a2, b0, b2], t1 = [a1, a3, b1, b3]
     let (t2, t3) = r2.deinterleave(r3); // t2 = [c0, c2, d0, d2], t3 = [c1, c3, d1, d3]
 
