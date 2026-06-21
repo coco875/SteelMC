@@ -376,6 +376,9 @@ impl Server {
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            if let Some(max_threads) = config.max_threads.filter(|&t| t > 0) {
+                builder = builder.num_threads(max_threads);
+            }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
                 builder = builder.stack_size(8 * 1024 * 1024);

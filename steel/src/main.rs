@@ -128,33 +128,6 @@ fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    let half_cpus = (thread::available_parallelism().map_or(4, NonZero::get) / 2).max(2);
-
-    let chunk_runtime = Arc::new(
-        Builder::new_multi_thread()
-            .worker_threads(half_cpus)
-            .thread_name("chunk-worker")
-            .enable_all()
-            .build()
-            .unwrap(),
-    );
-
-    let main_runtime = Builder::new_multi_thread()
-        .worker_threads(half_cpus)
-        .thread_name("main-worker")
-        .enable_all()
-        .build()
-        .unwrap();
-
-    main_runtime.block_on(main_async(chunk_runtime.clone()));
-
-    drop(main_runtime);
-    drop(chunk_runtime);
-}
-
-async fn main_async(chunk_runtime: Arc<Runtime>) {
-    let cancel_token = CancellationToken::new();
-
     // Load config once at startup
     let steel_config = match config::load_or_create(Path::new("config/config.toml")) {
         Ok(config) => config,
@@ -163,6 +136,39 @@ async fn main_async(chunk_runtime: Arc<Runtime>) {
             return;
         }
     };
+
+    let threads = steel_config.server.max_threads.unwrap_or(0);
+    let worker_threads = if threads > 0 {
+        threads
+    } else {
+        (thread::available_parallelism().map_or(4, NonZero::get) / 2).max(2)
+    };
+
+    let chunk_runtime = Arc::new(
+        Builder::new_multi_thread()
+            .worker_threads(worker_threads)
+            .thread_name("chunk-worker")
+            .enable_all()
+            .build()
+            .unwrap(),
+    );
+
+    let main_runtime = Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .thread_name("main-worker")
+        .enable_all()
+        .build()
+        .unwrap();
+
+    main_runtime.block_on(main_async(chunk_runtime.clone(), steel_config));
+
+    drop(main_runtime);
+    drop(chunk_runtime);
+}
+
+async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
+    let cancel_token = CancellationToken::new();
+
     let logger = match init_tracing(cancel_token.clone(), steel_config.log.clone()).await {
         Ok(logger) => logger,
         Err(error) => {

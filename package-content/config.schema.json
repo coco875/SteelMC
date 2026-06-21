@@ -203,6 +203,12 @@
             }
           },
           "additionalProperties": false
+        },
+        "max_threads": {
+          "type": "integer",
+          "description": "Optional limit on the number of threads for thread pools (0 or omitted for default/auto)",
+          "minimum": 0,
+          "default": 0
         }
       },
       "required": [

@@ -5,7 +5,8 @@
 server_port = 25565
 # Maximum number of players allowed on the server
 max_players = 20
-# Maximum view distance in chunks
+# Maximum threads limit for thread pools (Tokio runtimes and Rayon pools). 0 or omitted for default/auto.
+# max_threads = 4
 # Remove limit of view_distance of vanilla (which is limited to 32 chunks)
 disable_view_limit = false
 # Maximum view distance in chunks (1-32, or up to 127 if disable_view_limit is true)

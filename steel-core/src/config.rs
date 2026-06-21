@@ -56,6 +56,8 @@ pub struct RuntimeConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Optional limit on the number of threads for thread pools.
+    pub max_threads: Option<usize>,
 }
 
 impl RuntimeConfig {

@@ -104,6 +104,9 @@ pub struct ServerConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
+    /// Optional limit on the number of threads for thread pools.
+    #[serde(default)]
+    pub max_threads: Option<usize>,
 }
 
 impl ServerConfig {
@@ -126,6 +129,7 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
+            max_threads: self.max_threads,
         }
     }
 }
