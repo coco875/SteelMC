@@ -22,18 +22,23 @@
           "maximum": 2147483647,
           "default": 20
         },
+        "disable_view_limit": {
+          "type": "boolean",
+          "description": "Remove limit of view_distance of vanilla",
+          "default": false
+        },
         "view_distance": {
           "type": "integer",
-          "description": "Maximum view distance in chunks",
+          "description": "Maximum view distance in chunks (1-32, or up to 127 if disable_view_limit is true)",
           "minimum": 1,
-          "maximum": 32,
+          "maximum": 127,
           "default": 10
         },
         "simulation_distance": {
           "type": "integer",
           "description": "Maximum simulation distance in chunks",
           "minimum": 1,
-          "maximum": 32,
+          "maximum": 127,
           "default": 10
         },
         "online_mode": {
