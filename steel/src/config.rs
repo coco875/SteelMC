@@ -70,7 +70,7 @@ pub struct ServerConfig {
     pub server_port: u16,
     /// The maximum number of players that can be on the server at once.
     pub max_players: u32,
-    /// Remove limit of view_distance of vanilla
+    /// Remove limit of `view_distance` of vanilla
     #[serde(default)]
     pub disable_view_limit: bool,
     /// The view distance of the server.
