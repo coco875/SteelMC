@@ -1,4 +1,5 @@
 use std::ops;
+use std::simd::cmp::SimdPartialOrd;
 use std::simd::num::SimdFloat;
 use std::simd::{Simd, SimdCast};
 use std::simd::{SimdElement, StdFloat};
@@ -9,6 +10,9 @@ const ROUND_OFF: f64 = 33_554_432.0;
 const HALF_ROUND_OFF: f64 = ROUND_OFF / 2.0;
 
 /// Wrap N coordinates to prevent precision loss (N-lane SIMD version of [`wrap`]).
+///
+/// Fast path: at normal game coordinates all lanes are within `[-HALF_ROUND_OFF, HALF_ROUND_OFF)`,
+/// so the expensive `div + floor + mul` is skipped almost always.
 #[inline]
 #[must_use]
 pub fn wrap_simd<F, const N: usize>(x: Simd<F, N>) -> Simd<F, N>
@@ -18,8 +22,15 @@ where
         + ops::Add<Output = Simd<F, N>>
         + ops::Mul<Output = Simd<F, N>>
         + ops::Sub<Output = Simd<F, N>>
+        + SimdPartialOrd<Mask = std::simd::Mask<<F as SimdElement>::Mask, N>>
         + StdFloat,
 {
+    let in_fast_range = x.simd_ge(Simd::splat(-HALF_ROUND_OFF).cast())
+        & x.simd_lt(Simd::splat(HALF_ROUND_OFF).cast());
+    if in_fast_range.all() {
+        return x;
+    }
+
     let round_off = Simd::splat(ROUND_OFF).cast();
     x - (x / round_off + Simd::splat(0.5).cast()).floor() * round_off
 }
