@@ -70,9 +70,9 @@ pub struct ServerConfig {
     pub server_port: u16,
     /// The maximum number of players that can be on the server at once.
     pub max_players: u32,
-    /// Remove limit of `view_distance` of vanilla
+    /// Allow `view_distance` above vanilla's 32-chunk cap.
     #[serde(default)]
-    pub disable_view_limit: bool,
+    pub allow_extended_view_distance: bool,
     /// The view distance of the server.
     pub view_distance: u8,
     /// The simulation distance of the server.
@@ -305,10 +305,10 @@ fn load_or_create_worlds(path: &Path) -> Result<WorldsConfig, String> {
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 fn validate(config: &ServerConfig) -> Result<(), &'static str> {
-    if !config.disable_view_limit && !(1..=32).contains(&config.view_distance) {
+    if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
         return Err("View distance must in range 1..32");
     }
-    if config.disable_view_limit && !(1..=127).contains(&config.view_distance) {
+    if config.allow_extended_view_distance && !(1..=127).contains(&config.view_distance) {
         return Err("View distance must in range 1..127");
     }
     if let Some(auth_server) = &config.auth_server {
@@ -410,6 +410,31 @@ mod tests {
             config.server.into_runtime_config().chunk_generation_threads,
             Some(5)
         );
+    }
+
+    #[test]
+    fn validate_rejects_extended_view_distance_without_opt_in() {
+        let config_toml = DEFAULT_CONFIG.replace("view_distance = 10", "view_distance = 33");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(
+            validate(&config.server),
+            Err("View distance must in range 1..32")
+        );
+    }
+
+    #[test]
+    fn validate_allows_extended_view_distance_with_opt_in() {
+        let config_toml = DEFAULT_CONFIG
+            .replace(
+                "allow_extended_view_distance = false",
+                "allow_extended_view_distance = true",
+            )
+            .replace("view_distance = 10", "view_distance = 127")
+            .replace("simulation_distance = 10", "simulation_distance = 127");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        validate(&config.server).expect("extended view distance validates");
     }
 
     #[test]
