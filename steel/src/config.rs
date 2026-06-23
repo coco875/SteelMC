@@ -104,9 +104,9 @@ pub struct ServerConfig {
     pub compression: Option<CompressionInfo>,
     /// All settings and configurations for server links.
     pub server_links: Option<ServerLinks>,
-    /// Optional limit on the number of threads for thread pools.
+    /// Thread counts for server thread pools.
     #[serde(default)]
-    pub max_threads: Option<usize>,
+    pub threads: ThreadConfig,
 }
 
 impl ServerConfig {
@@ -129,9 +129,23 @@ impl ServerConfig {
             command_spam_threshold_seconds: self.command_spam_threshold_seconds,
             compression: self.compression,
             server_links: self.server_links,
-            max_threads: self.max_threads,
+            chunk_generation_threads: self.threads.chunk_generation,
         }
     }
+}
+
+/// Optional worker counts for server thread pools.
+///
+/// A value of `0` or an omitted field uses the pool's automatic default.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ThreadConfig {
+    /// Worker threads for the primary Tokio runtime.
+    pub main_runtime: Option<usize>,
+    /// Worker threads for the chunk Tokio runtime.
+    pub chunk_runtime: Option<usize>,
+    /// Worker threads for the Rayon chunk generation pool.
+    pub chunk_generation: Option<usize>,
 }
 
 /// Logging configuration
@@ -378,6 +392,23 @@ mod tests {
         assert_eq!(
             config.server.into_runtime_config().auth_server.as_deref(),
             Some(auth_server)
+        );
+    }
+
+    #[test]
+    fn configured_thread_counts_parse_and_generation_flows_to_runtime_config() {
+        let config_toml = DEFAULT_CONFIG
+            .replace("main_runtime = 0", "main_runtime = 3")
+            .replace("chunk_runtime = 0", "chunk_runtime = 4")
+            .replace("chunk_generation = 0", "chunk_generation = 5");
+        let config: SteelConfig = toml::from_str(&config_toml).expect("config parses");
+
+        assert_eq!(config.server.threads.main_runtime, Some(3));
+        assert_eq!(config.server.threads.chunk_runtime, Some(4));
+        assert_eq!(config.server.threads.chunk_generation, Some(5));
+        assert_eq!(
+            config.server.into_runtime_config().chunk_generation_threads,
+            Some(5)
         );
     }
 

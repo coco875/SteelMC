@@ -137,16 +137,12 @@ fn main() {
         }
     };
 
-    let threads = steel_config.server.max_threads.unwrap_or(0);
-    let worker_threads = if threads > 0 {
-        threads
-    } else {
-        (thread::available_parallelism().map_or(4, NonZero::get) / 2).max(2)
-    };
+    let main_worker_threads = configured_worker_threads(steel_config.server.threads.main_runtime);
+    let chunk_worker_threads = configured_worker_threads(steel_config.server.threads.chunk_runtime);
 
     let chunk_runtime = Arc::new(
         Builder::new_multi_thread()
-            .worker_threads(worker_threads)
+            .worker_threads(chunk_worker_threads)
             .thread_name("chunk-worker")
             .enable_all()
             .build()
@@ -154,7 +150,7 @@ fn main() {
     );
 
     let main_runtime = Builder::new_multi_thread()
-        .worker_threads(worker_threads)
+        .worker_threads(main_worker_threads)
         .thread_name("main-worker")
         .enable_all()
         .build()
@@ -164,6 +160,26 @@ fn main() {
 
     drop(main_runtime);
     drop(chunk_runtime);
+}
+
+fn configured_worker_threads(configured_threads: Option<usize>) -> usize {
+    worker_threads_for_available(configured_threads, available_worker_threads())
+}
+
+fn available_worker_threads() -> usize {
+    thread::available_parallelism().map_or(4, NonZero::get)
+}
+
+fn worker_threads_for_available(
+    configured_threads: Option<usize>,
+    available_threads: usize,
+) -> usize {
+    let available_threads = available_threads.max(1);
+    if let Some(configured_threads) = configured_threads.filter(|&threads| threads > 0) {
+        return configured_threads.min(available_threads);
+    }
+
+    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 async fn main_async(chunk_runtime: Arc<Runtime>, steel_config: config::SteelConfig) {
@@ -382,5 +398,23 @@ async fn shutdown_worlds(server: &Arc<Server>) {
     match server.player_data_storage.save_all(&players_to_save).await {
         Ok(count) => log::info!("Saved {count} players"),
         Err(e) => log::error!("Failed to save player data: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worker_threads_for_available;
+
+    #[test]
+    fn configured_worker_threads_are_capped_to_available_threads() {
+        assert_eq!(worker_threads_for_available(Some(16), 8), 8);
+        assert_eq!(worker_threads_for_available(Some(4), 8), 4);
+    }
+
+    #[test]
+    fn zero_worker_threads_uses_auto_default() {
+        assert_eq!(worker_threads_for_available(Some(0), 8), 4);
+        assert_eq!(worker_threads_for_available(None, 8), 4);
+        assert_eq!(worker_threads_for_available(None, 1), 1);
     }
 }

@@ -204,11 +204,30 @@
           },
           "additionalProperties": false
         },
-        "max_threads": {
-          "type": "integer",
-          "description": "Optional limit on the number of threads for thread pools (0 or omitted for default/auto)",
-          "minimum": 0,
-          "default": 0
+        "threads": {
+          "type": "object",
+          "description": "Optional worker counts for server thread pools. 0 or omitted uses each pool's automatic default.",
+          "properties": {
+            "main_runtime": {
+              "type": "integer",
+              "description": "Worker threads for the primary Tokio runtime",
+              "minimum": 0,
+              "default": 0
+            },
+            "chunk_runtime": {
+              "type": "integer",
+              "description": "Worker threads for the chunk Tokio runtime",
+              "minimum": 0,
+              "default": 0
+            },
+            "chunk_generation": {
+              "type": "integer",
+              "description": "Worker threads for the Rayon chunk generation pool",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
