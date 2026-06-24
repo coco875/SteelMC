@@ -24,7 +24,8 @@ where
     F: SimdElement + SimdCast,
     Simd<F, 4>: ops::Mul<Output = Simd<F, 4>>
         + ops::Add<Output = Simd<F, 4>>
-        + ops::Sub<Output = Simd<F, 4>>,
+        + ops::Sub<Output = Simd<F, 4>>
+        + ops::Neg<Output = Simd<F, 4>>,
 {
     #[cfg(target_feature = "avx512f")]
     {
@@ -61,12 +62,12 @@ where
     F: SimdElement + SimdCast,
     Simd<F, N>: ops::Mul<Output = Simd<F, N>>
         + ops::Add<Output = Simd<F, N>>
-        + ops::Sub<Output = Simd<F, N>>,
+        + ops::Sub<Output = Simd<F, N>>
+        + ops::Neg<Output = Simd<F, N>>,
 {
     #[cfg(target_feature = "avx512f")]
     {
         let hash_lanes = Simd::<i64, N>::from_array(hashes.map(|value| (value & 15) as i64));
-        let zero = Simd::splat(0.0).cast::<F>();
         let u_component = hash_lanes.simd_lt(Simd::splat(8)).select(x, y);
         let v_component = hash_lanes.simd_lt(Simd::splat(4)).select(
             y,
@@ -75,10 +76,10 @@ where
         );
         let signed_u = (hash_lanes & Simd::splat(1))
             .simd_eq(Simd::splat(0))
-            .select(u_component, zero - u_component);
+            .select(u_component, -u_component);
         let signed_v = (hash_lanes & Simd::splat(2))
             .simd_eq(Simd::splat(0))
-            .select(v_component, zero - v_component);
+            .select(v_component, -v_component);
         signed_u + signed_v
     }
 

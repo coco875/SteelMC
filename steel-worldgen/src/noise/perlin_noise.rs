@@ -276,6 +276,7 @@ impl PerlinNoise {
             + ops::Sub<Output = Simd<F, N>>
             + ops::Mul<Output = Simd<F, N>>
             + ops::Div<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>
             + StdFloat,
     {
         let mut value = Simd::splat(0.0).cast();

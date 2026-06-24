@@ -115,7 +115,8 @@ impl ImprovedNoise {
             + SimdPartialEq<Mask = Mask<<F as SimdElement>::Mask, N>>
             + ops::Add<Output = Simd<F, N>>
             + ops::Sub<Output = Simd<F, N>>
-            + ops::Mul<Output = Simd<F, N>>,
+            + ops::Mul<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>,
     {
         let x = x + Simd::splat(self.xo).cast();
         let y = y + Simd::splat(self.yo).cast();
@@ -385,7 +386,8 @@ impl ImprovedNoise {
         F: SimdElement + SimdCast,
         Simd<F, N>: ops::Mul<Output = Simd<F, N>>
             + ops::Add<Output = Simd<F, N>>
-            + ops::Sub<Output = Simd<F, N>>,
+            + ops::Sub<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>,
     {
         let x = x.cast::<u8>();
         let y = y.cast::<u8>();

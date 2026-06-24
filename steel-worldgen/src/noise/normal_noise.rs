@@ -173,6 +173,7 @@ impl NormalNoise {
             + ops::Sub<Output = Simd<F, N>>
             + ops::Mul<Output = Simd<F, N>>
             + ops::Div<Output = Simd<F, N>>
+            + ops::Neg<Output = Simd<F, N>>
             + StdFloat,
     {
         let x2 = x * Simd::splat(INPUT_FACTOR).cast::<F>();
