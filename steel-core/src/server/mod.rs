@@ -21,7 +21,7 @@ use crate::entity::{Entity, EntityBase, RemovalReason, SharedEntity, init_entiti
 
 use crate::chunk_saver::{ChunkStorage, registry::WorldStorageRegistry};
 use crate::level_data::{LevelDataManager, RespawnData, WorldGenerationSettings};
-use crate::player::chunk_sender::ChunkSender;
+use crate::player::chunk_sender::{ChunkSender, EncodedChunk};
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::{PersistentPlayerData, PersistentRootVehicle};
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
@@ -37,12 +37,13 @@ use glam::DVec3;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::{
     mem,
+    num::NonZero,
     path::Path,
     sync::{Arc, mpsc},
+    thread,
     time::{Duration, Instant},
 };
 use steel_crypto::key_store::KeyStore;
-use steel_protocol::packet_traits::EncodedPacket;
 use steel_protocol::packets::game::{
     CEntityEvent, CGameEvent, CLogin, CSetDefaultSpawnPosition, CSystemChat, CTabList,
     CTickingState, CTickingStep, CommonPlayerSpawnInfo, GameEventType,
@@ -66,6 +67,39 @@ const CHUNK_SENDING_TPS: u64 = 20;
 
 /// Tick rate for the chunk scheduling loop.
 const CHUNK_SCHEDULING_TPS: u64 = 20;
+
+fn configured_chunk_generation_threads(configured_threads: Option<usize>) -> Option<usize> {
+    cap_positive_thread_count(configured_threads, available_worker_threads())
+}
+
+fn available_worker_threads() -> usize {
+    thread::available_parallelism().map_or(4, NonZero::get)
+}
+
+fn cap_positive_thread_count(
+    configured_threads: Option<usize>,
+    available_threads: usize,
+) -> Option<usize> {
+    let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
+    Some(configured_threads.min(available_threads.max(1)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cap_positive_thread_count;
+
+    #[test]
+    fn positive_thread_count_is_capped_to_available_threads() {
+        assert_eq!(cap_positive_thread_count(Some(16), 8), Some(8));
+        assert_eq!(cap_positive_thread_count(Some(4), 8), Some(4));
+    }
+
+    #[test]
+    fn zero_thread_count_keeps_pool_default() {
+        assert_eq!(cap_positive_thread_count(Some(0), 8), None);
+        assert_eq!(cap_positive_thread_count(None, 8), None);
+    }
+}
 
 #[derive(Clone, Copy)]
 struct PreparedSpawn {
@@ -395,6 +429,11 @@ impl Server {
 
         let generation_pool: Arc<ThreadPool> = Arc::new({
             let mut builder = ThreadPoolBuilder::new().thread_name(|i| format!("rayon-gen-{i}"));
+            if let Some(chunk_generation_threads) =
+                configured_chunk_generation_threads(config.chunk_generation_threads)
+            {
+                builder = builder.num_threads(chunk_generation_threads);
+            }
             // Debug builds have deep call chains in density functions that overflow the default 2 MB stack
             if cfg!(debug_assertions) {
                 builder = builder.stack_size(8 * 1024 * 1024);
@@ -1176,7 +1215,7 @@ impl Server {
     fn send_chunks_for_player(
         player: &Arc<Player>,
         world: &Arc<World>,
-        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedPacket>,
+        encode_cache: &mut rustc_hash::FxHashMap<ChunkPos, EncodedChunk>,
     ) {
         let chunk_pos = *player.last_chunk_pos.lock();
         let connection = &player.connection;
@@ -1196,8 +1235,22 @@ impl Server {
         let encoded = ChunkSender::encode_batch(&batch, encode_cache, compression);
 
         // Phase 3: commit (brief lock + generation check)
-        let mut sender = player.chunk_sender.lock();
-        sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch);
+        let sent_chunks = {
+            let mut sender = player.chunk_sender.lock();
+            sender.commit_batch(&batch, encoded, connection, &player.chunk_send_epoch)
+        };
+
+        if sent_chunks.is_empty() {
+            return;
+        }
+
+        let Some(view) = *player.last_tracking_view.lock() else {
+            return;
+        };
+        let sent_chunks = player.chunk_sender.lock().sent_chunks_snapshot();
+        world
+            .entity_tracker()
+            .update_player(player, &view, |chunk| sent_chunks.contains(&chunk));
     }
 
     /// Executes one chunk scheduling tick across all worlds.
