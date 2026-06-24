@@ -1,7 +1,7 @@
 use std::ops;
 use std::simd::cmp::SimdPartialOrd;
 use std::simd::num::SimdFloat;
-use std::simd::{Simd, SimdCast};
+use std::simd::{Mask, Simd, SimdCast};
 use std::simd::{SimdElement, StdFloat};
 
 /// Round-off constant for coordinate wrapping to prevent precision loss.
@@ -22,7 +22,7 @@ where
         + ops::Add<Output = Simd<F, N>>
         + ops::Mul<Output = Simd<F, N>>
         + ops::Sub<Output = Simd<F, N>>
-        + SimdPartialOrd<Mask = std::simd::Mask<<F as SimdElement>::Mask, N>>
+        + SimdPartialOrd<Mask = Mask<<F as SimdElement>::Mask, N>>
         + StdFloat,
 {
     let in_fast_range = x.simd_ge(Simd::splat(-HALF_ROUND_OFF).cast())
