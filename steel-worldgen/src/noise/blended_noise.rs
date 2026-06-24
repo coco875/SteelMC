@@ -199,18 +199,20 @@ impl BlendedNoise {
     /// Compute blended noise for a column of Y values, returning the results.
     ///
     /// Uses SIMD to process 4 Y values at a time.
-    pub fn compute_column(&self, block_x: f64, block_ys: &[f64], block_z: f64, out: &mut [f64]) {
+    pub fn compute_column(&self, block_x: i32, block_ys: &[i32], block_z: i32, out: &mut [f64]) {
         let count = block_ys.len().min(out.len());
+        let block_x = f64::from(block_x);
+        let block_z = f64::from(block_z);
 
         // SIMD batches of 4
         let full_chunks = count / 4;
         for chunk in 0..full_chunks {
             let base = chunk * 4;
             let batch_ys = [
-                block_ys[base],
-                block_ys[base + 1],
-                block_ys[base + 2],
-                block_ys[base + 3],
+                f64::from(block_ys[base]),
+                f64::from(block_ys[base + 1]),
+                f64::from(block_ys[base + 2]),
+                f64::from(block_ys[base + 3]),
             ];
             out[base..base + 4].copy_from_slice(&self.compute_simd(block_x, batch_ys, block_z));
         }
@@ -222,7 +224,7 @@ impl BlendedNoise {
             .skip(full_chunks * 4)
             .take(count - full_chunks * 4)
         {
-            out[i] = self.compute(block_x, y, block_z);
+            out[i] = self.compute(block_x, f64::from(y), block_z);
         }
     }
 
@@ -283,12 +285,15 @@ mod tests {
         let bn = BlendedNoise::new(&mut make_source(42), 1.0, 1.0, 80.0, 160.0, 8.0);
 
         // 49 Y values like the actual overworld (cell_min_y=-8, corners_y=49, cell_height=8)
-        let block_ys: Vec<f64> = (0..49).map(|cy| f64::from((cy - 8) * 8)).collect();
+        let block_ys: Vec<i32> = (0..49).map(|cy| (cy - 8) * 8).collect();
 
-        let scalar_results: Vec<f64> = block_ys.iter().map(|&y| bn.compute(0., y, 0.)).collect();
+        let scalar_results: Vec<f64> = block_ys
+            .iter()
+            .map(|&y| bn.compute(0., f64::from(y), 0.))
+            .collect();
 
         let mut column_results = vec![0.0; block_ys.len()];
-        bn.compute_column(0., &block_ys, 0., &mut column_results);
+        bn.compute_column(0, &block_ys, 0, &mut column_results);
 
         for (i, &y) in block_ys.iter().enumerate() {
             assert!(

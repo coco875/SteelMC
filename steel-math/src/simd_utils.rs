@@ -36,7 +36,7 @@ pub fn transpose_2x(
     // Result: [a2, b2, a3, b3,  e2, f2, e3, f3]
 
     let r23_lo = simd_swizzle!(r2, r3, [0, 8, 1, 9, 4, 12, 5, 13]);
-    // Result: [c0, d0, c1, d1,  g0, h0, g1, h1]    let (col1, col3) = t1.deinterleave(t3); // col1 = [a1, b1, c1, d1], col3 = [a3, b3, c3, d3]
+    // Result: [c0, d0, c1, d1,  g0, h0, g1, h1]
     let r23_hi = simd_swizzle!(r2, r3, [2, 10, 3, 11, 6, 14, 7, 15]);
     // Result: [c2, d2, c3, d3,  g2, h2, g3, h3]
 

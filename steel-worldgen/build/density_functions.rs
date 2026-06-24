@@ -990,8 +990,7 @@ fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
 
             #[inline]
             fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
-                let block_ys: Vec<f64> = block_ys.iter().map(|&y| y as f64).collect();
-                self.blended_noise.compute_column(x as f64, &block_ys, z as f64, out);
+                self.blended_noise.compute_column(x, block_ys, z, out);
             }
 
             #[inline]
