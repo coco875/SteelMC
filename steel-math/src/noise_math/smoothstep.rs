@@ -1,5 +1,4 @@
 use core::simd::Simd;
-use glam::DVec3;
 use std::{
     ops,
     simd::{SimdCast, SimdElement, num::SimdFloat},
@@ -18,14 +17,6 @@ pub fn smoothstep(x: f64) -> f64 {
     x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
 }
 
-/// Quintic Hermite interpolation for 3-dimensional double vectors (`DVec3`).
-#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
-#[inline(always)]
-#[must_use]
-pub fn smoothstep_3x(x: DVec3) -> DVec3 {
-    x * x * x * (x * (x * 6.0 - 15.0) + 10.0)
-}
-
 /// Smoothstep derivative for noise with derivatives.
 ///
 /// Formula: 30x^2(x-1)^2
@@ -34,13 +25,6 @@ pub fn smoothstep_3x(x: DVec3) -> DVec3 {
 #[inline]
 #[must_use]
 pub fn smoothstep_derivative(x: f64) -> f64 {
-    30.0 * x * x * (x - 1.0) * (x - 1.0)
-}
-
-/// Smoothstep derivative for 3-dimensional double vectors (`DVec3`).
-#[inline]
-#[must_use]
-pub fn smoothstep_derivative_3x(x: DVec3) -> DVec3 {
     30.0 * x * x * (x - 1.0) * (x - 1.0)
 }
 

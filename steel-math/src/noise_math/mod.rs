@@ -22,9 +22,7 @@ pub use grad_dot::{grad_dot, grad_dot_4x, grad_dot_simd};
 pub use inverse_lerp::inverse_lerp;
 pub use lerp::{lerp, lerp_simd, lerp2, lerp2_simd, lerp3, lerp3_simd};
 pub use map::{map, map_clamped};
-pub use smoothstep::{
-    smoothstep, smoothstep_3x, smoothstep_derivative, smoothstep_derivative_3x, smoothstep_simd,
-};
+pub use smoothstep::{smoothstep, smoothstep_derivative, smoothstep_simd};
 pub use square::square;
 pub use wrap::{wrap, wrap_simd};
 

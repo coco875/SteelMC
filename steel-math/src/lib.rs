@@ -4,7 +4,7 @@
 /// Math utilities used by vanilla world generation noise.
 mod noise_math;
 /// SIMD-based utility functions for matrix transpositions and vector manipulations.
-pub mod simd_utils;
+mod simd_utils;
 pub mod trig;
 
 pub use crate::noise_math::*;
