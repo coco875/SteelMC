@@ -362,7 +362,7 @@ impl PerlinNoise {
                 wrap_simd(ys * f64x4::splat(input_factor))
             };
             let y_fudges = f64x4::splat(y_fudge * input_factor);
-            let noise_val = noise.noise_with_y_scale_simd(
+            let noise_val = noise.noise_with_y_scale_4x(
                 x_w,
                 ys_for_call,
                 z_w,

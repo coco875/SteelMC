@@ -5,6 +5,7 @@
 
 use std::ops;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+use std::simd::f64x4;
 use std::simd::num::SimdFloat;
 use std::simd::{Mask, Simd, SimdCast, SimdElement, StdFloat};
 
@@ -199,6 +200,22 @@ impl NormalNoise {
         (self.first.get_value_xy(x, y) + self.second.get_value_xy(x2, y2)) * self.value_factor
     }
 
+    /// Sample 4 Y values at fixed `(x, z)` in one call.
+    #[inline]
+    #[must_use]
+    pub fn get_value_y_4x(&self, x: f64, ys: f64x4, z: f64) -> f64x4 {
+        let x2 = x * INPUT_FACTOR;
+        let ys2 = ys * f64x4::splat(INPUT_FACTOR);
+        let z2 = z * INPUT_FACTOR;
+        (self
+            .first
+            .get_value_with_y_params_4x(x, ys, z, 0.0, 0.0, false)
+            + self
+                .second
+                .get_value_with_y_params_4x(x2, ys2, z2, 0.0, 0.0, false))
+            * f64x4::splat(self.value_factor)
+    }
+
     /// Sample N Y values at fixed `(x, z)` in one call.
     ///
     /// SIMD form of [`Self::get_value`] for transpiled density-function trees
@@ -353,10 +370,13 @@ mod tests {
         ];
 
         for &(x, ys, z) in test_cases {
-            let simd = noise.get_value_y_simd(x, f64x4::from_array(ys), z);
+            let ys_v = f64x4::from_array(ys);
+            let simd = noise.get_value_y_4x(x, ys_v, z);
+            let generic = noise.get_value_y_simd(x, ys_v, z);
             for i in 0..4 {
                 let scalar = noise.get_value(x, ys[i], z);
                 let simd_val = simd[i];
+                let generic_val = generic[i];
                 #[expect(
                     clippy::float_cmp,
                     reason = "SIMD/scalar paths must produce bit-identical results for vanilla determinism"
@@ -365,6 +385,16 @@ mod tests {
                 assert!(
                     bit_match,
                     "Mismatch at x={x}, y={}, z={z}: scalar={scalar}, simd={simd_val}",
+                    ys[i]
+                );
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "explicit 4x and generic SIMD paths should be equivalent"
+                )]
+                let generic_match = simd_val == generic_val;
+                assert!(
+                    generic_match,
+                    "Generic mismatch at x={x}, y={}, z={z}: 4x={simd_val}, generic={generic_val}",
                     ys[i]
                 );
             }

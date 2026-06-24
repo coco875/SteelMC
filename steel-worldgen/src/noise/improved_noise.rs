@@ -6,14 +6,13 @@ use crate::random::Random;
 use std::ops;
 use std::simd::Simd;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
-#[cfg(target_feature = "avx512f")]
 use std::simd::f64x4;
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
 use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
 use steel_math::{
-    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_simd, lerp2, lerp3, lerp3_simd,
-    smoothstep, smoothstep_derivative, smoothstep_simd,
+    GRADIENT, fast_floor, fast_floor_simd, grad_dot, grad_dot_4x, grad_dot_simd, lerp2, lerp3,
+    lerp3_simd, smoothstep, smoothstep_derivative, smoothstep_simd,
 };
 
 /// Improved Perlin noise generator.
@@ -504,6 +503,47 @@ impl ImprovedNoise {
         self.sample_and_lerp_y_simd(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
     }
 
+    /// Four-lane form of [`Self::noise_with_y_scale`].
+    ///
+    /// Kept separate from the generic SIMD path so baseline builds can use the
+    /// faster 4-lane gradient table assembly without unsafe generic casts.
+    #[inline]
+    #[must_use]
+    pub fn noise_with_y_scale_4x(
+        &self,
+        x: f64,
+        ys: f64x4,
+        z: f64,
+        y_scale: f64,
+        y_fudges: f64x4,
+    ) -> f64x4 {
+        let x = x + self.xo;
+        let z = z + self.zo;
+        let xf = fast_floor(x);
+        let zf = fast_floor(z);
+        let xr = x - f64::from(xf);
+        let zr = z - f64::from(zf);
+
+        let ys = ys + f64x4::splat(self.yo);
+        let ys_floor = ys.floor();
+        let yrs = ys - ys_floor;
+
+        let yr_fudge = if y_scale == 0.0 {
+            f64x4::splat(0.0)
+        } else {
+            let y_scale_v = f64x4::splat(y_scale);
+            let zero = f64x4::splat(0.0);
+            let mask = y_fudges.simd_ge(zero) & y_fudges.simd_lt(yrs);
+            let fudge_limits = mask.select(y_fudges, yrs);
+            let epsilon = f64x4::splat(f64::from(1.0e-7_f32));
+            ((fudge_limits / y_scale_v) + epsilon).floor() * y_scale_v
+        };
+
+        let yrs_adjusted = yrs - yr_fudge;
+
+        self.sample_and_lerp_y_4x(xf, zf, xr, zr, ys_floor, yrs_adjusted, yrs)
+    }
+
     /// Vectorized sample-and-lerp for N Y values sharing x/z grid position.
     /// Generic counterpart of [`Self::sample_and_lerp_4x`].
     #[expect(
@@ -575,6 +615,78 @@ impl ImprovedNoise {
         let x_alpha: Simd<f64, N> = Simd::splat(smoothstep(xr));
         let y_alpha = smoothstep_simd(yrs_original);
         let z_alpha: Simd<f64, N> = Simd::splat(smoothstep(zr));
+
+        lerp3_simd(
+            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors scalar sample_and_lerp with 4x SIMD y-batching"
+    )]
+    #[inline]
+    fn sample_and_lerp_y_4x(
+        &self,
+        xf: i32,
+        zf: i32,
+        xr: f64,
+        zr: f64,
+        ys_floor: f64x4,
+        yrs: f64x4,
+        yrs_original: f64x4,
+    ) -> f64x4 {
+        let xf = xf as u8;
+        let zf = zf as u8;
+        let x0 = self.p[xf as usize];
+        let x1 = self.p[xf.wrapping_add(1) as usize];
+
+        let yf = ys_floor.cast::<i32>().cast::<u8>();
+
+        let mut h000 = [0usize; 4];
+        let mut h100 = [0usize; 4];
+        let mut h010 = [0usize; 4];
+        let mut h110 = [0usize; 4];
+        let mut h001 = [0usize; 4];
+        let mut h101 = [0usize; 4];
+        let mut h011 = [0usize; 4];
+        let mut h111 = [0usize; 4];
+
+        for i in 0..4 {
+            let y = yf[i];
+            let xy00 = self.p[x0.wrapping_add(y) as usize];
+            let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+            let xy10 = self.p[x1.wrapping_add(y) as usize];
+            let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+            h000[i] = self.p[xy00.wrapping_add(zf) as usize] as usize;
+            h100[i] = self.p[xy10.wrapping_add(zf) as usize] as usize;
+            h010[i] = self.p[xy01.wrapping_add(zf) as usize] as usize;
+            h110[i] = self.p[xy11.wrapping_add(zf) as usize] as usize;
+            h001[i] = self.p[xy00.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h101[i] = self.p[xy10.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h011[i] = self.p[xy01.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+            h111[i] = self.p[xy11.wrapping_add(zf).wrapping_add(1) as usize] as usize;
+        }
+
+        let xr_v = f64x4::splat(xr);
+        let zr_v = f64x4::splat(zr);
+        let one = f64x4::splat(1.0);
+        let xr_m1 = xr_v - one;
+        let yr_m1 = yrs - one;
+        let zr_m1 = zr_v - one;
+
+        let d000 = grad_dot_4x(h000, xr_v, yrs, zr_v);
+        let d100 = grad_dot_4x(h100, xr_m1, yrs, zr_v);
+        let d010 = grad_dot_4x(h010, xr_v, yr_m1, zr_v);
+        let d110 = grad_dot_4x(h110, xr_m1, yr_m1, zr_v);
+        let d001 = grad_dot_4x(h001, xr_v, yrs, zr_m1);
+        let d101 = grad_dot_4x(h101, xr_m1, yrs, zr_m1);
+        let d011 = grad_dot_4x(h011, xr_v, yr_m1, zr_m1);
+        let d111 = grad_dot_4x(h111, xr_m1, yr_m1, zr_m1);
+
+        let x_alpha = f64x4::splat(smoothstep(xr));
+        let y_alpha = smoothstep_simd(yrs_original);
+        let z_alpha = f64x4::splat(smoothstep(zr));
 
         lerp3_simd(
             x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
@@ -728,23 +840,29 @@ mod tests {
                         *ys // use ys as fudge values (matching BlendedNoise usage)
                     };
 
-                    let simd_result = noise.noise_with_y_scale_simd(
-                        x,
-                        f64x4::from_array(*ys),
-                        z,
-                        y_scale,
-                        f64x4::from_array(y_fudges),
-                    );
+                    let ys_v = f64x4::from_array(*ys);
+                    let y_fudges_v = f64x4::from_array(y_fudges);
+                    let simd_result = noise.noise_with_y_scale_4x(x, ys_v, z, y_scale, y_fudges_v);
+                    let generic_result =
+                        noise.noise_with_y_scale_simd(x, ys_v, z, y_scale, y_fudges_v);
 
                     for i in 0..4 {
                         let scalar = noise.noise_with_y_scale(x, ys[i], z, y_scale, y_fudges[i]);
                         let simd_val = simd_result[i];
+                        let generic_val = generic_result[i];
                         assert!(
                             (scalar - simd_val).abs() < 1e-14,
                             "Mismatch at x={x}, y={}, z={z}, y_scale={y_scale}: \
                              scalar={scalar}, simd={simd_val}, diff={}",
                             ys[i],
                             (scalar - simd_val).abs(),
+                        );
+                        assert!(
+                            (simd_val - generic_val).abs() < 1e-14,
+                            "Generic mismatch at x={x}, y={}, z={z}, y_scale={y_scale}: \
+                             4x={simd_val}, generic={generic_val}, diff={}",
+                            ys[i],
+                            (simd_val - generic_val).abs(),
                         );
                     }
                 }

@@ -1,4 +1,3 @@
-use core::simd::f64x4;
 #[cfg(target_feature = "avx512f")]
 use std::simd::{
     Select,
@@ -17,9 +16,16 @@ use crate::{GRADIENT_4, simd_utils::transpose};
 ///
 /// Baseline builds use table assembly because it is faster without AVX-512
 /// masks; native AVX-512 builds use the branchless hash formula.
-#[inline]
+#[expect(clippy::inline_always, reason = "hot-path noise primitive")]
+#[inline(always)]
 #[must_use]
-pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
+pub fn grad_dot_4x<F>(hashes: [usize; 4], x: Simd<F, 4>, y: Simd<F, 4>, z: Simd<F, 4>) -> Simd<F, 4>
+where
+    F: SimdElement + SimdCast,
+    Simd<F, 4>: ops::Mul<Output = Simd<F, 4>>
+        + ops::Add<Output = Simd<F, 4>>
+        + ops::Sub<Output = Simd<F, 4>>,
+{
     #[cfg(target_feature = "avx512f")]
     {
         grad_dot_simd(hashes, x, y, z)
@@ -27,10 +33,10 @@ pub fn grad_dot_4x(hashes: [usize; 4], x: f64x4, y: f64x4, z: f64x4) -> f64x4 {
 
     #[cfg(not(target_feature = "avx512f"))]
     {
-        let h0 = f64x4::from_array(GRADIENT_4[hashes[0] & 15]);
-        let h1 = f64x4::from_array(GRADIENT_4[hashes[1] & 15]);
-        let h2 = f64x4::from_array(GRADIENT_4[hashes[2] & 15]);
-        let h3 = f64x4::from_array(GRADIENT_4[hashes[3] & 15]);
+        let h0 = Simd::from_array(GRADIENT_4[hashes[0] & 15]).cast::<F>();
+        let h1 = Simd::from_array(GRADIENT_4[hashes[1] & 15]).cast::<F>();
+        let h2 = Simd::from_array(GRADIENT_4[hashes[2] & 15]).cast::<F>();
+        let h3 = Simd::from_array(GRADIENT_4[hashes[3] & 15]).cast::<F>();
 
         let (gx, gy, gz, _gw) = transpose(h0, h1, h2, h3);
 
