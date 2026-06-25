@@ -449,6 +449,7 @@ impl PerlinNoise {
 mod tests {
     use super::*;
     use crate::random::{Random, xoroshiro::Xoroshiro};
+    use std::simd::f64x4;
 
     #[test]
     fn test_perlin_noise_deterministic() {
@@ -481,6 +482,36 @@ mod tests {
                     - noise.get_value_with_y_params(x, y, z, 0.0, 0.0, false))
                 .abs()
                     < 1e-15
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_value_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(12_345);
+        let splitter = rng.next_positional();
+        let noise = PerlinNoise::create(&splitter, -6, &[1.0, 0.0, 1.0, 1.0, 0.5]);
+        let xs = [0.0, 1.25, -1000.0, 33_554_431.5];
+        let ys = [0.0, 64.5, -32.25, 255.75];
+        let zs = [0.0, -30.75, 4096.5, -33_554_432.25];
+
+        let simd = noise.get_value_simd(
+            f64x4::from_array(xs),
+            f64x4::from_array(ys),
+            f64x4::from_array(zs),
+        );
+
+        for i in 0..4 {
+            let scalar = noise.get_value(xs[i], ys[i], zs[i]);
+            #[expect(
+                clippy::float_cmp,
+                reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
+            )]
+            let matches = scalar == simd[i];
+            assert!(
+                matches,
+                "Mismatch at ({}, {}, {}): scalar={}, simd={}",
+                xs[i], ys[i], zs[i], scalar, simd[i],
             );
         }
     }

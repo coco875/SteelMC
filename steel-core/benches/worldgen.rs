@@ -1795,8 +1795,8 @@ fn bench_noise_kernel(c: &mut Criterion) {
     let mut group = c.benchmark_group("noise_kernel");
     group.throughput(Throughput::Elements((columns.len() * 8) as u64));
 
-    // Current production path: 4 lanes, two calls per 8 Ys.
-    group.bench_function("y_scale_4x", |b| {
+    // Current production path: generic 4 lanes, two calls per 8 Ys.
+    group.bench_function("y_scale_4x_generic", |b| {
         b.iter(|| {
             let mut acc = f64x4::splat(0.0);
             for &(x, z) in &columns {

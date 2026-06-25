@@ -276,7 +276,6 @@ mod tests {
 
         for &(x, ys, z) in test_cases {
             let simd = bn.compute_simd(x, ys, z);
-            let generic = bn.compute_simd(x, ys, z);
             for i in 0..4 {
                 let scalar = bn.compute(x, ys[i], z);
                 assert!(
@@ -285,14 +284,6 @@ mod tests {
                     ys[i],
                     simd[i],
                     (scalar - simd[i]).abs(),
-                );
-                assert!(
-                    (simd[i] - generic[i]).abs() < 1e-12,
-                    "Generic mismatch at ({x}, {}, {z}): 4x={}, generic={}, diff={}",
-                    ys[i],
-                    simd[i],
-                    generic[i],
-                    (simd[i] - generic[i]).abs(),
                 );
             }
         }

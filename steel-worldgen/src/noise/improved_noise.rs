@@ -6,6 +6,8 @@ use crate::random::Random;
 use std::ops;
 use std::simd::Simd;
 use std::simd::cmp::{SimdPartialEq, SimdPartialOrd};
+#[cfg(target_feature = "avx512f")]
+use std::simd::f64x4;
 use std::simd::num::{SimdFloat, SimdInt, SimdUint};
 use std::simd::ptr::SimdConstPtr;
 use std::simd::{Mask, Select, SimdCast, SimdElement, StdFloat};
@@ -730,17 +732,17 @@ mod tests {
                         *ys // use ys as fudge values (matching BlendedNoise usage)
                     };
 
-                    let ys_v = f64x4::from_array(*ys);
-                    let y_fudges_v = f64x4::from_array(y_fudges);
-                    let simd_result =
-                        noise.noise_with_y_scale_simd(x, ys_v, z, y_scale, y_fudges_v);
-                    let generic_result =
-                        noise.noise_with_y_scale_simd(x, ys_v, z, y_scale, y_fudges_v);
+                    let simd_result = noise.noise_with_y_scale_simd(
+                        x,
+                        f64x4::from_array(*ys),
+                        z,
+                        y_scale,
+                        f64x4::from_array(y_fudges),
+                    );
 
                     for i in 0..4 {
                         let scalar = noise.noise_with_y_scale(x, ys[i], z, y_scale, y_fudges[i]);
                         let simd_val = simd_result[i];
-                        let generic_val = generic_result[i];
                         assert!(
                             (scalar - simd_val).abs() < 1e-14,
                             "Mismatch at x={x}, y={}, z={z}, y_scale={y_scale}: \
@@ -748,15 +750,63 @@ mod tests {
                             ys[i],
                             (scalar - simd_val).abs(),
                         );
-                        assert!(
-                            (simd_val - generic_val).abs() < 1e-14,
-                            "Generic mismatch at x={x}, y={}, z={z}, y_scale={y_scale}: \
-                             4x={simd_val}, generic={generic_val}, diff={}",
-                            ys[i],
-                            (simd_val - generic_val).abs(),
-                        );
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_noise_simd_matches_scalar() {
+        let mut rng = Xoroshiro::from_seed(42);
+        let noise = ImprovedNoise::new(&mut rng);
+
+        let batches = [
+            (
+                [0.0, 1.25, -5.5, 1000.75],
+                [0.0, 64.5, -20.25, 255.75],
+                [0.0, -30.75, 4096.5, -1000.25],
+            ),
+            (
+                [
+                    255.25 - noise.xo,
+                    256.25 - noise.xo,
+                    -1.75 - noise.xo,
+                    -256.25 - noise.xo,
+                ],
+                [
+                    255.5 - noise.yo,
+                    256.5 - noise.yo,
+                    -1.5 - noise.yo,
+                    -256.5 - noise.yo,
+                ],
+                [
+                    255.75 - noise.zo,
+                    256.75 - noise.zo,
+                    -1.25 - noise.zo,
+                    -256.25 - noise.zo,
+                ],
+            ),
+        ];
+
+        for (xs, ys, zs) in batches {
+            let simd = noise.noise_simd(
+                f64x4::from_array(xs),
+                f64x4::from_array(ys),
+                f64x4::from_array(zs),
+            );
+            for i in 0..4 {
+                let scalar = noise.noise(xs[i], ys[i], zs[i]);
+                #[expect(
+                    clippy::float_cmp,
+                    reason = "SIMD path must be bit-identical to scalar noise for vanilla determinism"
+                )]
+                let matches = scalar == simd[i];
+                assert!(
+                    matches,
+                    "Mismatch at ({}, {}, {}): scalar={}, simd={}",
+                    xs[i], ys[i], zs[i], scalar, simd[i],
+                );
             }
         }
     }

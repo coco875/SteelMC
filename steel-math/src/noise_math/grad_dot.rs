@@ -1,3 +1,5 @@
+#[cfg(not(target_feature = "avx512f"))]
+use std::simd::num::SimdFloat;
 #[cfg(target_feature = "avx512f")]
 use std::simd::{
     Select,
@@ -5,7 +7,7 @@ use std::simd::{
 };
 use std::{
     ops,
-    simd::{Simd, SimdCast, SimdElement, num::SimdFloat},
+    simd::{Simd, SimdCast, SimdElement},
 };
 
 use crate::GRADIENT;
