@@ -1972,7 +1972,7 @@ impl TranspileContext {
                     }
                 } else {
                     quote! {
-                        noises.#field.get_value_y_4x(
+                        noises.#field.get_value_y_simd(
                             x * #xz_scale,
                             ys * f64x4::splat(#y_scale),
                             z * #xz_scale,
@@ -2066,7 +2066,7 @@ impl TranspileContext {
             DensityFunction::Shift(s) => {
                 let field = noise_field_ident(&s.noise_id);
                 quote! {
-                    noises.#field.get_value_y_4x(
+                    noises.#field.get_value_y_simd(
                         x * 0.25,
                         ys * f64x4::splat(0.25),
                         z * 0.25,
@@ -2079,7 +2079,7 @@ impl TranspileContext {
                 // (x, y, z). When all three shifts are Y-independent (typical
                 // vanilla case — they're flat-cached `shift_x`/`shift_z` and
                 // a constant `shift_y`), evaluate them as scalar splats and
-                // call `get_value_y_4x(`. Otherwise fall back to scalar 4×.
+                // call `get_value_y_simd(`. Otherwise fall back to scalar 4×.
                 if self.is_y_independent(&sn.shift_x)
                     && self.is_y_independent(&sn.shift_y)
                     && self.is_y_independent(&sn.shift_z)
@@ -2105,7 +2105,7 @@ impl TranspileContext {
                             let dx = #dx;
                             let dy = #dy;
                             let dz = #dz;
-                            noises.#field.get_value_y_4x(
+                            noises.#field.get_value_y_simd(
                                 x * #xz_scale + dx,
                                 ys * f64x4::splat(#y_scale) + f64x4::splat(dy),
                                 z * #xz_scale + dz,

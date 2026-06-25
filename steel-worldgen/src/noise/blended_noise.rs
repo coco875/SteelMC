@@ -3,8 +3,8 @@
 //! Combines three `PerlinNoise` instances (min limit, max limit, main) for terrain generation.
 //! The main noise determines the blend factor between the min and max limit noises.
 
+use std::simd::Simd;
 use std::simd::cmp::SimdPartialOrd;
-use std::simd::{Simd, f64x4};
 
 use crate::noise::PerlinNoise;
 use crate::random::RandomSource;
@@ -128,6 +128,7 @@ impl BlendedNoise {
     /// This uses SIMD to vectorize the math-heavy portions (gradient dots,
     /// smoothstep, trilinear lerp) across the N Y lanes, while sharing
     /// the x/z coordinate work.
+    #[inline]
     #[must_use]
     pub fn compute_simd<const N: usize>(
         &self,
@@ -196,71 +197,6 @@ impl BlendedNoise {
         result.to_array()
     }
 
-    /// Compute blended noise for 4 Y values sharing the same `(x, z)`.
-    #[inline]
-    #[must_use]
-    pub fn compute_4x(&self, block_x: f64, block_ys: f64x4, block_z: f64) -> f64x4 {
-        let limit_x = block_x * self.xz_multiplier;
-        let limit_ys = block_ys * f64x4::splat(self.y_multiplier);
-        let limit_z = block_z * self.xz_multiplier;
-        let main_x = limit_x / self.xz_factor;
-        let main_ys = limit_ys / f64x4::splat(self.y_factor);
-        let main_z = limit_z / self.xz_factor;
-        let limit_smear = self.y_multiplier * self.smear_scale_multiplier;
-        let main_smear = limit_smear / self.y_factor;
-
-        let mut main_noise_values = f64x4::splat(0.0);
-        let mut pow = 1.0;
-        for i in 0..8 {
-            if let Some(noise) = self.main_noise.get_octave_noise(i) {
-                let pow_v = f64x4::splat(pow);
-                let scaled_ys = main_ys * pow_v;
-                main_noise_values += noise.noise_with_y_scale_4x(
-                    wrap(main_x * pow),
-                    wrap_simd(scaled_ys),
-                    wrap(main_z * pow),
-                    main_smear * pow,
-                    scaled_ys,
-                ) / pow_v;
-            }
-            pow /= 2.0;
-        }
-
-        let factors =
-            (main_noise_values / f64x4::splat(10.0) + f64x4::splat(1.0)) / f64x4::splat(2.0);
-
-        let all_max = factors.simd_ge(f64x4::splat(1.0)).all();
-        let all_min = factors.simd_le(f64x4::splat(0.0)).all();
-
-        let mut blend_min = f64x4::splat(0.0);
-        let mut blend_max = f64x4::splat(0.0);
-        pow = 1.0;
-        for i in 0..16 {
-            let pow_v = f64x4::splat(pow);
-            let scaled_ys = limit_ys * pow_v;
-            let wx = wrap(limit_x * pow);
-            let wys = wrap_simd(scaled_ys);
-            let wz = wrap(limit_z * pow);
-            let y_scale_pow = limit_smear * pow;
-
-            if !all_max && let Some(noise) = self.min_limit_noise.get_octave_noise(i) {
-                blend_min +=
-                    noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
-            }
-
-            if !all_min && let Some(noise) = self.max_limit_noise.get_octave_noise(i) {
-                blend_max +=
-                    noise.noise_with_y_scale_4x(wx, wys, wz, y_scale_pow, scaled_ys) / pow_v;
-            }
-
-            pow /= 2.0;
-        }
-
-        let min_scaled = blend_min / f64x4::splat(512.0);
-        let max_scaled = blend_max / f64x4::splat(512.0);
-        clamped_lerp_simd(min_scaled, max_scaled, factors) / f64x4::splat(128.0)
-    }
-
     /// Compute blended noise for a column of Y values, returning the results.
     ///
     /// Uses SIMD to process 4 Y values at a time.
@@ -268,29 +204,36 @@ impl BlendedNoise {
         let count = block_ys.len().min(out.len());
         let block_x = f64::from(block_x);
         let block_z = f64::from(block_z);
+        let mut processed = 0;
 
         // SIMD batches of 4
-        let full_chunks = count / 4;
-        for chunk in 0..full_chunks {
+        let chunks_4 = count / 4;
+        for chunk in 0..chunks_4 {
             let base = chunk * 4;
-            let batch_ys = f64x4::from_array([
+            let batch_ys = [
                 f64::from(block_ys[base]),
                 f64::from(block_ys[base + 1]),
                 f64::from(block_ys[base + 2]),
                 f64::from(block_ys[base + 3]),
-            ]);
-            out[base..base + 4]
-                .copy_from_slice(&self.compute_4x(block_x, batch_ys, block_z).to_array());
+            ];
+            out[base..base + 4].copy_from_slice(&self.compute_simd(block_x, batch_ys, block_z));
+        }
+        processed += chunks_4 * 4;
+
+        // SIMD batches of 2 (max 1 chunk possible after chunks of 4)
+        if count - processed >= 2 {
+            let batch_ys = [
+                f64::from(block_ys[processed]),
+                f64::from(block_ys[processed + 1]),
+            ];
+            out[processed..processed + 2]
+                .copy_from_slice(&self.compute_simd(block_x, batch_ys, block_z));
+            processed += 2;
         }
 
-        // Scalar remainder
-        for (i, &y) in block_ys
-            .iter()
-            .enumerate()
-            .skip(full_chunks * 4)
-            .take(count - full_chunks * 4)
-        {
-            out[i] = self.compute(block_x, f64::from(y), block_z);
+        // Scalar remainder (handles the final 0 or 1 element)
+        for i in processed..count {
+            out[i] = self.compute(block_x, f64::from(block_ys[i]), block_z);
         }
     }
 
