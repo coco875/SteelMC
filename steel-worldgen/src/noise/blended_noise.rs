@@ -275,7 +275,7 @@ mod tests {
         ];
 
         for &(x, ys, z) in test_cases {
-            let simd = bn.compute_4x(x, f64x4::from_array(ys), z).to_array();
+            let simd = bn.compute_simd(x, ys, z);
             let generic = bn.compute_simd(x, ys, z);
             for i in 0..4 {
                 let scalar = bn.compute(x, ys[i], z);

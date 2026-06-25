@@ -732,7 +732,8 @@ mod tests {
 
                     let ys_v = f64x4::from_array(*ys);
                     let y_fudges_v = f64x4::from_array(y_fudges);
-                    let simd_result = noise.noise_with_y_scale_4x(x, ys_v, z, y_scale, y_fudges_v);
+                    let simd_result =
+                        noise.noise_with_y_scale_simd(x, ys_v, z, y_scale, y_fudges_v);
                     let generic_result =
                         noise.noise_with_y_scale_simd(x, ys_v, z, y_scale, y_fudges_v);
 
