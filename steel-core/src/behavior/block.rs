@@ -1527,6 +1527,8 @@ impl BlockBehavior for PluginBlockBehaviorWrapper {
             AbiInteractionResult::TryEmptyHandInteraction => {
                 InteractionResult::TryEmptyHandInteraction
             }
+            AbiInteractionResult::SuccessServer => InteractionResult::SuccessServer,
+            AbiInteractionResult::Consume => InteractionResult::Consume,
         }
     }
 
@@ -1568,6 +1570,8 @@ impl BlockBehavior for PluginBlockBehaviorWrapper {
             AbiInteractionResult::TryEmptyHandInteraction => {
                 InteractionResult::TryEmptyHandInteraction
             }
+            AbiInteractionResult::SuccessServer => InteractionResult::SuccessServer,
+            AbiInteractionResult::Consume => InteractionResult::Consume,
         }
     }
 
@@ -1732,6 +1736,8 @@ impl PluginBlockBehavior for BlockBehaviorWrapper {
             InteractionResult::TryEmptyHandInteraction => {
                 AbiInteractionResult::TryEmptyHandInteraction
             }
+            InteractionResult::SuccessServer => AbiInteractionResult::SuccessServer,
+            InteractionResult::Consume => AbiInteractionResult::Consume,
         }
     }
 
@@ -1788,6 +1794,8 @@ impl PluginBlockBehavior for BlockBehaviorWrapper {
             InteractionResult::TryEmptyHandInteraction => {
                 AbiInteractionResult::TryEmptyHandInteraction
             }
+            InteractionResult::SuccessServer => AbiInteractionResult::SuccessServer,
+            InteractionResult::Consume => AbiInteractionResult::Consume,
         }
     }
 

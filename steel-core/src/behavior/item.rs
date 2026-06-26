@@ -201,6 +201,10 @@ impl ItemBehavior for PluginItemBehaviorWrapper {
             steel_plugin_api::hook::InteractionResult::TryEmptyHandInteraction => {
                 InteractionResult::TryEmptyHandInteraction
             }
+            steel_plugin_api::hook::InteractionResult::SuccessServer => {
+                InteractionResult::SuccessServer
+            }
+            steel_plugin_api::hook::InteractionResult::Consume => InteractionResult::Consume,
         }
     }
 
@@ -224,6 +228,10 @@ impl ItemBehavior for PluginItemBehaviorWrapper {
             steel_plugin_api::hook::InteractionResult::TryEmptyHandInteraction => {
                 InteractionResult::TryEmptyHandInteraction
             }
+            steel_plugin_api::hook::InteractionResult::SuccessServer => {
+                InteractionResult::SuccessServer
+            }
+            steel_plugin_api::hook::InteractionResult::Consume => InteractionResult::Consume,
         }
     }
 }
@@ -294,6 +302,10 @@ impl steel_plugin_api::hook::PluginItemBehavior for ItemBehaviorWrapper {
             InteractionResult::TryEmptyHandInteraction => {
                 steel_plugin_api::hook::InteractionResult::TryEmptyHandInteraction
             }
+            InteractionResult::SuccessServer => {
+                steel_plugin_api::hook::InteractionResult::SuccessServer
+            }
+            InteractionResult::Consume => steel_plugin_api::hook::InteractionResult::Consume,
         }
     }
 
@@ -323,6 +335,10 @@ impl steel_plugin_api::hook::PluginItemBehavior for ItemBehaviorWrapper {
             InteractionResult::TryEmptyHandInteraction => {
                 steel_plugin_api::hook::InteractionResult::TryEmptyHandInteraction
             }
+            InteractionResult::SuccessServer => {
+                steel_plugin_api::hook::InteractionResult::SuccessServer
+            }
+            InteractionResult::Consume => steel_plugin_api::hook::InteractionResult::Consume,
         }
     }
 }

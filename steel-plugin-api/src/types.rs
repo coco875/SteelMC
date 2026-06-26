@@ -4,6 +4,10 @@
 pub enum InteractionResult {
     /// The interaction succeeded and consumed the action.
     Success,
+    /// The interaction succeeded and the server should broadcast the swing.
+    SuccessServer,
+    /// The interaction consumed the action without swinging.
+    Consume,
     /// The interaction failed and consumed the action.
     Fail,
     /// The interaction did not apply; try the next handler.
@@ -38,5 +42,3 @@ impl From<PluginUuid> for [u8; 16] {
         uuid.bytes
     }
 }
-
-
