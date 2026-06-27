@@ -11,9 +11,10 @@ use crate::chunk::{
 };
 
 use super::{
-    CachedLightBlock, CachedLightChunk, ChunkLightData, ChunkLightLayerStorage,
-    LightCacheChunkScope, LightCacheLayout, LightCacheSetupRadius, LightChunkSlotArray, LightLayer,
-    LightSection, LightSectionData, LightSectionSlotArray, LightUpdateNotificationCache,
+    BlockLightVector, BlockLightVectorSection, BlockLightVectorSectionData, CachedLightBlock,
+    CachedLightChunk, ChunkLightData, ChunkLightLayerStorage, LightCacheChunkScope,
+    LightCacheLayout, LightCacheSetupRadius, LightChunkSlotArray, LightLayer, LightSection,
+    LightSectionData, LightSectionSlotArray, LightUpdateNotificationCache,
 };
 
 /// Error returned when a scoped light workset cannot acquire required chunks.
@@ -367,7 +368,9 @@ struct StoredLightSectionEdit {
 #[derive(Debug, PartialEq, Eq)]
 struct LightSectionEdit {
     section: LightSection,
+    vectors: BlockLightVectorSectionData,
     dirty: bool,
+    vectors_dirty: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -495,11 +498,16 @@ impl LightLayerEdit<'_> {
         let Some(section_slot) = self.layout.section_slot(section_pos) else {
             return false;
         };
+        let layer = self.layer;
         let Some(section) = self.section_edit_mut(section_slot) else {
             return false;
         };
         let was_present = !matches!(section.section, LightSection::Missing);
         section.section = LightSection::missing();
+        if layer == LightLayer::Block {
+            section.vectors = BlockLightVectorSectionData::homogeneous(BlockLightVector::ZERO);
+            section.vectors_dirty |= was_present;
+        }
         section.dirty |= was_present;
         was_present
     }
@@ -593,7 +601,9 @@ impl LightLayerEdit<'_> {
         let edit_index = self.edits.len();
         self.edits.push(LightSectionEdit {
             section: LightSection::missing(),
+            vectors: BlockLightVectorSectionData::homogeneous(BlockLightVector::ZERO),
             dirty: false,
+            vectors_dirty: false,
         });
         self.sections.insert_slot(
             section_slot,
@@ -609,12 +619,17 @@ impl LightLayerEdit<'_> {
         let Some(section_slot) = self.layout.section_slot(section_pos) else {
             return false;
         };
+        let layer = self.layer;
         let Some(section) = self.section_edit_mut(section_slot) else {
             return false;
         };
 
         fill_section(&mut section.section, value);
         section.dirty = true;
+        if layer == LightLayer::Block && value == 0 {
+            section.vectors.fill(BlockLightVector::ZERO);
+            section.vectors_dirty = true;
+        }
         true
     }
 
@@ -669,6 +684,80 @@ impl LightLayerEdit<'_> {
         self.set_at_section_index(cached_block.section_slot, cached_block.local_index, level)
     }
 
+    /// Sets the block-light source vector for a cached light block.
+    ///
+    /// Returns false when no writable non-missing section was cached for the block.
+    pub fn set_block_light_vector(
+        &mut self,
+        cached_block: CachedLightBlock,
+        vector: BlockLightVector,
+    ) -> bool {
+        if self.layer != LightLayer::Block {
+            return false;
+        }
+
+        self.set_block_light_vector_at_section_index(
+            cached_block.section_slot,
+            cached_block.local_index,
+            vector,
+        )
+    }
+
+    /// Returns the edited block-light source vector for a cached light block.
+    #[must_use]
+    pub fn get_block_light_vector(&self, cached_block: CachedLightBlock) -> BlockLightVector {
+        self.get_block_light_vector_at_section_index(
+            cached_block.section_slot,
+            cached_block.local_index,
+        )
+    }
+
+    /// Sets the block-light source vector for a section slot and local light index.
+    ///
+    /// Returns false when no writable non-missing section was cached for the slot.
+    pub fn set_block_light_vector_at_section_index(
+        &mut self,
+        section_slot: usize,
+        local_index: usize,
+        vector: BlockLightVector,
+    ) -> bool {
+        if self.layer != LightLayer::Block {
+            return false;
+        }
+
+        let Some(section) = self.section_edit_mut(section_slot) else {
+            return false;
+        };
+        if matches!(section.section, LightSection::Missing) {
+            return false;
+        }
+
+        set_section_vector(&mut section.vectors, local_index, vector);
+        section.vectors_dirty = true;
+        true
+    }
+
+    /// Returns the edited block-light source vector for a section slot and local index.
+    #[must_use]
+    pub fn get_block_light_vector_at_section_index(
+        &self,
+        section_slot: usize,
+        local_index: usize,
+    ) -> BlockLightVector {
+        if self.layer != LightLayer::Block {
+            return BlockLightVector::ZERO;
+        }
+
+        let Some(section) = self.section_edit(section_slot) else {
+            return BlockLightVector::ZERO;
+        };
+        if matches!(section.section, LightSection::Missing) {
+            return BlockLightVector::ZERO;
+        }
+
+        get_section_vector(&section.vectors, local_index)
+    }
+
     /// Sets an edited light value for a section slot and local light index.
     ///
     /// Returns false when no writable non-missing section was cached for the slot.
@@ -713,7 +802,7 @@ impl LightLayerEdit<'_> {
                 LightSectionEditEntry::Transient { edit_index } => self
                     .edits
                     .get(edit_index)
-                    .is_some_and(|section| section.dirty),
+                    .is_some_and(|section| section.dirty || section.vectors_dirty),
             };
 
             if (changed || marked)
@@ -761,7 +850,15 @@ impl LightLayerEdit<'_> {
                 let edit_index = edits.len();
                 edits.push(LightSectionEdit {
                     section: copy_light_section(section),
+                    vectors: if layer == LightLayer::Block {
+                        copy_vector_section(
+                            light_data.block_light_vectors.sections().get(section_index),
+                        )
+                    } else {
+                        BlockLightVectorSectionData::homogeneous(BlockLightVector::ZERO)
+                    },
                     dirty: false,
+                    vectors_dirty: false,
                 });
                 sections.insert(
                     cached_section,
@@ -784,7 +881,13 @@ impl LightLayerEdit<'_> {
             return false;
         };
         let edited = mem::replace(&mut edit.section, LightSection::missing());
+        let vectors = edit.vectors.clone();
         let layer = self.layer;
+        let vector_section = if layer == LightLayer::Block {
+            Some(vector_section_for_light_section(&edited, &vectors))
+        } else {
+            None
+        };
         let Some(light_data) = self.chunks.get_mut_slot(target.chunk_slot) else {
             return false;
         };
@@ -795,21 +898,35 @@ impl LightLayerEdit<'_> {
             return false;
         };
 
-        if *target_section == edited {
-            return false;
+        let mut changed = false;
+        if *target_section != edited {
+            *target_section = edited;
+            changed = true;
         }
 
-        *target_section = edited;
-        true
+        if let Some(vector_section) = vector_section {
+            if light_data.block_light_vectors.sections_mut()[target.section_index] != vector_section
+            {
+                light_data.block_light_vectors.sections_mut()[target.section_index] = vector_section;
+                changed = true;
+            }
+        }
+
+        changed
     }
 
     fn set_section_slot_non_missing(&mut self, section_slot: usize) -> bool {
+        let layer = self.layer;
         let Some(section) = self.section_edit_mut(section_slot) else {
             return false;
         };
 
         let was_missing = matches!(section.section, LightSection::Missing);
         set_section_non_missing(&mut section.section);
+        if layer == LightLayer::Block {
+            section.vectors = BlockLightVectorSectionData::homogeneous(BlockLightVector::ZERO);
+            section.vectors_dirty |= was_missing;
+        }
         section.dirty |= was_missing;
         was_missing
     }
@@ -866,6 +983,36 @@ fn copy_light_section_data(data: &LightSectionData) -> LightSectionData {
     }
 }
 
+fn copy_vector_section(section: Option<&BlockLightVectorSection>) -> BlockLightVectorSectionData {
+    match section {
+        Some(BlockLightVectorSection::Present(data)) => data.clone(),
+        Some(BlockLightVectorSection::Missing) | None => {
+            BlockLightVectorSectionData::homogeneous(BlockLightVector::ZERO)
+        }
+    }
+}
+
+fn vector_section_for_light_section(
+    light_section: &LightSection,
+    vectors: &BlockLightVectorSectionData,
+) -> BlockLightVectorSection {
+    match light_section {
+        LightSection::Missing => BlockLightVectorSection::Missing,
+        LightSection::Visible(_) | LightSection::Internal(_) => {
+            BlockLightVectorSection::Present(vectors.clone())
+        }
+    }
+}
+
+fn set_section_vector(
+    vectors: &mut BlockLightVectorSectionData,
+    local_index: usize,
+    vector: BlockLightVector,
+) {
+    let (local_x, local_y, local_z) = local_block_coords(local_index);
+    vectors.set(local_x, local_y, local_z, vector);
+}
+
 fn set_section_non_missing(section: &mut LightSection) {
     match section {
         LightSection::Missing => {
@@ -894,6 +1041,11 @@ fn fill_section(section: &mut LightSection, value: u8) {
         }
         LightSection::Visible(data) | LightSection::Internal(data) => data.fill(value),
     }
+}
+
+fn get_section_vector(vectors: &BlockLightVectorSectionData, local_index: usize) -> BlockLightVector {
+    let (local_x, local_y, local_z) = local_block_coords(local_index);
+    vectors.get(local_x, local_y, local_z)
 }
 
 fn get_section_value(section: &LightSection, local_index: usize) -> u8 {

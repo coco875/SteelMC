@@ -3,7 +3,9 @@ use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::chunk::heightmap::{ChunkHeightmaps, Heightmap, HeightmapType};
 use crate::chunk::level_chunk::LevelChunk;
 use crate::chunk::light::{
-    ChunkLightData, ChunkLightLayerStorage, DATA_LAYER_SIZE, LightSection, LightSectionData,
+    BlockLightVectorSection, BlockLightVectorSectionData, ChunkLightData,
+    ChunkLightLayerStorage, DATA_LAYER_BLOCK_COUNT, DATA_LAYER_SIZE, LightSection,
+    LightSectionData,
 };
 use crate::chunk::paletted_container::PalettedContainer;
 use crate::chunk::proto_chunk::ProtoChunk;
@@ -354,7 +356,8 @@ use super::{
     PersistentBiomeData, PersistentBlockEntity, PersistentBlockState, PersistentBoundingBox,
     PersistentChunk, PersistentDesertPyramidPieceData, PersistentEntity, PersistentHeightmap,
     PersistentJigsawJunction, PersistentJigsawPieceData, PersistentJungleTemplePieceData,
-    PersistentLightData, PersistentLightSection, PersistentMineshaftPieceData,
+    PersistentLightData, PersistentLightSection, PersistentBlockLightVectorSection,
+    PersistentMineshaftPieceData,
     PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
     PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
@@ -790,7 +793,39 @@ impl ChunkStorage {
         PersistentLightData {
             block: Self::light_layer_to_persistent(&light.block),
             sky: Self::light_layer_to_persistent(&light.sky),
+            block_light_vectors: Self::block_light_vectors_to_persistent(light),
         }
+    }
+
+    fn block_light_vectors_to_persistent(
+        light: &ChunkLightData,
+    ) -> Vec<PersistentBlockLightVectorSection> {
+        light
+            .block_light_vectors
+            .sections()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| {
+                let Ok(section_index) = u32::try_from(index) else {
+                    tracing::warn!(
+                        index,
+                        "Block-light vector section index does not fit in persistent format"
+                    );
+                    return None;
+                };
+
+                match section {
+                    BlockLightVectorSection::Missing => None,
+                    BlockLightVectorSection::Present(data) if data.is_all_zero() => None,
+                    BlockLightVectorSection::Present(data) => {
+                        Some(PersistentBlockLightVectorSection::Initialized {
+                            section_index,
+                            data: data.to_packed_u16s().as_ref().to_vec(),
+                        })
+                    }
+                }
+            })
+            .collect()
     }
 
     fn light_layer_to_persistent(layer: &ChunkLightLayerStorage) -> Vec<PersistentLightSection> {
@@ -847,10 +882,59 @@ impl ChunkStorage {
 
         Self::apply_persistent_light_layer(&mut light.block, &persistent.block, "block");
         Self::apply_persistent_light_layer(&mut light.sky, &persistent.sky, "sky");
+        Self::apply_persistent_block_light_vectors(
+            &mut light.block_light_vectors,
+            &persistent.block_light_vectors,
+        );
         light
             .sky
             .fill_loaded_missing_sky_sections_below_data_with_zero();
         light
+    }
+
+    fn apply_persistent_block_light_vectors(
+        storage: &mut crate::chunk::light::BlockLightVectorStorage,
+        persistent: &[PersistentBlockLightVectorSection],
+    ) {
+        for section in persistent {
+            let Ok(section_index) = usize::try_from(section.section_index()) else {
+                tracing::warn!(
+                    section_index = section.section_index(),
+                    "Persisted block-light vector section index does not fit this platform"
+                );
+                continue;
+            };
+
+            let Some(target) = storage.sections_mut().get_mut(section_index) else {
+                tracing::warn!(
+                    section_index,
+                    "Persisted block-light vector section index is outside world light range"
+                );
+                continue;
+            };
+
+            match section {
+                PersistentBlockLightVectorSection::Initialized { data, .. } => {
+                    if data.len() != DATA_LAYER_BLOCK_COUNT {
+                        tracing::warn!(
+                            section_index,
+                            actual = data.len(),
+                            expected = DATA_LAYER_BLOCK_COUNT,
+                            "Persisted block-light vector section has invalid length"
+                        );
+                        continue;
+                    }
+
+                    let mut packed = Box::new([0_u16; DATA_LAYER_BLOCK_COUNT]);
+                    for (index, value) in data.iter().enumerate() {
+                        packed[index] = *value;
+                    }
+                    *target = BlockLightVectorSection::Present(
+                        BlockLightVectorSectionData::Packed(packed),
+                    );
+                }
+            }
+        }
     }
 
     fn apply_persistent_light_layer(
@@ -2964,6 +3048,7 @@ mod tests {
                 section_index: 1,
                 data: vec![0xFF; DATA_LAYER_SIZE],
             }],
+            block_light_vectors: Vec::new(),
         };
 
         let light =
@@ -2984,6 +3069,7 @@ mod tests {
                 section_index: 2,
                 data: vec![0xFF; DATA_LAYER_SIZE],
             }],
+            block_light_vectors: Vec::new(),
         };
 
         let light = ChunkStorage::persistent_to_light(&persistent, 0, 16, ChunkStatus::Light);

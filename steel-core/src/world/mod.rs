@@ -1061,6 +1061,27 @@ impl World {
             .unwrap_or_else(|| self.default_light_value(layer))
     }
 
+    /// Returns the stored block-light source offset for one block position.
+    #[must_use]
+    pub fn block_light_vector_at(&self, pos: BlockPos) -> crate::chunk::light::BlockLightVector {
+        if !self.is_in_valid_bounds_horizontal(pos) {
+            return crate::chunk::light::BlockLightVector::ZERO;
+        }
+
+        let chunk_pos = Self::chunk_pos_for_block(pos);
+        self.chunk_map
+            .with_chunk_at_status(chunk_pos, ChunkStatus::Light, |chunk| {
+                chunk.light().get_block_light_vector(pos)
+            })
+            .unwrap_or(crate::chunk::light::BlockLightVector::ZERO)
+    }
+
+    /// Returns block light at a position.
+    #[must_use]
+    pub fn block_light_at(&self, pos: BlockPos) -> u8 {
+        self.light_value_at(LightLayer::Block, pos)
+    }
+
     const fn default_light_value(&self, layer: LightLayer) -> u8 {
         match layer {
             LightLayer::Sky if self.dimension_type.has_skylight => MAX_LIGHT_LEVEL,

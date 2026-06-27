@@ -25,7 +25,7 @@ use tracing::instrument;
 
 use crate::behavior::BlockStateBehaviorExt;
 use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
-use crate::chunk::chunk_holder::ChunkHolder;
+use crate::chunk::chunk_holder::{ChangedLightSections, ChunkHolder};
 use crate::chunk::chunk_ticket_manager::{
     ChunkTicket, ChunkTicketLevel, ChunkTicketManager, LevelChange, generation_status, is_ticked,
 };
@@ -281,6 +281,18 @@ impl PendingChunkLightUpdates {
     }
 }
 
+/// Light sections deferred until the tick after accompanying block updates.
+///
+/// Vanilla clients run `checkBlock` when block packets arrive, then
+/// `runLightUpdates` at the end of the frame. Sending `CLightUpdate` in the same
+/// tick is overwritten by that client relight. Deferring one tick lets server
+/// light replace vanilla propagation.
+struct DeferredLightBroadcast {
+    holder: Arc<ChunkHolder>,
+    chunk_pos: ChunkPos,
+    light_changes: ChangedLightSections,
+}
+
 /// A map of chunks managing their state, loading, and generation.
 pub struct ChunkMap {
     /// Map of active chunks.
@@ -305,6 +317,8 @@ pub struct ChunkMap {
     pub storage: Arc<ChunkStorage>,
     /// Chunk holders with pending block changes to broadcast.
     pub chunks_to_broadcast: SyncMutex<Vec<Arc<ChunkHolder>>>,
+    /// Light updates deferred until after clients process block-change packets.
+    deferred_light_broadcasts: SyncMutex<Vec<DeferredLightBroadcast>>,
     /// Coalesced light changes and drained-but-not-yet-applied light work.
     light_updates: SyncMutex<LightUpdateState>,
     /// Notifies save barriers when in-flight light propagation state changes.
@@ -399,6 +413,7 @@ impl ChunkMap {
             chunk_runtime,
             storage,
             chunks_to_broadcast: SyncMutex::new(Vec::new()),
+            deferred_light_broadcasts: SyncMutex::new(Vec::new()),
             light_updates: SyncMutex::new(LightUpdateState::default()),
             light_updates_progress_notify: Notify::new(),
             light_work_window_gate: Arc::new(LightWorkWindowGate::new()),
@@ -890,6 +905,20 @@ impl ChunkMap {
     pub fn broadcast_changed_chunks(&self) {
         self.propagate_queued_light_changes();
 
+        if !self.deferred_light_broadcasts.lock().is_empty() {
+            let world = self.world_gen_context.world();
+            let has_skylight = world.dimension_type.has_skylight;
+            for deferred in mem::take(&mut *self.deferred_light_broadcasts.lock()) {
+                self.broadcast_light_update(
+                    &world,
+                    &deferred.holder,
+                    deferred.chunk_pos,
+                    &deferred.light_changes,
+                    has_skylight,
+                );
+            }
+        }
+
         let holders = {
             let mut guard = self.chunks_to_broadcast.lock();
             if guard.is_empty() {
@@ -897,6 +926,8 @@ impl ChunkMap {
             }
             mem::take(&mut *guard)
         };
+
+        let defer_all_light = holders.iter().any(|holder| holder.has_pending_block_changes());
 
         let mut world = None;
         let mut deferred_holders = Vec::new();
@@ -923,144 +954,177 @@ impl ChunkMap {
                 continue;
             }
 
-            if has_publishable_light_changes
-                && let Some(chunk) = holder.try_chunk(ChunkStatus::Full)
-            {
-                let tracking_players = world.get_light_packet_tracking_players(chunk_pos);
+            let had_block_changes = !changes_by_section.is_empty();
+
+            if had_block_changes {
+                // Get players whose client already has the base chunk packet.
+                let tracking_players = world.get_packet_tracking_players(chunk_pos);
                 if !tracking_players.is_empty() {
-                    let light_data = {
-                        let light = chunk.light();
-                        let sky_sections = if has_skylight {
-                            light_changes.sky.as_slice()
+                    // For each section with changes, send appropriate packet
+                    for (section_index, changed_positions) in changes_by_section {
+                        let section_y = min_y / 16 + section_index as i32;
+                        let section_pos = SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y);
+
+                        if changed_positions.len() == 1 {
+                            // Single block change - use CBlockUpdate
+                            let Some(&packed) = changed_positions.iter().next() else {
+                                continue;
+                            };
+                            let block_pos = section_pos.relative_to_block_pos(packed);
+                            let block_state = world.get_block_state(block_pos);
+
+                            tracing::debug!(
+                                ?block_pos,
+                                ?block_state,
+                                player_count = tracking_players.len(),
+                                "Broadcasting single block update"
+                            );
+
+                            let update_packet = CBlockUpdate {
+                                pos: block_pos,
+                                block_state,
+                            };
+
+                            let Ok(encoded) = EncodedPacket::from_bare(
+                                update_packet,
+                                world.compression,
+                                ConnectionProtocol::Play,
+                            ) else {
+                                log::warn!("Failed to encode block update packet");
+                                continue;
+                            };
+
+                            for entity_id in &tracking_players {
+                                if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                                    player.connection.send_encoded(encoded.clone());
+                                }
+                            }
                         } else {
-                            &[]
-                        };
-                        build_chunk_light_update_packet_for_sections(
-                            chunk_pos,
-                            &light,
-                            has_skylight,
-                            sky_sections,
-                            &light_changes.block,
-                        )
-                    };
-                    let light_packet = CLightUpdate {
-                        x: chunk_pos.0.x,
-                        z: chunk_pos.0.y,
-                        light_data,
-                    };
+                            // Multiple block changes - use CSectionBlocksUpdate
+                            let changes: Vec<BlockChange> = changed_positions
+                                .iter()
+                                .map(|&packed| {
+                                    let block_pos = section_pos.relative_to_block_pos(packed);
+                                    let block_state = world.get_block_state(block_pos);
+                                    BlockChange {
+                                        pos: packed,
+                                        block_state,
+                                    }
+                                })
+                                .collect();
 
-                    let Ok(encoded) = EncodedPacket::from_bare(
-                        light_packet,
-                        world.compression,
-                        ConnectionProtocol::Play,
-                    ) else {
-                        log::warn!("Failed to encode light update packet");
-                        continue;
-                    };
+                            tracing::debug!(
+                                change_count = changes.len(),
+                                ?section_pos,
+                                player_count = tracking_players.len(),
+                                "Broadcasting section block updates"
+                            );
 
-                    for entity_id in &tracking_players {
-                        if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_encoded(encoded.clone());
+                            let packet = CSectionBlocksUpdate {
+                                section_pos,
+                                changes,
+                            };
+
+                            let Ok(encoded) = EncodedPacket::from_bare(
+                                packet,
+                                world.compression,
+                                ConnectionProtocol::Play,
+                            ) else {
+                                log::warn!("Failed to encode section block update packet");
+                                continue;
+                            };
+
+                            for entity_id in &tracking_players {
+                                if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                                    player.connection.send_encoded(encoded.clone());
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            if changes_by_section.is_empty() {
-                continue;
-            }
-
-            // Get players whose client already has the base chunk packet.
-            let tracking_players = world.get_packet_tracking_players(chunk_pos);
-            if tracking_players.is_empty() {
-                continue;
-            }
-
-            // For each section with changes, send appropriate packet
-            for (section_index, changed_positions) in changes_by_section {
-                let section_y = min_y / 16 + section_index as i32;
-                let section_pos = SectionPos::new(chunk_pos.0.x, section_y, chunk_pos.0.y);
-
-                if changed_positions.len() == 1 {
-                    // Single block change - use CBlockUpdate
-                    let Some(&packed) = changed_positions.iter().next() else {
-                        continue;
-                    };
-                    let block_pos = section_pos.relative_to_block_pos(packed);
-                    let block_state = world.get_block_state(block_pos);
-
-                    tracing::debug!(
-                        ?block_pos,
-                        ?block_state,
-                        player_count = tracking_players.len(),
-                        "Broadcasting single block update"
-                    );
-
-                    let update_packet = CBlockUpdate {
-                        pos: block_pos,
-                        block_state,
-                    };
-
-                    let Ok(encoded) = EncodedPacket::from_bare(
-                        update_packet,
-                        world.compression,
-                        ConnectionProtocol::Play,
-                    ) else {
-                        log::warn!("Failed to encode block update packet");
-                        continue;
-                    };
-
-                    for entity_id in &tracking_players {
-                        if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_encoded(encoded.clone());
-                        }
-                    }
+            if has_publishable_light_changes {
+                if defer_all_light {
+                    self.deferred_light_broadcasts.lock().push(DeferredLightBroadcast {
+                        holder: Arc::clone(&holder),
+                        chunk_pos,
+                        light_changes,
+                    });
                 } else {
-                    // Multiple block changes - use CSectionBlocksUpdate
-                    let changes: Vec<BlockChange> = changed_positions
-                        .iter()
-                        .map(|&packed| {
-                            let block_pos = section_pos.relative_to_block_pos(packed);
-                            let block_state = world.get_block_state(block_pos);
-                            BlockChange {
-                                pos: packed,
-                                block_state,
-                            }
-                        })
-                        .collect();
-
-                    tracing::debug!(
-                        change_count = changes.len(),
-                        ?section_pos,
-                        player_count = tracking_players.len(),
-                        "Broadcasting section block updates"
+                    self.broadcast_light_update(
+                        world,
+                        &holder,
+                        chunk_pos,
+                        &light_changes,
+                        has_skylight,
                     );
-
-                    let packet = CSectionBlocksUpdate {
-                        section_pos,
-                        changes,
-                    };
-
-                    let Ok(encoded) = EncodedPacket::from_bare(
-                        packet,
-                        world.compression,
-                        ConnectionProtocol::Play,
-                    ) else {
-                        log::warn!("Failed to encode section block update packet");
-                        continue;
-                    };
-
-                    for entity_id in &tracking_players {
-                        if let Some(player) = world.players.get_by_entity_id(*entity_id) {
-                            player.connection.send_encoded(encoded.clone());
-                        }
-                    }
                 }
             }
         }
 
         if !deferred_holders.is_empty() {
             self.chunks_to_broadcast.lock().extend(deferred_holders);
+        }
+    }
+
+    fn broadcast_light_update(
+        &self,
+        world: &crate::world::World,
+        holder: &ChunkHolder,
+        chunk_pos: ChunkPos,
+        light_changes: &ChangedLightSections,
+        has_skylight: bool,
+    ) {
+        let has_publishable_light_changes =
+            !light_changes.block.is_empty() || (has_skylight && !light_changes.sky.is_empty());
+        if !has_publishable_light_changes {
+            return;
+        }
+
+        let tracking_players = world.get_packet_tracking_players(chunk_pos);
+        if tracking_players.is_empty() {
+            return;
+        }
+
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Full) else {
+            return;
+        };
+
+        let light_data = {
+            let light = chunk.light();
+            let sky_sections = if has_skylight {
+                light_changes.sky.as_slice()
+            } else {
+                &[]
+            };
+            build_chunk_light_update_packet_for_sections(
+                chunk_pos,
+                &light,
+                has_skylight,
+                sky_sections,
+                &light_changes.block,
+            )
+        };
+        let light_packet = CLightUpdate {
+            x: chunk_pos.0.x,
+            z: chunk_pos.0.y,
+            light_data,
+        };
+
+        let Ok(encoded) = EncodedPacket::from_bare(
+            light_packet,
+            world.compression,
+            ConnectionProtocol::Play,
+        ) else {
+            log::warn!("Failed to encode light update packet");
+            return;
+        };
+
+        for entity_id in &tracking_players {
+            if let Some(player) = world.players.get_by_entity_id(*entity_id) {
+                player.connection.send_encoded(encoded.clone());
+            }
         }
     }
 

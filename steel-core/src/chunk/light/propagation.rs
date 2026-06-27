@@ -1,11 +1,15 @@
-use steel_registry::{blocks::block_state_ext::BlockStateExt, vanilla_blocks};
-use steel_utils::{BlockPos, BlockStateId, ChunkPos, Direction, SectionPos};
+use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_utils::{BlockPos, BlockStateId, ChunkPos, SectionPos};
 
 use super::{
-    CachedLightBlock, LIGHT_BLOCKED, LightAxisDirection, LightCacheLayout, LightDirectionSet,
-    LightLayer, LightLayerEdit, LightQueueFlags, LightSectionEmptinessChange,
+    BlockLightVector, CachedLightBlock, LIGHT_BLOCKED, LightAxisDirection, LightCacheLayout,
+    LightDirectionSet, LightLayer, LightLayerEdit, LightQueueFlags, LightSectionEmptinessChange,
     LightSectionReadCache, LightWorkset, MAX_LIGHT_LEVEL, PackedLightPropagationQueues,
     PackedLightQueueEntry, get_light_block_into, get_light_opacity, light_occlusion_shape,
+    voxel_traversal::{
+        dominant_direction, for_each_adjacent_block_offset, is_diagonal_block_offset,
+        line_voxels_between, next_voxel_past, next_voxel_toward, ray_passes_through,
+    },
 };
 
 /// Error returned when a block-light propagation context is built from mismatched caches.
@@ -109,6 +113,7 @@ pub fn propagate_block_light_changes_with_empty_sections(
                         context.check_block(position);
                     }
                     context.perform_light_decrease();
+                    context.check_chunk_edges(layout.center_chunk());
                 }
 
                 let mut updated_sections = Vec::new();
@@ -485,12 +490,15 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
 
         self.light.set(cached_block, emitted_level);
         if emitted_level != 0 {
+            self.light.set_block_light_vector(cached_block, BlockLightVector::ZERO);
             self.enqueue_increase(
                 block_pos,
                 emitted_level,
                 LightDirectionSet::all(),
                 Self::shape_flags(block_state),
             );
+        } else {
+            self.light.set_block_light_vector(cached_block, BlockLightVector::ZERO);
         }
 
         self.enqueue_decrease(
@@ -542,184 +550,693 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
         self.perform_light_decrease();
     }
 
-    /// Calculates the block-light value that should exist at `block_pos`.
+    /// Calculates the block-light value that should exist at `block_pos` from direct
+    /// line-of-sight to emitters only.
     ///
     /// Returns `None` when the position is outside this cache window.
     #[must_use]
-    pub fn calculate_light_value(&self, block_pos: BlockPos, expect: u8) -> Option<u8> {
-        let cached_block = self.layout.cached_block(block_pos)?;
-        let center_state = self.sections.get_block_state(cached_block);
-        let mut level = center_state.get_light_emission() & MAX_LIGHT_LEVEL;
-
-        if level >= MAX_LIGHT_LEVEL - 1 || level > expect {
-            return Some(level);
-        }
-
-        let opacity = get_light_opacity(center_state);
-        if opacity >= MAX_LIGHT_LEVEL {
-            return Some(level);
-        }
-
-        for axis_direction in LightAxisDirection::ALL {
-            let neighbor_pos = Self::offset(block_pos, axis_direction);
-            let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
-                continue;
-            };
-            let neighbor_level = self.light.get(neighbor_block);
-            if neighbor_level.saturating_sub(1) <= level {
-                continue;
-            }
-
-            let neighbor_state = self.sections.get_block_state(neighbor_block);
-            let direction_from_neighbor = axis_direction.opposite().direction();
-            if get_light_block_into(
-                neighbor_state,
-                center_state,
-                direction_from_neighbor,
-                opacity,
-            ) == LIGHT_BLOCKED
-            {
-                continue;
-            }
-
-            level = level.max(neighbor_level.saturating_sub(opacity));
-            if level > expect {
-                return Some(level);
-            }
-        }
-
-        Some(level)
+    pub fn calculate_light_value(&self, block_pos: BlockPos, _expect: u8) -> Option<u8> {
+        self.direct_block_light_level(block_pos)
     }
 
-    /// Performs queued `ScalableLux` block-light decreases, then re-propagates increases.
+    /// Block-light level from self-emission and direct rays to emitting blocks only.
+    #[must_use]
+    fn direct_block_light_level(&self, block_pos: BlockPos) -> Option<u8> {
+        self.direct_block_light_from(block_pos).map(|(level, _)| level)
+    }
+
+    /// Returns the strongest direct block-light level at `block_pos` and its emitter.
+    #[must_use]
+    fn direct_block_light_from(&self, block_pos: BlockPos) -> Option<(u8, BlockPos)> {
+        let cached_block = self.layout.cached_block(block_pos)?;
+        let block_state = self.sections.get_block_state(cached_block);
+        let emission = block_state.get_light_emission() & MAX_LIGHT_LEVEL;
+        let mut best_level = emission;
+        let mut best_emitter = block_pos;
+
+        for_each_adjacent_block_offset(|dx, dy, dz| {
+            let neighbor_pos = block_pos.offset(dx, dy, dz);
+            let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
+                return;
+            };
+            let neighbor_state = self.sections.get_block_state(neighbor_block);
+            let neighbor_emission = neighbor_state.get_light_emission() & MAX_LIGHT_LEVEL;
+            if neighbor_emission != 0 {
+                if let Some(direct_level) = self.propagated_level_along_ray(neighbor_pos, block_pos)
+                    && direct_level > best_level
+                {
+                    best_level = direct_level;
+                    best_emitter = neighbor_pos;
+                }
+                return;
+            }
+
+            let neighbor_level = self.light.get(neighbor_block);
+            if neighbor_level <= best_level {
+                return;
+            }
+            let Some((neighbor_emitter, continued_level)) =
+                self.neighbor_light_continues_to_block(neighbor_pos, block_pos)
+            else {
+                return;
+            };
+            if continued_level > best_level {
+                best_level = continued_level;
+                best_emitter = neighbor_emitter;
+            }
+        });
+
+        let vector = self.light.get_block_light_vector(cached_block);
+        if !vector.is_zero() {
+            let emitter_pos = vector.source_position(block_pos);
+            if let Some(direct_level) = self.propagated_level_along_ray(emitter_pos, block_pos)
+                && direct_level > best_level
+            {
+                best_level = direct_level;
+                best_emitter = emitter_pos;
+            }
+        }
+
+        Some((best_level, best_emitter))
+    }
+
+    /// Clears blocks that should not be lit, then runs the increase pass.
+    ///
+    /// Each decrease entry walks one downstream ray step and clears stored light when
+    /// it exceeds the direct level from the tracked emitter. Neighbors off the ray are
+    /// checked the same way.
     pub fn perform_light_decrease(&mut self) {
         while let Some(entry) = self.queues.dequeue_decrease() {
             let Some(source_block) = self.cached_block_from_entry(entry) else {
                 continue;
             };
-            let source_state = if entry.has_sided_transparent_blocks() {
-                Some(self.sections.get_block_state(source_block))
-            } else {
-                None
-            };
+            let source_pos = source_block.block_pos;
+            let emitter_pos = self.emitter_position(source_block);
 
-            for axis_direction in entry.directions().directions() {
-                let neighbor_pos = Self::offset(source_block.block_pos, axis_direction);
-                let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
-                    continue;
-                };
-                if !self.light.has_non_missing(neighbor_block) {
-                    continue;
-                }
-                let current_level = self.light.get(neighbor_block);
-                if current_level == 0 {
-                    continue;
-                }
-
-                let neighbor_state = self.sections.get_block_state(neighbor_block);
-                let Some((target_level, flags)) = Self::target_level(
-                    entry.level(),
-                    source_state,
-                    neighbor_state,
-                    axis_direction.direction(),
-                    true,
-                ) else {
-                    continue;
-                };
-
-                if current_level > target_level {
-                    self.enqueue_increase(
-                        neighbor_pos,
-                        current_level,
-                        LightDirectionSet::all(),
-                        flags.with(LightQueueFlags::RECHECK_LEVEL),
-                    );
-                    continue;
-                }
-
-                let emitted_light = neighbor_state.get_light_emission() & MAX_LIGHT_LEVEL;
-                if emitted_light != 0 {
-                    self.enqueue_increase(
-                        neighbor_pos,
-                        emitted_light,
-                        LightDirectionSet::all(),
-                        flags.with(LightQueueFlags::WRITE_LEVEL),
-                    );
-                }
-
-                self.light.set(neighbor_block, 0);
-                if target_level > 0 {
-                    self.enqueue_decrease(
-                        neighbor_pos,
-                        target_level,
-                        LightDirectionSet::all_except_opposite(axis_direction),
-                        flags,
-                    );
-                }
+            if let Some(downstream_pos) = next_voxel_past(source_pos, emitter_pos) {
+                self.try_clear_unlit_downstream(
+                    source_block,
+                    downstream_pos,
+                    emitter_pos,
+                    entry,
+                );
             }
+
+            for axis_direction in LightAxisDirection::ALL {
+                self.try_clear_unlit_neighbor(source_block, emitter_pos, axis_direction);
+            }
+            for_each_adjacent_block_offset(|dx, dy, dz| {
+                if !is_diagonal_block_offset(dx, dy, dz) {
+                    return;
+                }
+                let neighbor_pos = source_pos.offset(dx, dy, dz);
+                self.try_clear_unlit_adjacent(source_block, emitter_pos, neighbor_pos);
+            });
         }
 
         self.perform_light_increase();
     }
 
-    /// Performs queued `ScalableLux` block-light increases.
+    /// Applies direct block light to blocks that should be lit.
+    ///
+    /// Each increase entry spreads from emitters along cardinal rays and steps the DDA
+    /// line toward the stored emitter for all other lit cells.
     pub fn perform_light_increase(&mut self) {
         while let Some(entry) = self.queues.dequeue_increase() {
             let Some(source_block) = self.cached_block_from_entry(entry) else {
                 continue;
             };
+            let source_pos = source_block.block_pos;
+
             if entry.should_recheck_level() {
                 if self.light.get(source_block) != entry.level() {
                     continue;
                 }
+                self.try_apply_lit_at(source_pos, LightQueueFlags::EMPTY);
             } else if entry.should_write_level() {
                 self.light.set(source_block, entry.level());
+                if entry.level() != 0 {
+                    let emission = self
+                        .sections
+                        .get_block_state(source_block)
+                        .get_light_emission()
+                        & MAX_LIGHT_LEVEL;
+                    if emission != 0 {
+                        self.light.set_block_light_vector(source_block, BlockLightVector::ZERO);
+                    } else if let Some((_, emitter_pos)) =
+                        self.direct_block_light_from(source_pos)
+                        && emitter_pos != source_pos
+                    {
+                        self.light.set_block_light_vector(
+                            source_block,
+                            BlockLightVector::from_positions(source_pos, emitter_pos),
+                        );
+                    }
+                }
+            } else {
+                let base_flags = if entry.has_sided_transparent_blocks() {
+                    LightQueueFlags::EMPTY.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS)
+                } else {
+                    LightQueueFlags::EMPTY
+                };
+                self.try_apply_lit_at(source_pos, base_flags);
             }
 
-            let source_state = if entry.has_sided_transparent_blocks() {
-                Some(self.sections.get_block_state(source_block))
-            } else {
-                None
-            };
+            let emitter_pos = self.emitter_position(source_block);
 
-            for axis_direction in entry.directions().directions() {
-                let neighbor_pos = Self::offset(source_block.block_pos, axis_direction);
-                let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
-                    continue;
-                };
-                if !self.light.has_non_missing(neighbor_block) {
-                    continue;
-                }
-                let current_level = self.light.get(neighbor_block);
-                if current_level >= entry.level().saturating_sub(1) {
-                    continue;
-                }
+            if source_pos == emitter_pos {
+                self.try_apply_lit_emitter_fan(source_block, emitter_pos, entry);
+            }
 
-                let neighbor_state = self.sections.get_block_state(neighbor_block);
-                let Some((target_level, flags)) = Self::target_level(
-                    entry.level(),
-                    source_state,
-                    neighbor_state,
-                    axis_direction.direction(),
-                    false,
-                ) else {
-                    continue;
-                };
-                if target_level <= current_level {
-                    continue;
-                }
-
-                self.light.set(neighbor_block, target_level);
-                if target_level > 1 {
-                    self.enqueue_increase(
-                        neighbor_pos,
-                        target_level,
-                        LightDirectionSet::all_except_opposite(axis_direction),
-                        flags,
+            if entry.level() > 1 {
+                if let Some(downstream_pos) = next_voxel_past(source_pos, emitter_pos) {
+                    self.try_apply_lit_ray(
+                        source_block,
+                        downstream_pos,
+                        emitter_pos,
+                        entry,
                     );
                 }
             }
+
+            for_each_adjacent_block_offset(|dx, dy, dz| {
+                self.try_enqueue_increase_from_brighter_adjacent(source_pos, dx, dy, dz);
+            });
         }
+    }
+
+    fn emitter_position(&self, cached_block: CachedLightBlock) -> BlockPos {
+        self.light
+            .get_block_light_vector(cached_block)
+            .source_position(cached_block.block_pos)
+    }
+
+    fn try_clear_unlit_downstream(
+        &mut self,
+        source_block: CachedLightBlock,
+        downstream_pos: BlockPos,
+        emitter_pos: BlockPos,
+        entry: PackedLightQueueEntry,
+    ) {
+        let Some(downstream_block) = self.layout.cached_block(downstream_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(downstream_block) {
+            return;
+        }
+
+        let downstream_vector = self.light.get_block_light_vector(downstream_block);
+        if downstream_vector.source_position(downstream_pos) != emitter_pos {
+            return;
+        }
+        if !ray_passes_through(downstream_pos, emitter_pos, source_block.block_pos) {
+            return;
+        }
+
+        let current_level = self.light.get(downstream_block);
+        if current_level == 0 {
+            return;
+        }
+
+        let direct_level = self
+            .propagated_level_along_ray(emitter_pos, downstream_pos)
+            .unwrap_or(0);
+        if current_level <= direct_level {
+            return;
+        }
+
+        let flags = if entry.has_sided_transparent_blocks() {
+            LightQueueFlags::EMPTY.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS)
+        } else {
+            LightQueueFlags::EMPTY
+        };
+
+        self.light.set(downstream_block, 0);
+        self.light
+            .set_block_light_vector(downstream_block, BlockLightVector::ZERO);
+        self.enqueue_decrease(
+            downstream_pos,
+            current_level,
+            LightDirectionSet::all(),
+            flags,
+        );
+    }
+
+    fn try_clear_unlit_neighbor(
+        &mut self,
+        source_block: CachedLightBlock,
+        emitter_pos: BlockPos,
+        axis_direction: LightAxisDirection,
+    ) {
+        let neighbor_pos = Self::offset(source_block.block_pos, axis_direction);
+        if Some(neighbor_pos) == next_voxel_past(source_block.block_pos, emitter_pos) {
+            return;
+        }
+
+        let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(neighbor_block) {
+            return;
+        }
+
+        let current_level = self.light.get(neighbor_block);
+        if current_level == 0 {
+            return;
+        }
+
+        let Some((direct_level, _)) = self.direct_block_light_from(neighbor_pos) else {
+            return;
+        };
+        if current_level <= direct_level {
+            return;
+        }
+
+        self.light.set(neighbor_block, 0);
+        self.light
+            .set_block_light_vector(neighbor_block, BlockLightVector::ZERO);
+        self.enqueue_decrease(
+            neighbor_pos,
+            current_level,
+            LightDirectionSet::all(),
+            LightQueueFlags::EMPTY,
+        );
+    }
+
+    fn try_clear_unlit_adjacent(
+        &mut self,
+        source_block: CachedLightBlock,
+        emitter_pos: BlockPos,
+        neighbor_pos: BlockPos,
+    ) {
+        if Some(neighbor_pos) == next_voxel_past(source_block.block_pos, emitter_pos) {
+            return;
+        }
+
+        let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(neighbor_block) {
+            return;
+        }
+
+        let current_level = self.light.get(neighbor_block);
+        if current_level == 0 {
+            return;
+        }
+
+        let Some((direct_level, _)) = self.direct_block_light_from(neighbor_pos) else {
+            return;
+        };
+        if current_level <= direct_level {
+            return;
+        }
+
+        self.light.set(neighbor_block, 0);
+        self.light
+            .set_block_light_vector(neighbor_block, BlockLightVector::ZERO);
+        self.enqueue_decrease(
+            neighbor_pos,
+            current_level,
+            LightDirectionSet::all(),
+            LightQueueFlags::EMPTY,
+        );
+    }
+
+    fn try_enqueue_increase_from_brighter_adjacent(
+        &mut self,
+        block_pos: BlockPos,
+        dx: i32,
+        dy: i32,
+        dz: i32,
+    ) {
+        let neighbor_pos = block_pos.offset(dx, dy, dz);
+        let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(neighbor_block) {
+            return;
+        }
+
+        let Some(cached_block) = self.layout.cached_block(block_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(cached_block) {
+            return;
+        }
+
+        let neighbor_level = self.light.get(neighbor_block);
+        let block_level = self.light.get(cached_block);
+        if neighbor_level <= block_level {
+            return;
+        }
+
+        let Some((_, continued_level)) =
+            self.neighbor_light_continues_to_block(neighbor_pos, block_pos)
+        else {
+            return;
+        };
+        if continued_level <= block_level {
+            return;
+        }
+
+        let block_state = self.sections.get_block_state(cached_block);
+        let mut flags = LightQueueFlags::EMPTY;
+        if !light_occlusion_shape(block_state).is_empty() {
+            flags = flags.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS);
+        }
+
+        self.enqueue_increase(
+            block_pos,
+            continued_level,
+            LightDirectionSet::all(),
+            flags,
+        );
+    }
+
+    /// Returns the emitter and one-step continued level when `neighbor_pos` is lit and
+    /// `block_pos` is the adjacent downstream cell on the same light line.
+    fn neighbor_light_continues_to_block(
+        &self,
+        neighbor_pos: BlockPos,
+        block_pos: BlockPos,
+    ) -> Option<(BlockPos, u8)> {
+        let neighbor_block = self.layout.cached_block(neighbor_pos)?;
+        let neighbor_state = self.sections.get_block_state(neighbor_block);
+        let neighbor_level = self.light.get(neighbor_block);
+        if neighbor_level == 0 {
+            return None;
+        }
+
+        let neighbor_emission = neighbor_state.get_light_emission() & MAX_LIGHT_LEVEL;
+        let neighbor_vector = self.light.get_block_light_vector(neighbor_block);
+        if neighbor_emission == 0 && neighbor_vector.is_zero() {
+            return None;
+        }
+
+        let neighbor_emitter = self.emitter_position(neighbor_block);
+        if !Self::is_adjacent_light_continuation(neighbor_pos, block_pos, neighbor_emitter) {
+            return None;
+        }
+
+        let block_state = self.sections.get_block_state(
+            self.layout.cached_block(block_pos)?,
+        );
+        let direction_from_neighbor = dominant_direction(neighbor_pos, block_pos);
+        let opacity = get_light_block_into(
+            neighbor_state,
+            block_state,
+            direction_from_neighbor,
+            get_light_opacity(block_state),
+        );
+        if opacity == LIGHT_BLOCKED || opacity >= neighbor_level {
+            return None;
+        }
+
+        Some((neighbor_emitter, neighbor_level - opacity))
+    }
+
+    /// Returns true when `block_pos` is the adjacent next cell on the light line through
+    /// `neighbor_pos` from `neighbor_emitter`.
+    fn is_adjacent_light_continuation(
+        neighbor_pos: BlockPos,
+        block_pos: BlockPos,
+        neighbor_emitter: BlockPos,
+    ) -> bool {
+        if neighbor_emitter == neighbor_pos {
+            return next_voxel_toward(neighbor_pos, block_pos) == Some(block_pos)
+                || Self::is_adjacent_block_pos(neighbor_pos, block_pos);
+        }
+
+        next_voxel_past(neighbor_pos, neighbor_emitter) == Some(block_pos)
+    }
+
+    const fn is_adjacent_block_pos(from: BlockPos, to: BlockPos) -> bool {
+        let dx = to.x() - from.x();
+        let dy = to.y() - from.y();
+        let dz = to.z() - from.z();
+        dx.abs() <= 1 && dy.abs() <= 1 && dz.abs() <= 1 && (dx != 0 || dy != 0 || dz != 0)
+    }
+
+    fn try_apply_lit_at(&mut self, block_pos: BlockPos, base_flags: LightQueueFlags) {
+        let Some((direct_level, emitter_pos)) = self.direct_block_light_from(block_pos) else {
+            return;
+        };
+        let Some(cached_block) = self.layout.cached_block(block_pos) else {
+            return;
+        };
+        let current_level = self.light.get(cached_block);
+        if direct_level <= current_level {
+            return;
+        }
+
+        let block_state = self.sections.get_block_state(cached_block);
+        let mut flags = base_flags;
+        if !light_occlusion_shape(block_state).is_empty() {
+            flags = flags.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS);
+        }
+
+        self.light.set(cached_block, direct_level);
+        if direct_level != 0 && emitter_pos != block_pos {
+            self.light.set_block_light_vector(
+                cached_block,
+                BlockLightVector::from_positions(block_pos, emitter_pos),
+            );
+        }
+        if direct_level > 1 {
+            self.enqueue_increase(
+                block_pos,
+                direct_level,
+                LightDirectionSet::all(),
+                flags,
+            );
+        }
+    }
+
+    fn emitter_has_open_cardinal_neighbors(&self, emitter_pos: BlockPos) -> bool {
+        let Some(emitter_cached) = self.layout.cached_block(emitter_pos) else {
+            return false;
+        };
+        let emitter_state = self.sections.get_block_state(emitter_cached);
+
+        for axis_direction in LightAxisDirection::ALL {
+            let neighbor_pos = Self::offset(emitter_pos, axis_direction);
+            let Some(neighbor_cached) = self.layout.cached_block(neighbor_pos) else {
+                return false;
+            };
+            let neighbor_state = self.sections.get_block_state(neighbor_cached);
+            let opacity = get_light_block_into(
+                emitter_state,
+                neighbor_state,
+                axis_direction.direction(),
+                get_light_opacity(neighbor_state),
+            );
+            if opacity == LIGHT_BLOCKED {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn try_apply_lit_emitter_fan(
+        &mut self,
+        source_block: CachedLightBlock,
+        emitter_pos: BlockPos,
+        entry: PackedLightQueueEntry,
+    ) {
+        let fan_diagonal = self.emitter_has_open_cardinal_neighbors(emitter_pos);
+        let base_flags = if entry.has_sided_transparent_blocks() {
+            LightQueueFlags::EMPTY.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS)
+        } else {
+            LightQueueFlags::EMPTY
+        };
+
+        for_each_adjacent_block_offset(|dx, dy, dz| {
+            if is_diagonal_block_offset(dx, dy, dz) && !fan_diagonal {
+                return;
+            }
+
+            let neighbor_pos = source_block.block_pos.offset(dx, dy, dz);
+            self.try_apply_lit_adjacent(
+                source_block,
+                emitter_pos,
+                neighbor_pos,
+                entry,
+                base_flags,
+            );
+        });
+    }
+
+    fn try_apply_lit_adjacent(
+        &mut self,
+        _source_block: CachedLightBlock,
+        emitter_pos: BlockPos,
+        neighbor_pos: BlockPos,
+        _entry: PackedLightQueueEntry,
+        base_flags: LightQueueFlags,
+    ) {
+        let Some(neighbor_block) = self.layout.cached_block(neighbor_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(neighbor_block) {
+            return;
+        }
+        let Some(direct_level) = self.propagated_level_along_ray(emitter_pos, neighbor_pos) else {
+            return;
+        };
+        if direct_level == 0 {
+            return;
+        }
+
+        let current_level = self.light.get(neighbor_block);
+        if direct_level <= current_level {
+            return;
+        }
+
+        let neighbor_state = self.sections.get_block_state(neighbor_block);
+        let mut flags = base_flags;
+        if !light_occlusion_shape(neighbor_state).is_empty() {
+            flags = flags.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS);
+        }
+
+        self.light.set(neighbor_block, direct_level);
+        self.light.set_block_light_vector(
+            neighbor_block,
+            BlockLightVector::from_positions(neighbor_block.block_pos, emitter_pos),
+        );
+        if direct_level > 1 {
+            self.enqueue_increase(
+                neighbor_pos,
+                direct_level,
+                LightDirectionSet::all(),
+                flags,
+            );
+        }
+    }
+
+    fn try_apply_lit_ray(
+        &mut self,
+        source_block: CachedLightBlock,
+        downstream_pos: BlockPos,
+        emitter_pos: BlockPos,
+        entry: PackedLightQueueEntry,
+    ) {
+        if !ray_passes_through(downstream_pos, emitter_pos, source_block.block_pos) {
+            return;
+        }
+
+        let Some(downstream_block) = self.layout.cached_block(downstream_pos) else {
+            return;
+        };
+        if !self.light.has_non_missing(downstream_block) {
+            return;
+        }
+        let Some(direct_level) = self.propagated_level_along_ray(emitter_pos, downstream_pos) else {
+            return;
+        };
+        if direct_level == 0 {
+            return;
+        }
+
+        let current_level = self.light.get(downstream_block);
+        if direct_level <= current_level {
+            return;
+        }
+
+        let flags = if entry.has_sided_transparent_blocks() {
+            LightQueueFlags::EMPTY.with(LightQueueFlags::HAS_SIDED_TRANSPARENT_BLOCKS)
+        } else {
+            LightQueueFlags::EMPTY
+        };
+
+        self.light.set(downstream_block, direct_level);
+        self.light.set_block_light_vector(
+            downstream_block,
+            BlockLightVector::from_positions(downstream_pos, emitter_pos),
+        );
+        if direct_level > 1 {
+            self.enqueue_increase(
+                downstream_pos,
+                direct_level,
+                LightDirectionSet::all(),
+                flags,
+            );
+        }
+    }
+
+    fn propagated_level_along_ray(
+        &self,
+        emitter_pos: BlockPos,
+        target_pos: BlockPos,
+    ) -> Option<u8> {
+        let Some(emitter_cached) = self.layout.cached_block(emitter_pos) else {
+            return None;
+        };
+        let emitter_state = self.sections.get_block_state(emitter_cached);
+        let emission = emitter_state.get_light_emission() & MAX_LIGHT_LEVEL;
+        let mut level = if emission != 0 {
+            emission
+        } else {
+            self.light.get(emitter_cached)
+        };
+
+        if emitter_pos == target_pos {
+            return Some(level);
+        }
+
+        let dx = target_pos.x() - emitter_pos.x();
+        let dy = target_pos.y() - emitter_pos.y();
+        let dz = target_pos.z() - emitter_pos.z();
+        if dx.abs() <= 1 && dy.abs() <= 1 && dz.abs() <= 1 {
+            let Some(target_cached) = self.layout.cached_block(target_pos) else {
+                return None;
+            };
+            let target_state = self.sections.get_block_state(target_cached);
+            let opacity = get_light_block_into(
+                emitter_state,
+                target_state,
+                dominant_direction(emitter_pos, target_pos),
+                get_light_opacity(target_state),
+            );
+            if opacity == LIGHT_BLOCKED {
+                return Some(0);
+            }
+            return Some(level.saturating_sub(opacity));
+        }
+
+        let mut from = emitter_pos;
+        for step in line_voxels_between(emitter_pos, target_pos) {
+            if step == emitter_pos {
+                continue;
+            }
+
+            let Some(step_cached) = self.layout.cached_block(step) else {
+                return None;
+            };
+            let Some(from_cached) = self.layout.cached_block(from) else {
+                return None;
+            };
+            let from_state = self.sections.get_block_state(from_cached);
+            let step_state = self.sections.get_block_state(step_cached);
+            let direction = dominant_direction(from, step);
+            let opacity = get_light_block_into(
+                from_state,
+                step_state,
+                direction,
+                get_light_opacity(step_state),
+            );
+            if opacity == LIGHT_BLOCKED {
+                return Some(0);
+            }
+            level = level.saturating_sub(opacity);
+            from = step;
+            if level == 0 {
+                return Some(0);
+            }
+        }
+
+        Some(level)
     }
 
     fn cached_block_from_entry(&self, entry: PackedLightQueueEntry) -> Option<CachedLightBlock> {
@@ -805,7 +1322,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
 
                 let current_level = self.light.get(current_block);
                 if self
-                    .calculate_light_value(current_pos, current_level)
+                    .direct_block_light_level(current_pos)
                     .is_some_and(|calculated| calculated != current_level)
                 {
                     center_delayed_checks[center_delayed_check_count] = current_block.local_index;
@@ -814,7 +1331,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
 
                 let neighbor_level = self.light.get(neighbor_block);
                 if self
-                    .calculate_light_value(neighbor_pos, neighbor_level)
+                    .direct_block_light_level(neighbor_pos)
                     .is_some_and(|calculated| calculated != neighbor_level)
                 {
                     neighbor_delayed_checks[neighbor_delayed_check_count] =
@@ -873,6 +1390,7 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
             Self::shape_flags(block_state),
         );
         self.light.set(cached_block, emitted_level);
+        self.light.set_block_light_vector(cached_block, BlockLightVector::ZERO);
         true
     }
 
@@ -992,38 +1510,6 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
             ));
     }
 
-    fn target_level(
-        propagated_level: u8,
-        source_state: Option<BlockStateId>,
-        target_state: BlockStateId,
-        direction: Direction,
-        saturating: bool,
-    ) -> Option<(u8, LightQueueFlags)> {
-        let source_state = match source_state {
-            Some(source_state) => source_state,
-            None => Self::air(),
-        };
-        let opacity = get_light_block_into(
-            source_state,
-            target_state,
-            direction,
-            get_light_opacity(target_state),
-        );
-        if opacity == LIGHT_BLOCKED {
-            return None;
-        }
-
-        let target_level = if saturating {
-            propagated_level.saturating_sub(opacity)
-        } else if opacity >= propagated_level {
-            return None;
-        } else {
-            propagated_level - opacity
-        };
-
-        Some((target_level, Self::shape_flags(target_state)))
-    }
-
     fn shape_flags(block_state: BlockStateId) -> LightQueueFlags {
         if light_occlusion_shape(block_state).is_empty() {
             LightQueueFlags::EMPTY
@@ -1035,10 +1521,6 @@ impl<'a, 'sections, 'light> BlockLightPropagationContext<'a, 'sections, 'light> 
     const fn offset(block_pos: BlockPos, direction: LightAxisDirection) -> BlockPos {
         let (dx, dy, dz) = direction.offset();
         block_pos.offset(dx, dy, dz)
-    }
-
-    fn air() -> BlockStateId {
-        vanilla_blocks::AIR.default_state()
     }
 }
 
@@ -1136,6 +1618,13 @@ mod tests {
         chunk.light().get_light_value(LightLayer::Block, pos)
     }
 
+    fn block_light_vector_at(holder: &ChunkHolder, pos: BlockPos) -> BlockLightVector {
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("test chunk should be available");
+        };
+        chunk.light().get_block_light_vector(pos)
+    }
+
     #[test]
     fn context_requires_block_layer() {
         init_tests();
@@ -1201,6 +1690,169 @@ mod tests {
         assert!(result.updated_sections.contains(&SectionPos::new(0, 0, 0)));
         assert_eq!(block_light_at(&holder, source_pos), 15);
         assert_eq!(block_light_at(&holder, BlockPos::new(2, 1, 1)), 14);
+    }
+
+    #[test]
+    fn block_light_emitter_fans_diagonal_in_open_air() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let source_pos = BlockPos::new(1, 1, 1);
+        let diagonal_pos = BlockPos::new(2, 2, 1);
+        let mut section = ChunkSection::new_empty();
+        section.set_block_state(1, 1, 1, vanilla_blocks::LIGHT.default_state());
+        let holder = holder_with_section(center, section);
+        set_block_section_non_missing(&holder, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Inner,
+            true,
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing neighbors");
+        };
+
+        let Ok(()) = propagate_block_light_changes(&workset, [source_pos]).map(|_| ()) else {
+            panic!("matching block caches should run block light updates");
+        };
+
+        assert_eq!(block_light_at(&holder, diagonal_pos), 14);
+    }
+
+    #[test]
+    fn block_light_removal_clears_downstream_air() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let source_pos = BlockPos::new(1, 1, 1);
+        let air_pos = BlockPos::new(2, 1, 1);
+        let mut section = ChunkSection::new_empty();
+        section.set_block_state(1, 1, 1, vanilla_blocks::LIGHT.default_state());
+        let holder = holder_with_section(center, section);
+        set_block_section_non_missing(&holder, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Inner,
+            true,
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing neighbors");
+        };
+
+        let Ok(()) = propagate_block_light_changes(&workset, [source_pos]).map(|_| ()) else {
+            panic!("matching block caches should run block light updates");
+        };
+        assert_eq!(block_light_at(&holder, air_pos), 14);
+
+        let Some(chunk) = holder.try_chunk(ChunkStatus::Empty) else {
+            panic!("chunk should be available");
+        };
+        assert_eq!(
+            chunk.set_block_state(
+                source_pos,
+                vanilla_blocks::AIR.default_state(),
+                UpdateFlags::UPDATE_NONE,
+            ),
+            Some(vanilla_blocks::LIGHT.default_state())
+        );
+        drop(chunk);
+
+        let Ok(()) = propagate_block_light_changes(&workset, [source_pos]).map(|_| ()) else {
+            panic!("matching block caches should run block light updates");
+        };
+
+        assert_eq!(block_light_at(&holder, source_pos), 0);
+        assert_eq!(block_light_at(&holder, air_pos), 0);
+        assert_eq!(block_light_vector_at(&holder, air_pos), BlockLightVector::ZERO);
+    }
+
+    #[test]
+    fn block_light_propagation_records_source_vectors_in_air() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let source_pos = BlockPos::new(1, 1, 1);
+        let air_pos = BlockPos::new(2, 1, 1);
+        let mut section = ChunkSection::new_empty();
+        section.set_block_state(1, 1, 1, vanilla_blocks::LIGHT.default_state());
+        let holder = holder_with_section(center, section);
+        set_block_section_non_missing(&holder, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Inner,
+            true,
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing neighbors");
+        };
+
+        let Ok(()) = propagate_block_light_changes(&workset, [source_pos]).map(|_| ()) else {
+            panic!("matching block caches should run block light updates");
+        };
+
+        assert_eq!(block_light_at(&holder, air_pos), 14);
+        assert_eq!(
+            block_light_vector_at(&holder, air_pos),
+            BlockLightVector {
+                dx: -1,
+                dy: 0,
+                dz: 0,
+            }
+        );
+        assert_eq!(
+            block_light_vector_at(&holder, source_pos),
+            BlockLightVector::ZERO
+        );
+    }
+
+    #[test]
+    fn block_light_vectors_chain_through_indirect_air_to_emitter() {
+        init_tests();
+        let center = ChunkPos::new(0, 0);
+        let source_pos = BlockPos::new(1, 1, 1);
+        let intermediate_pos = BlockPos::new(2, 1, 1);
+        let distant_air_pos = BlockPos::new(3, 1, 1);
+        let mut section = ChunkSection::new_empty();
+        section.set_block_state(1, 1, 1, vanilla_blocks::LIGHT.default_state());
+        let holder = holder_with_section(center, section);
+        set_block_section_non_missing(&holder, 0);
+        let layout = LightCacheLayout::new(center, range());
+        let Ok(workset) = LightWorkset::setup(
+            layout,
+            LightCacheSetupRadius::Inner,
+            true,
+            |pos| (pos == center).then(|| Arc::clone(&holder)),
+            |_| true,
+        ) else {
+            panic!("relaxed setup should accept missing neighbors");
+        };
+
+        let Ok(()) = propagate_block_light_changes(&workset, [source_pos]).map(|_| ()) else {
+            panic!("matching block caches should run block light updates");
+        };
+
+        assert_eq!(block_light_at(&holder, distant_air_pos), 13);
+        assert_eq!(
+            block_light_vector_at(&holder, intermediate_pos),
+            BlockLightVector {
+                dx: -1,
+                dy: 0,
+                dz: 0,
+            }
+        );
+        let distant_vector = block_light_vector_at(&holder, distant_air_pos);
+        assert_eq!(
+            distant_vector,
+            BlockLightVector {
+                dx: -2,
+                dy: 0,
+                dz: 0,
+            }
+        );
+        assert_eq!(distant_vector.source_position(distant_air_pos), source_pos);
     }
 
     #[test]

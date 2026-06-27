@@ -346,6 +346,11 @@ impl ChunkHolder {
         }
     }
 
+    /// Returns whether there are pending block changes waiting to broadcast.
+    pub fn has_pending_block_changes(&self) -> bool {
+        self.has_changed_sections.load(Ordering::Acquire)
+    }
+
     /// Returns whether there are pending changes to broadcast.
     pub fn has_changes_to_broadcast(&self) -> bool {
         self.queued_for_broadcast.load(Ordering::Acquire)

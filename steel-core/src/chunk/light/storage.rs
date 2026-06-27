@@ -3,6 +3,7 @@ use steel_utils::{BlockPos, SectionPos};
 use crate::chunk::section::Sections;
 
 use super::{
+    block_light_vectors::{BlockLightVector, BlockLightVectorStorage},
     DATA_LAYER_EDGE, DATA_LAYER_SIZE, DataLayer, LightLayer, LightSectionRange,
     LightSectionRangeError, MAX_LIGHT_LEVEL,
 };
@@ -406,6 +407,8 @@ pub struct ChunkLightData {
     pub block: ChunkLightLayerStorage,
     /// Sky light sections and section emptiness metadata.
     pub sky: ChunkLightLayerStorage,
+    /// Per-block offsets toward dominant block-light sources.
+    pub block_light_vectors: BlockLightVectorStorage,
 }
 
 impl ChunkLightData {
@@ -419,6 +422,7 @@ impl ChunkLightData {
                 range.chunk_section_count(),
             ),
             sky: ChunkLightLayerStorage::new(LightLayer::Sky, range, range.chunk_section_count()),
+            block_light_vectors: BlockLightVectorStorage::new(range),
         })
     }
 
@@ -467,6 +471,12 @@ impl ChunkLightData {
             LightLayer::Sky => self.sky.get_light_value(block_pos),
             LightLayer::Block => self.block.get_light_value(block_pos),
         }
+    }
+
+    /// Returns the stored block-light source offset for one block position.
+    #[must_use]
+    pub fn get_block_light_vector(&self, block_pos: BlockPos) -> BlockLightVector {
+        self.block_light_vectors.get(block_pos)
     }
 }
 

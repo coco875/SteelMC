@@ -104,6 +104,7 @@ pub fn light_face_occludes(
     face_shape_occludes(from_shape, direction, to_shape, direction.opposite())
 }
 
+mod block_light_vectors;
 mod cache;
 mod data_layer;
 mod packet;
@@ -113,9 +114,14 @@ mod section_storage;
 mod sky_propagation;
 mod sky_sources;
 mod storage;
+mod voxel_traversal;
 mod work_gate;
 mod workset;
 
+pub use block_light_vectors::{
+    BlockLightVector, BlockLightVectorSection, BlockLightVectorSectionData,
+    BlockLightVectorStorage, BLOCK_LIGHT_VECTOR_AXIS_MAX, BLOCK_LIGHT_VECTOR_AXIS_MIN,
+};
 pub use cache::{
     CachedLightBlock, CachedLightChunk, CachedLightSection, LIGHT_CACHE_CHUNK_SLOTS,
     LIGHT_CACHE_DIAMETER, LIGHT_CACHE_RADIUS, LIGHT_CACHE_SECTION_RADIUS, LightCacheChunkScope,

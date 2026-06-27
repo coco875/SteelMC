@@ -302,12 +302,46 @@ pub struct PersistentHeightmap {
 }
 
 /// Chunk-owned light data stored with a chunk.
-#[derive(SchemaWrite, SchemaRead, Default)]
+#[derive(SchemaWrite, SchemaRead)]
 pub struct PersistentLightData {
     /// Block-light sections indexed by light-section index.
     pub block: Vec<PersistentLightSection>,
     /// Sky-light sections indexed by light-section index.
     pub sky: Vec<PersistentLightSection>,
+    /// Block-light source vectors indexed by light-section index.
+    pub block_light_vectors: Vec<PersistentBlockLightVectorSection>,
+}
+
+impl Default for PersistentLightData {
+    fn default() -> Self {
+        Self {
+            block: Vec::new(),
+            sky: Vec::new(),
+            block_light_vectors: Vec::new(),
+        }
+    }
+}
+
+/// One persisted block-light source vector section.
+#[derive(SchemaWrite, SchemaRead)]
+pub enum PersistentBlockLightVectorSection {
+    /// Packed per-block source vectors for one light section.
+    Initialized {
+        /// Index in the chunk's padded light-section array.
+        section_index: u32,
+        /// Packed `u16` values, one per block in the section.
+        data: Vec<u16>,
+    },
+}
+
+impl PersistentBlockLightVectorSection {
+    /// Returns the padded light-section index.
+    #[must_use]
+    pub const fn section_index(&self) -> u32 {
+        match self {
+            Self::Initialized { section_index, .. } => *section_index,
+        }
+    }
 }
 
 /// One persisted chunk-owned light section.

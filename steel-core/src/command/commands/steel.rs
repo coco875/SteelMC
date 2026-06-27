@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
+use steel_registry::blocks::block_state_ext::BlockStateExt;
 use text_components::TextComponent;
 
+use crate::command::arguments::block_pos::BlockPosArgument;
 use crate::command::arguments::player::PlayerArgument;
 use crate::command::arguments::world::WorldArgument;
 use crate::command::commands::{CommandHandlerBuilder, CommandHandlerDyn, argument, literal};
@@ -13,6 +15,7 @@ use crate::entity::SharedEntity;
 use crate::player::Player;
 use crate::portal::WorldChangeRequest;
 use crate::world::World;
+use steel_utils::BlockPos;
 
 /// Handler for the "steel" command group.
 #[must_use]
@@ -78,4 +81,69 @@ pub fn command_handler() -> impl CommandHandlerDyn {
             ),
         )),
     )
+    .then(
+        literal("lightsource").executes(
+            |(), context: &mut CommandContext| -> Result<(), CommandError> {
+                let pos = BlockPos::containing(
+                    context.position.x,
+                    context.position.y,
+                    context.position.z,
+                );
+                send_block_light_source_message(&context.world, pos, &context.sender);
+                Ok(())
+            },
+        )
+        .then(
+            argument("pos", BlockPosArgument).executes(
+                |(_, pos): ((), BlockPos), context: &mut CommandContext| -> Result<(), CommandError> {
+                    send_block_light_source_message(&context.world, pos, &context.sender);
+                    Ok(())
+                },
+            ),
+        ),
+    )
+}
+
+fn send_block_light_source_message(
+    world: &Arc<World>,
+    pos: BlockPos,
+    sender: &crate::command::sender::CommandSender,
+) {
+    let block_light = world.block_light_at(pos);
+    let vector = world.block_light_vector_at(pos);
+    let source_pos = vector.source_position(pos);
+    let source_state = world.get_block_state(source_pos);
+    let source_name = source_state.get_block().key.to_string();
+
+    let message = if block_light == 0 {
+        format!(
+            "Block light at {}: 0 (no block-light source recorded)",
+            format_block_pos(pos)
+        )
+    } else if vector.is_zero() {
+        format!(
+            "Block light at {}: {} | source offset (0, 0, 0) | block {} at {}",
+            format_block_pos(pos),
+            block_light,
+            source_name,
+            format_block_pos(source_pos),
+        )
+    } else {
+        format!(
+            "Block light at {}: {} | source offset ({}, {}, {}) | block {} at {}",
+            format_block_pos(pos),
+            block_light,
+            vector.dx,
+            vector.dy,
+            vector.dz,
+            source_name,
+            format_block_pos(source_pos),
+        )
+    };
+
+    sender.send_message(&TextComponent::from(message));
+}
+
+fn format_block_pos(pos: BlockPos) -> String {
+    format!("({}, {}, {})", pos.x(), pos.y(), pos.z())
 }
