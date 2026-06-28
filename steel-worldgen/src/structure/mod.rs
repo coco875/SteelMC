@@ -10,6 +10,7 @@ pub mod fortress;
 /// Structure placement/selection engine.
 pub mod generator;
 pub mod igloo;
+mod box_octree;
 pub mod jigsaw;
 pub mod jungle_temple;
 pub mod mansion;

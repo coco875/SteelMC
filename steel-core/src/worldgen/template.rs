@@ -678,7 +678,7 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        for block in &palette.blocks {
+        for block in Self::palette_blocks_for_placement(&palette.blocks, position, settings) {
             let original = ProcessedBlockInfo {
                 template_pos: block.pos,
                 world_pos: block.pos,
@@ -1220,6 +1220,40 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
+    }
+
+    /// StructureLayoutOptimizer: skip out-of-bounds blocks before processors run.
+    /// Disabled when a `Capped` processor is present — it needs the full block list
+    /// in `finalize_processing` (Trail Ruins).
+    fn palette_blocks_for_placement<'a>(
+        blocks: &'a [StructureBlockInfo],
+        position: BlockPos,
+        settings: &StructurePlaceSettings<'_>,
+    ) -> Vec<&'a StructureBlockInfo> {
+        if settings
+            .processors
+            .iter()
+            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
+        {
+            return blocks.iter().collect();
+        }
+
+        let mut in_bounds = blocks
+            .iter()
+            .filter(|block| {
+                settings.bounding_box.contains_blockpos(Self::transformed_position(
+                    position,
+                    block.pos,
+                    settings,
+                ))
+            })
+            .collect::<Vec<_>>();
+
+        // Empty list makes vanilla drop the piece from multi-chunk placement.
+        if in_bounds.is_empty() && !blocks.is_empty() {
+            in_bounds.push(&blocks[0]);
+        }
+        in_bounds
     }
 
     const fn transformed_position(

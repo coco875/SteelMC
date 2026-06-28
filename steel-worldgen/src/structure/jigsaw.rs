@@ -2,10 +2,10 @@
 //! jigsaw blocks given a start pool + config. Produces typed piece state;
 //! block placement runs in a later worldgen stage.
 
-use std::{cmp::Reverse, mem};
+use std::{cmp::Reverse, mem, ptr};
 
 use glam::IVec3;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
 };
@@ -19,6 +19,7 @@ use steel_utils::{BoundingBox, Identifier, Rotation};
 use crate::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
+use crate::structure::box_octree::BoxOctree;
 
 /// A placed piece produced by jigsaw assembly.
 #[derive(Debug, Clone)]
@@ -501,15 +502,21 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
 }
 
 /// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`
-/// with subtraction; for integer-aligned BBs, `constraint + occupied` is
-/// equivalent. Internal children share the source's internal free space;
-/// external children share the parent's context.
+/// with subtraction; StructureLayoutOptimizer replaces that with a `BoxOctree`
+/// so intersection checks ignore distant pieces.
 struct FreeSpace {
     constraint: BoundingBox,
-    occupied: Vec<BoundingBox>,
+    occupied: BoxOctree,
 }
 
 impl FreeSpace {
+    fn new(constraint: BoundingBox) -> Self {
+        Self {
+            occupied: BoxOctree::new(constraint),
+            constraint,
+        }
+    }
+
     fn collides(&self, candidate: &BoundingBox) -> bool {
         if candidate.min_x() < self.constraint.min_x()
             || candidate.max_x() > self.constraint.max_x()
@@ -520,7 +527,11 @@ impl FreeSpace {
         {
             return true;
         }
-        self.occupied.iter().any(|p| candidate.intersects(*p))
+        self.occupied.intersects_any_box(*candidate)
+    }
+
+    fn target_position_blocked(&self, position: IVec3) -> bool {
+        !self.constraint.contains(position) || self.occupied.within_any_box(position)
     }
 }
 
@@ -678,10 +689,11 @@ fn finish_assembly<'a>(
         ),
     );
 
-    let mut free_spaces: Vec<FreeSpace> = vec![FreeSpace {
-        constraint: constraint_bb,
-        occupied: vec![center_bb],
-    }];
+    let mut free_spaces: Vec<FreeSpace> = {
+        let mut space = FreeSpace::new(constraint_bb);
+        space.occupied.add_box(center_bb);
+        vec![space]
+    };
     let mut jigsaw_cache = JigsawTransformCache::default();
     let mut pool_template_cache = PoolTemplateCache::default();
     let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
@@ -916,6 +928,7 @@ fn try_placing_children<'a>(
 
     let mut internal_ctx_idx: Option<usize> = None;
     let mut candidates: Vec<&PoolElement> = Vec::new();
+    let mut parsed_candidates: FxHashSet<*const PoolElement> = FxHashSet::default();
 
     'source_jigsaw: for source_jigsaw in &source_jigsaws {
         candidates.clear();
@@ -957,11 +970,44 @@ fn try_placing_children<'a>(
                 break;
             }
 
+            if !parsed_candidates.insert(ptr::from_ref(candidate_element)) {
+                for rotation in [
+                    Rotation::None,
+                    Rotation::Clockwise90,
+                    Rotation::Clockwise180,
+                    Rotation::CounterClockwise90,
+                ] {
+                    let _ = get_cached_shuffled_jigsaws(
+                        candidate_element,
+                        templates,
+                        jigsaw_cache,
+                        rotation,
+                        rng,
+                    );
+                }
+                continue;
+            }
+
             let candidate_projection = candidate_element.projection();
             let candidate_rigid = candidate_projection == Projection::Rigid;
 
             let rotations = Rotation::get_shuffled(rng);
             for candidate_rotation in rotations {
+                if candidate_rigid {
+                    let blocked = if attach_inside {
+                        if let Some(idx) = internal_ctx_idx {
+                            free_spaces[idx].target_position_blocked(target_jigsaw_world)
+                        } else {
+                            !source_bb.contains(target_jigsaw_world)
+                        }
+                    } else {
+                        free_spaces[context_idx].target_position_blocked(target_jigsaw_world)
+                    };
+                    if blocked {
+                        continue;
+                    }
+                }
+
                 let fallback_jigsaws;
                 let (candidate_jigsaws, candidate_jigsaw_order) =
                     if let Some(location) = element_location(candidate_element) {
@@ -1103,10 +1149,7 @@ fn try_placing_children<'a>(
 
                     let effective_ctx = if attach_inside {
                         *internal_ctx_idx.get_or_insert_with(|| {
-                            free_spaces.push(FreeSpace {
-                                constraint: source_bb,
-                                occupied: Vec::new(),
-                            });
+                            free_spaces.push(FreeSpace::new(source_bb));
                             free_spaces.len() - 1
                         })
                     } else {
@@ -1117,7 +1160,9 @@ fn try_placing_children<'a>(
                         continue;
                     }
 
-                    free_spaces[effective_ctx].occupied.push(expanded_bb);
+                    free_spaces[effective_ctx]
+                        .occupied
+                        .add_box(expanded_bb);
 
                     let target_ground_level_delta = if candidate_rigid {
                         source_ground_level_delta - delta_y
