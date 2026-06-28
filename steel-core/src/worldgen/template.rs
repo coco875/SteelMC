@@ -1222,7 +1222,7 @@ impl StructureTemplate {
         Some(&self.palettes[index as usize])
     }
 
-    /// StructureLayoutOptimizer: skip out-of-bounds blocks before processors run.
+    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
     /// Disabled when a `Capped` processor is present — it needs the full block list
     /// in `finalize_processing` (Trail Ruins).
     fn palette_blocks_for_placement<'a>(
@@ -1241,11 +1241,9 @@ impl StructureTemplate {
         let mut in_bounds = blocks
             .iter()
             .filter(|block| {
-                settings.bounding_box.contains_blockpos(Self::transformed_position(
-                    position,
-                    block.pos,
-                    settings,
-                ))
+                settings
+                    .bounding_box
+                    .contains_blockpos(Self::transformed_position(position, block.pos, settings))
             })
             .collect::<Vec<_>>();
 

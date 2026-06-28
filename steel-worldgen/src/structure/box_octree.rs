@@ -1,4 +1,4 @@
-//! Spatial index for jigsaw piece bounds. Port of StructureLayoutOptimizer's
+//! Spatial index for jigsaw piece bounds. Port of `StructureLayoutOptimizer`'s
 //! `BoxOctree` — nearby-box queries instead of scanning every placed piece.
 
 use std::mem;
@@ -54,7 +54,7 @@ impl BoxOctree {
             return;
         }
 
-        if self.inner_boxes.iter().any(|existing| *existing == bbox) {
+        if self.inner_boxes.contains(&bbox) {
             return;
         }
         self.inner_boxes.push(bbox);
@@ -67,13 +67,14 @@ impl BoxOctree {
 
     pub fn within_any_box(&self, position: IVec3) -> bool {
         if !self.children.is_empty() {
-            return self.children.iter().any(|child| {
-                child.boundary_contains(position) && child.within_any_box(position)
-            });
+            return self
+                .children
+                .iter()
+                .any(|child| child.boundary_contains(position) && child.within_any_box(position));
         }
-        self.inner_boxes.iter().any(|bbox| {
-            bbox.contains_xyz(position.x, position.y, position.z)
-        })
+        self.inner_boxes
+            .iter()
+            .any(|bbox| bbox.contains_xyz(position.x, position.y, position.z))
     }
 
     pub fn intersects_any_box(&self, candidate: BoundingBox) -> bool {
@@ -155,11 +156,7 @@ impl BoxOctree {
 }
 
 const fn round_away_from_zero(value: i32) -> i32 {
-    if value >= 0 {
-        value
-    } else {
-        -value
-    }
+    if value >= 0 { value } else { -value }
 }
 
 #[cfg(test)]
@@ -171,7 +168,10 @@ mod tests {
         let boundary = BoundingBox::new(IVec3::ZERO, IVec3::new(100, 100, 100));
         let mut tree = BoxOctree::new(boundary);
         tree.add_box(BoundingBox::new(IVec3::ZERO, IVec3::new(5, 5, 5)));
-        tree.add_box(BoundingBox::new(IVec3::new(50, 50, 50), IVec3::new(55, 55, 55)));
+        tree.add_box(BoundingBox::new(
+            IVec3::new(50, 50, 50),
+            IVec3::new(55, 55, 55),
+        ));
 
         let candidate = BoundingBox::new(IVec3::new(10, 10, 10), IVec3::new(15, 15, 15));
         assert!(!tree.intersects_any_box(candidate));
@@ -191,7 +191,10 @@ mod tests {
     fn within_any_box_detects_occupied_positions() {
         let boundary = BoundingBox::new(IVec3::ZERO, IVec3::new(100, 100, 100));
         let mut tree = BoxOctree::new(boundary);
-        tree.add_box(BoundingBox::new(IVec3::new(10, 10, 10), IVec3::new(15, 15, 15)));
+        tree.add_box(BoundingBox::new(
+            IVec3::new(10, 10, 10),
+            IVec3::new(15, 15, 15),
+        ));
 
         assert!(tree.within_any_box(IVec3::new(12, 12, 12)));
         assert!(!tree.within_any_box(IVec3::new(20, 20, 20)));

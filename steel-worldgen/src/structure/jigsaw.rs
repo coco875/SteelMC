@@ -16,10 +16,10 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
+use crate::structure::box_octree::BoxOctree;
 use crate::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
-use crate::structure::box_octree::BoxOctree;
 
 /// A placed piece produced by jigsaw assembly.
 #[derive(Debug, Clone)]
@@ -502,7 +502,7 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
 }
 
 /// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`
-/// with subtraction; StructureLayoutOptimizer replaces that with a `BoxOctree`
+/// with subtraction; `StructureLayoutOptimizer` replaces that with a `BoxOctree`
 /// so intersection checks ignore distant pieces.
 struct FreeSpace {
     constraint: BoundingBox,
@@ -1160,9 +1160,7 @@ fn try_placing_children<'a>(
                         continue;
                     }
 
-                    free_spaces[effective_ctx]
-                        .occupied
-                        .add_box(expanded_bb);
+                    free_spaces[effective_ctx].occupied.add_box(expanded_bb);
 
                     let target_ground_level_delta = if candidate_rigid {
                         source_ground_level_delta - delta_y

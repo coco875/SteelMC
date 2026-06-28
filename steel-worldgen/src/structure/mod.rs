@@ -4,13 +4,13 @@
 //! `structuresReferences` (pointing at nearby origin chunks). The structure key
 //! is `Identifier` until a structure registry is added.
 
+mod box_octree;
 pub mod desert_pyramid;
 pub mod end_city;
 pub mod fortress;
 /// Structure placement/selection engine.
 pub mod generator;
 pub mod igloo;
-mod box_octree;
 pub mod jigsaw;
 pub mod jungle_temple;
 pub mod mansion;
