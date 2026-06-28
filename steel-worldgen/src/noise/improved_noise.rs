@@ -487,8 +487,8 @@ impl ImprovedNoise {
 
         // Per-lane y offset and floor
         let ys = ys + Simd::splat(self.yo);
-        let ys_floor = ys.floor();
-        let yrs = ys - ys_floor;
+        let ys_floor = fast_floor_simd::<f64, i32, N>(ys);
+        let yrs = ys - ys_floor.cast();
 
         // Y fudge (per-lane)
         let yr_fudge: Simd<f64, N> = if y_scale == 0.0 {
@@ -520,7 +520,7 @@ impl ImprovedNoise {
         zf: i32,
         xr: f64,
         zr: f64,
-        ys_floor: Simd<f64, N>,
+        ys_floor: Simd<i32, N>,
         yrs: Simd<f64, N>,
         yrs_original: Simd<f64, N>,
     ) -> Simd<f64, N> {
@@ -530,7 +530,7 @@ impl ImprovedNoise {
         let x0 = self.p[xf as usize];
         let x1 = self.p[xf.wrapping_add(1) as usize];
 
-        let yf = ys_floor.cast::<i32>().cast();
+        let yf = ys_floor.cast();
 
         // Per-lane y-dependent permutation lookups
         let mut h000 = [0usize; N];
