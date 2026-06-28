@@ -6,12 +6,12 @@
 use proc_macro2::{Literal, TokenStream};
 use quote::{format_ident, quote};
 
+use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::naming::{
     grid_field_ident, named_fn_field_ident, named_fn_ident, noise_field_ident,
     router_cache_field_ident, router_compute_fn_ident, router_grid_field_ident,
 };
-use super::TranspilerInput;
 
 impl TranspileContext {
     pub(super) fn gen_noises_struct(&self) -> TokenStream {

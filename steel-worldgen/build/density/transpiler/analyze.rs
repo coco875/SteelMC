@@ -8,13 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::density::{CubicSpline, DensityFunction, SplineValue};
 
+use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::fingerprint::collect_inline_flat_noises;
 use super::graph::{
     collect_references, has_blended_noise, has_interpolated_markers, is_flat_cached,
     unwrap_markers, uses_y,
 };
-use super::TranspilerInput;
 
 impl TranspileContext {
     pub(super) fn analyze(&mut self, input: &TranspilerInput) {

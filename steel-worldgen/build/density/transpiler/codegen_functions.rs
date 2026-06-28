@@ -12,13 +12,13 @@ use quote::{format_ident, quote};
 
 use crate::density::DensityFunction;
 
+use super::TranspilerInput;
 use super::context::TranspileContext;
 use super::graph::{collect_interpolated_inners, is_flat_cached, unwrap_markers};
 use super::naming::{
     named_fn_ident, named_fn_ident_4x, router_cache_field_ident, router_compute_fn_ident,
     sanitize_name,
 };
-use super::TranspilerInput;
 
 impl TranspileContext {
     pub(super) fn gen_named_functions(&mut self, input: &TranspilerInput) -> TokenStream {
@@ -164,7 +164,10 @@ impl TranspileContext {
     /// assigned in order: `final_density` channels first, then `vein_toggle`, then
     /// `vein_ridged`.
     #[expect(clippy::too_many_lines, reason = "splitting would hurt readability")]
-    pub(super) fn gen_all_interpolation_functions(&mut self, input: &TranspilerInput) -> TokenStream {
+    pub(super) fn gen_all_interpolation_functions(
+        &mut self,
+        input: &TranspilerInput,
+    ) -> TokenStream {
         let noises = self.noises_ident.clone();
         let cache = self.cache_ident.clone();
 

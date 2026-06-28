@@ -15,7 +15,10 @@ use crate::density::DensityFunction;
 /// Recursively collect `Noise` nodes with `y_scale == 0.0` in a density
 /// function tree. These are Y-independent computations that can be cached
 /// per (x, z) column. Keyed by structural hash → `(noise_id, xz_scale)`.
-pub(super) fn collect_inline_flat_noises(df: &DensityFunction, out: &mut BTreeMap<u64, (String, f64)>) {
+pub(super) fn collect_inline_flat_noises(
+    df: &DensityFunction,
+    out: &mut BTreeMap<u64, (String, f64)>,
+) {
     if let DensityFunction::Noise(n) = df
         && n.y_scale == 0.0
     {
@@ -71,7 +74,10 @@ pub(super) fn collect_expensive_subexprs(df: &DensityFunction) -> FxHashMap<u64,
     result
 }
 
-pub(super) fn collect_expensive_inner(df: &DensityFunction, out: &mut FxHashMap<u64, DensityFunction>) {
+pub(super) fn collect_expensive_inner(
+    df: &DensityFunction,
+    out: &mut FxHashMap<u64, DensityFunction>,
+) {
     if is_cse_candidate(df) {
         let fp = fingerprint(df);
         out.entry(fp).or_insert_with(|| df.clone());
@@ -188,4 +194,3 @@ pub(super) fn hash_df(df: &DensityFunction, h: &mut impl Hasher) {
         }
     }
 }
-

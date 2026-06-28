@@ -17,15 +17,11 @@ use crate::density::{
     TwoArgType,
 };
 
+use super::TranspilerInput;
 use super::bounds::compute_bounds;
 use super::context::TranspileContext;
-use super::fingerprint::{
-    collect_expensive_subexprs, fingerprint, is_cse_candidate,
-};
-use super::naming::{
-    named_fn_field_ident, named_fn_ident, named_fn_ident_4x, noise_field_ident,
-};
-use super::TranspilerInput;
+use super::fingerprint::{collect_expensive_subexprs, fingerprint, is_cse_candidate};
+use super::naming::{named_fn_field_ident, named_fn_ident, named_fn_ident_4x, noise_field_ident};
 
 impl TranspileContext {
     #[expect(
