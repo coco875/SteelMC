@@ -264,22 +264,20 @@ impl ImprovedNoise {
         zr: f64,
         yr_original: f64,
     ) -> f64 {
-        let x = x as u8;
-        let y = y as u8;
-        let z = z as u8;
-        // Get permutation indices for the 8 corners
-        let x0 = self.p[x as usize];
-        let x1 = self.p[x.wrapping_add(1) as usize];
-
-        let xy00 = self.p[x0.wrapping_add(y) as usize];
-        let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
-        let xy10 = self.p[x1.wrapping_add(y) as usize];
-        let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
-
         let (d000, d100, d010, d110, d001, d101, d011, d111) = {
             #[cfg(target_feature = "avx512f")]
             {
-                // Hashes for the z-face and z+1-face, in (000,100,010,110) order.
+                let x = x as u8;
+                let y = y as u8;
+                let z = z as u8;
+                let x0 = self.p[x as usize];
+                let x1 = self.p[x.wrapping_add(1) as usize];
+
+                let xy00 = self.p[x0.wrapping_add(y) as usize];
+                let xy01 = self.p[x0.wrapping_add(y).wrapping_add(1) as usize];
+                let xy10 = self.p[x1.wrapping_add(y) as usize];
+                let xy11 = self.p[x1.wrapping_add(y).wrapping_add(1) as usize];
+
                 let h_z0 = [
                     self.p[xy00.wrapping_add(z) as usize] as usize,
                     self.p[xy10.wrapping_add(z) as usize] as usize,
@@ -305,60 +303,30 @@ impl ImprovedNoise {
 
             #[cfg(not(target_feature = "avx512f"))]
             {
-                // Calculate gradient dot products at each corner
-                let d000 = grad_dot(self.p[xy00.wrapping_add(z) as usize] as usize, xr, yr, zr);
-                let d100 = grad_dot(
-                    self.p[xy10.wrapping_add(z) as usize] as usize,
-                    xr - 1.0,
-                    yr,
-                    zr,
-                );
-                let d010 = grad_dot(
-                    self.p[xy01.wrapping_add(z) as usize] as usize,
-                    xr,
-                    yr - 1.0,
-                    zr,
-                );
-                let d110 = grad_dot(
-                    self.p[xy11.wrapping_add(z) as usize] as usize,
-                    xr - 1.0,
-                    yr - 1.0,
-                    zr,
-                );
-                let d001 = grad_dot(
-                    self.p[xy00.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    xr,
-                    yr,
-                    zr - 1.0,
-                );
-                let d101 = grad_dot(
-                    self.p[xy10.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    xr - 1.0,
-                    yr,
-                    zr - 1.0,
-                );
-                let d011 = grad_dot(
-                    self.p[xy01.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    xr,
-                    yr - 1.0,
-                    zr - 1.0,
-                );
-                let d111 = grad_dot(
-                    self.p[xy11.wrapping_add(z).wrapping_add(1) as usize] as usize,
-                    xr - 1.0,
-                    yr - 1.0,
-                    zr - 1.0,
-                );
+                let px1 = x + 1;
+                let py1 = y + 1;
+                let pz1 = z + 1;
+                let xr1 = xr - 1.0;
+                let yr1 = yr - 1.0;
+                let zr1 = zr - 1.0;
+
+                let d000 = grad_dot_flat(&self.p, x, y, z, xr, yr, zr);
+                let d100 = grad_dot_flat(&self.p, px1, y, z, xr1, yr, zr);
+                let d010 = grad_dot_flat(&self.p, x, py1, z, xr, yr1, zr);
+                let d110 = grad_dot_flat(&self.p, px1, py1, z, xr1, yr1, zr);
+                let d001 = grad_dot_flat(&self.p, x, y, pz1, xr, yr, zr1);
+                let d101 = grad_dot_flat(&self.p, px1, y, pz1, xr1, yr, zr1);
+                let d011 = grad_dot_flat(&self.p, x, py1, pz1, xr, yr1, zr1);
+                let d111 = grad_dot_flat(&self.p, px1, py1, pz1, xr1, yr1, zr1);
                 (d000, d100, d010, d110, d001, d101, d011, d111)
             }
         };
-        // Apply smoothstep interpolation
-        let x_alpha = smoothstep(xr);
-        let y_alpha = smoothstep(yr_original);
-        let z_alpha = smoothstep(zr);
 
+        let alpha_x = smoothstep(xr);
+        let alpha_y = smoothstep(yr_original);
+        let alpha_z = smoothstep(zr);
         lerp3(
-            x_alpha, y_alpha, z_alpha, d000, d100, d010, d110, d001, d101, d011, d111,
+            alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
 
@@ -693,6 +661,18 @@ impl ImprovedNoise {
             alpha_x, alpha_y, alpha_z, d000, d100, d010, d110, d001, d101, d011, d111,
         )
     }
+}
+
+/// Help the compiler factorize read I guess
+#[inline]
+fn grad_dot_flat(p: &[u8; 256], px: i32, py: i32, pz: i32, fx: f64, fy: f64, fz: f64) -> f64 {
+    let qx = (px & 0xFF) as u8;
+    let qy = (py & 0xFF) as u8;
+    let qz = (pz & 0xFF) as u8;
+    let a = p[qx as usize];
+    let b = p[a.wrapping_add(qy) as usize];
+    let hash = p[b.wrapping_add(qz) as usize];
+    grad_dot(hash as usize, fx, fy, fz)
 }
 
 #[cfg(test)]
