@@ -95,6 +95,46 @@ struct ProcessedBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
+struct PaletteBlocksForPlacementIter<'blocks, 'settings> {
+    blocks: &'blocks [StructureBlockInfo],
+    index: usize,
+    position: BlockPos,
+    settings: &'settings StructurePlaceSettings<'settings>,
+    skip_bounds_filter: bool,
+    yielded_any: bool,
+    fallback_done: bool,
+}
+
+impl<'blocks> Iterator for PaletteBlocksForPlacementIter<'blocks, '_> {
+    type Item = &'blocks StructureBlockInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.skip_bounds_filter {
+            let block = self.blocks.get(self.index)?;
+            self.index += 1;
+            return Some(block);
+        }
+
+        while self.index < self.blocks.len() {
+            let block = &self.blocks[self.index];
+            self.index += 1;
+            if self.settings.bounding_box.contains_blockpos(
+                StructureTemplate::transformed_position(self.position, block.pos, self.settings),
+            ) {
+                self.yielded_any = true;
+                return Some(block);
+            }
+        }
+
+        if !self.yielded_any && !self.fallback_done && !self.blocks.is_empty() {
+            self.fallback_done = true;
+            return Some(&self.blocks[0]);
+        }
+
+        None
+    }
+}
+
 pub(crate) struct StructureDataMarker {
     pub(crate) metadata: String,
     pub(crate) pos: BlockPos,
@@ -1229,34 +1269,18 @@ impl StructureTemplate {
         blocks: &'blocks [StructureBlockInfo],
         position: BlockPos,
         settings: &'settings StructurePlaceSettings<'settings>,
-    ) -> impl Iterator<Item = &'blocks StructureBlockInfo> {
-        let skip_bounds_filter = settings
-            .processors
-            .iter()
-            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }));
-
-        gen move {
-            if skip_bounds_filter {
-                for block in blocks {
-                    yield block;
-                }
-            } else {
-                let mut yielded_any = false;
-                for block in blocks {
-                    if settings
-                        .bounding_box
-                        .contains_blockpos(Self::transformed_position(position, block.pos, settings))
-                    {
-                        yielded_any = true;
-                        yield block;
-                    }
-                }
-
-                // Empty list makes vanilla drop the piece from multi-chunk placement.
-                if !yielded_any && !blocks.is_empty() {
-                    yield &blocks[0];
-                }
-            }
+    ) -> PaletteBlocksForPlacementIter<'blocks, 'settings> {
+        PaletteBlocksForPlacementIter {
+            blocks,
+            index: 0,
+            position,
+            settings,
+            skip_bounds_filter: settings
+                .processors
+                .iter()
+                .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. })),
+            yielded_any: false,
+            fallback_done: false,
         }
     }
 
