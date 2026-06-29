@@ -95,6 +95,46 @@ struct ProcessedBlockInfo {
     nbt: Option<NbtCompound>,
 }
 
+struct PaletteBlocksForPlacementIter<'blocks, 'settings> {
+    blocks: &'blocks [StructureBlockInfo],
+    index: usize,
+    position: BlockPos,
+    settings: &'settings StructurePlaceSettings<'settings>,
+    skip_bounds_filter: bool,
+    yielded_any: bool,
+    fallback_done: bool,
+}
+
+impl<'blocks, 'settings> Iterator for PaletteBlocksForPlacementIter<'blocks, 'settings> {
+    type Item = &'blocks StructureBlockInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.skip_bounds_filter {
+            let block = self.blocks.get(self.index)?;
+            self.index += 1;
+            return Some(block);
+        }
+
+        while self.index < self.blocks.len() {
+            let block = &self.blocks[self.index];
+            self.index += 1;
+            if self.settings.bounding_box.contains_blockpos(
+                StructureTemplate::transformed_position(self.position, block.pos, self.settings),
+            ) {
+                self.yielded_any = true;
+                return Some(block);
+            }
+        }
+
+        if !self.yielded_any && !self.fallback_done && !self.blocks.is_empty() {
+            self.fallback_done = true;
+            return Some(&self.blocks[0]);
+        }
+
+        None
+    }
+}
+
 pub(crate) struct StructureDataMarker {
     pub(crate) metadata: String,
     pub(crate) pos: BlockPos,
@@ -1225,33 +1265,23 @@ impl StructureTemplate {
     /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
     /// Disabled when a `Capped` processor is present — it needs the full block list
     /// in `finalize_processing` (Trail Ruins).
-    fn palette_blocks_for_placement<'a>(
-        blocks: &'a [StructureBlockInfo],
+    fn palette_blocks_for_placement<'blocks, 'settings>(
+        blocks: &'blocks [StructureBlockInfo],
         position: BlockPos,
-        settings: &StructurePlaceSettings<'_>,
-    ) -> Vec<&'a StructureBlockInfo> {
-        if settings
-            .processors
-            .iter()
-            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
-        {
-            return blocks.iter().collect();
+        settings: &'settings StructurePlaceSettings<'settings>,
+    ) -> PaletteBlocksForPlacementIter<'blocks, 'settings> {
+        PaletteBlocksForPlacementIter {
+            blocks,
+            index: 0,
+            position,
+            settings,
+            skip_bounds_filter: settings
+                .processors
+                .iter()
+                .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. })),
+            yielded_any: false,
+            fallback_done: false,
         }
-
-        let mut in_bounds = blocks
-            .iter()
-            .filter(|block| {
-                settings
-                    .bounding_box
-                    .contains_blockpos(Self::transformed_position(position, block.pos, settings))
-            })
-            .collect::<Vec<_>>();
-
-        // Empty list makes vanilla drop the piece from multi-chunk placement.
-        if in_bounds.is_empty() && !blocks.is_empty() {
-            in_bounds.push(&blocks[0]);
-        }
-        in_bounds
     }
 
     const fn transformed_position(
