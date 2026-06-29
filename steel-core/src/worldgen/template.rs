@@ -105,7 +105,7 @@ struct PaletteBlocksForPlacementIter<'blocks, 'settings> {
     fallback_done: bool,
 }
 
-impl<'blocks, 'settings> Iterator for PaletteBlocksForPlacementIter<'blocks, 'settings> {
+impl<'blocks> Iterator for PaletteBlocksForPlacementIter<'blocks, '_> {
     type Item = &'blocks StructureBlockInfo;
 
     fn next(&mut self) -> Option<Self::Item> {
