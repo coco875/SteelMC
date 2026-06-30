@@ -2,10 +2,10 @@
 //! jigsaw blocks given a start pool + config. Produces typed piece state;
 //! block placement runs in a later worldgen stage.
 
-use std::{cmp::Reverse, mem, ptr};
+use std::{cmp::Reverse, mem};
 
 use glam::IVec3;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
 };
@@ -502,8 +502,8 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
 }
 
 /// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`
-/// with subtraction; `StructureLayoutOptimizer` replaces that with a `BoxOctree`
-/// so intersection checks ignore distant pieces.
+/// with subtraction; Steel uses a `BoxOctree` for occupied bounds (equivalent to
+/// scanning all placed pieces, faster for large structures).
 struct FreeSpace {
     constraint: BoundingBox,
     occupied: BoxOctree,
@@ -528,10 +528,6 @@ impl FreeSpace {
             return true;
         }
         self.occupied.intersects_any_box(*candidate)
-    }
-
-    fn target_position_blocked(&self, position: IVec3) -> bool {
-        !self.constraint.contains(position) || self.occupied.within_any_box(position)
     }
 }
 
@@ -928,7 +924,6 @@ fn try_placing_children<'a>(
 
     let mut internal_ctx_idx: Option<usize> = None;
     let mut candidates: Vec<&PoolElement> = Vec::new();
-    let mut parsed_candidates: FxHashSet<*const PoolElement> = FxHashSet::default();
 
     'source_jigsaw: for source_jigsaw in &source_jigsaws {
         candidates.clear();
@@ -970,44 +965,11 @@ fn try_placing_children<'a>(
                 break;
             }
 
-            if !parsed_candidates.insert(ptr::from_ref(candidate_element)) {
-                for rotation in [
-                    Rotation::None,
-                    Rotation::Clockwise90,
-                    Rotation::Clockwise180,
-                    Rotation::CounterClockwise90,
-                ] {
-                    let _ = get_cached_shuffled_jigsaws(
-                        candidate_element,
-                        templates,
-                        jigsaw_cache,
-                        rotation,
-                        rng,
-                    );
-                }
-                continue;
-            }
-
             let candidate_projection = candidate_element.projection();
             let candidate_rigid = candidate_projection == Projection::Rigid;
 
             let rotations = Rotation::get_shuffled(rng);
             for candidate_rotation in rotations {
-                if candidate_rigid {
-                    let blocked = if attach_inside {
-                        if let Some(idx) = internal_ctx_idx {
-                            free_spaces[idx].target_position_blocked(target_jigsaw_world)
-                        } else {
-                            !source_bb.contains(target_jigsaw_world)
-                        }
-                    } else {
-                        free_spaces[context_idx].target_position_blocked(target_jigsaw_world)
-                    };
-                    if blocked {
-                        continue;
-                    }
-                }
-
                 let fallback_jigsaws;
                 let (candidate_jigsaws, candidate_jigsaw_order) =
                     if let Some(location) = element_location(candidate_element) {

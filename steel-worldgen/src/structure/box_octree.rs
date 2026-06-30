@@ -88,6 +88,17 @@ impl BoxOctree {
             .any(|bbox| candidate.intersects(*bbox))
     }
 
+    /// Vanilla jigsaw placement uses `AABB.of(bb).deflate(0.25)` before collision checks.
+    pub fn within_bounds_but_not_intersecting_children(&self, candidate: BoundingBox) -> bool {
+        self.boundary_entirely_contains(candidate) && !self.intersects_any_box(candidate)
+    }
+
+    pub fn boundary_entirely_contains(&self, candidate: BoundingBox) -> bool {
+        self.boundary.contains_xyz(candidate.min_x(), candidate.min_y(), candidate.min_z())
+            && self.boundary
+                .contains_xyz(candidate.max_x(), candidate.max_y(), candidate.max_z())
+    }
+
     fn boundary_intersects(&self, candidate: BoundingBox) -> bool {
         self.boundary.intersects(candidate)
     }
