@@ -2,7 +2,7 @@
 //! jigsaw blocks given a start pool + config. Produces typed piece state;
 //! block placement runs in a later worldgen stage.
 
-use std::{cmp::Reverse, mem};
+use std::cmp::Reverse;
 
 use glam::IVec3;
 use rustc_hash::FxHashMap;
@@ -10,7 +10,8 @@ use steel_registry::structure::{
     JigsawConfig, LiquidSettingsData, PoolAlias, StartHeight, StructureData,
 };
 use steel_registry::template_pool::{
-    JigsawOrientation, JointType, PoolElement, Projection, TemplateData, TemplatePoolData,
+    JigsawBlock, JigsawOrientation, JointType, PoolElement, Projection, TemplateData,
+    TemplatePoolData,
 };
 use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
@@ -130,7 +131,6 @@ const fn java_center(min: i32, max: i32) -> i32 {
 static SYNTHETIC_BOTTOM_JIGSAW: Identifier = Identifier::new_static("minecraft", "bottom");
 static SYNTHETIC_EMPTY_POOL: Identifier = Identifier::new_static("minecraft", "empty");
 
-type JigsawTransformCache<'a> = FxHashMap<Identifier, [Option<CachedTemplateJigsaws<'a>>; 4]>;
 type PoolTemplateCache<'a> = FxHashMap<Identifier, Vec<&'a PoolElement>>;
 
 const fn rotation_index(rotation: Rotation) -> usize {
@@ -150,72 +150,44 @@ fn vanilla_shuffle<T>(list: &mut [T], rng: &mut LegacyRandom) {
     }
 }
 
-fn shuffle_jigsaws(jigsaws: &mut [TransformedJigsaw<'_>], rng: &mut LegacyRandom) {
-    vanilla_shuffle(jigsaws, rng);
-    let priorities = descending_priorities(jigsaws.iter().map(|jigsaw| jigsaw.selection_priority));
-    order_jigsaws_by_priorities(jigsaws, &priorities);
-}
+/// Vanilla `Util.shuffle` then stable priority grouping using precomputed priorities.
+fn shuffled_jigsaw_indices(template: &TemplateData, rng: &mut LegacyRandom) -> Vec<usize> {
+    if template.jigsaws.is_empty() {
+        return Vec::new();
+    }
 
-fn shuffled_jigsaw_indices(
-    cached: &CachedTemplateJigsaws<'_>,
-    rng: &mut LegacyRandom,
-) -> Vec<usize> {
-    let mut indices: Vec<usize> = (0..cached.jigsaws.len()).collect();
+    let mut indices: Vec<usize> = (0..template.jigsaws.len()).collect();
     vanilla_shuffle(&mut indices, rng);
-    order_jigsaw_indices_by_priorities(cached, &mut indices);
+    if template.selection_priorities_desc.len() > 1 {
+        let shuffled = indices;
+        let mut ordered = Vec::with_capacity(shuffled.len());
+        for &priority in &template.selection_priorities_desc {
+            ordered.extend(
+                shuffled
+                    .iter()
+                    .copied()
+                    .filter(|&idx| template.jigsaws[idx].selection_priority == priority),
+            );
+        }
+        indices = ordered;
+    }
     indices
 }
 
-fn descending_priorities(priorities: impl Iterator<Item = i32>) -> Vec<i32> {
-    let mut unique = Vec::new();
-    for priority in priorities {
-        if !unique.contains(&priority) {
-            unique.push(priority);
-        }
-    }
-    if unique.len() > 1 {
-        unique.sort_unstable_by_key(|priority| Reverse(*priority));
-    }
-    unique
+fn template_rotated_jigsaws(template: &TemplateData, rotation: Rotation) -> &[JigsawBlock] {
+    &template.rotated_jigsaws[rotation_index(rotation)]
 }
 
-fn order_jigsaws_by_priorities(jigsaws: &mut [TransformedJigsaw<'_>], priorities: &[i32]) {
-    if priorities.len() <= 1 {
-        return;
+fn jigsaw_view(block: &JigsawBlock) -> TransformedJigsaw<'_> {
+    TransformedJigsaw {
+        pos: IVec3::from(block.pos),
+        orientation: block.orientation,
+        name: &block.name,
+        target: &block.target,
+        pool: &block.pool,
+        joint: block.joint,
+        placement_priority: block.placement_priority,
     }
-
-    let original = jigsaws.to_vec();
-    let mut out = Vec::with_capacity(original.len());
-    for &priority in priorities {
-        out.extend(
-            original
-                .iter()
-                .copied()
-                .filter(|jigsaw| jigsaw.selection_priority == priority),
-        );
-    }
-    jigsaws.copy_from_slice(&out);
-}
-
-fn order_jigsaw_indices_by_priorities(
-    cached: &CachedTemplateJigsaws<'_>,
-    indices: &mut Vec<usize>,
-) {
-    if cached.priorities_desc.len() <= 1 {
-        return;
-    }
-
-    let original = mem::take(indices);
-    let mut ordered = Vec::with_capacity(original.len());
-    for &priority in &cached.priorities_desc {
-        ordered.extend(
-            original
-                .iter()
-                .copied()
-                .filter(|&idx| cached.jigsaws[idx].selection_priority == priority),
-        );
-    }
-    *indices = ordered;
 }
 
 /// Gets the template location from a pool element.
@@ -244,124 +216,26 @@ fn get_shuffled_jigsaws<'a>(
 ) -> Vec<TransformedJigsaw<'a>> {
     let Some(location) = element_location(element) else {
         // Feature/Empty elements: synthetic jigsaw at origin facing down
-        let mut jigsaws = vec![TransformedJigsaw {
+        return vec![TransformedJigsaw {
             pos: IVec3::ZERO,
             orientation: JigsawOrientation::DownSouth,
             name: &SYNTHETIC_BOTTOM_JIGSAW,
             target: &SYNTHETIC_EMPTY_POOL,
             pool: &SYNTHETIC_EMPTY_POOL,
             joint: JointType::Rollable,
-            selection_priority: 0,
             placement_priority: 0,
         }];
-        shuffle_jigsaws(&mut jigsaws, rng);
-        return jigsaws;
     };
 
     let Some(template) = templates.get(location) else {
         return vec![];
     };
 
-    let mut jigsaws = transform_template_jigsaws(template, rotation);
-    shuffle_jigsaws(&mut jigsaws, rng);
-    jigsaws
-}
-
-fn get_cached_shuffled_jigsaws<'a>(
-    element: &PoolElement,
-    templates: &'a FxHashMap<Identifier, TemplateData>,
-    cache: &mut JigsawTransformCache<'a>,
-    rotation: Rotation,
-    rng: &mut LegacyRandom,
-) -> Vec<TransformedJigsaw<'a>> {
-    let Some(location) = element_location(element) else {
-        let mut jigsaws = vec![TransformedJigsaw {
-            pos: IVec3::ZERO,
-            orientation: JigsawOrientation::DownSouth,
-            name: &SYNTHETIC_BOTTOM_JIGSAW,
-            target: &SYNTHETIC_EMPTY_POOL,
-            pool: &SYNTHETIC_EMPTY_POOL,
-            joint: JointType::Rollable,
-            selection_priority: 0,
-            placement_priority: 0,
-        }];
-        shuffle_jigsaws(&mut jigsaws, rng);
-        return jigsaws;
-    };
-
-    get_cached_shuffled_template_jigsaws(location, templates, cache, rotation, rng)
-}
-
-fn get_cached_shuffled_template_jigsaws<'a>(
-    location: &Identifier,
-    templates: &'a FxHashMap<Identifier, TemplateData>,
-    cache: &mut JigsawTransformCache<'a>,
-    rotation: Rotation,
-    rng: &mut LegacyRandom,
-) -> Vec<TransformedJigsaw<'a>> {
-    let cached = get_cached_template_jigsaws(location, templates, cache, rotation);
-    let mut jigsaws = cached.jigsaws.clone();
-    vanilla_shuffle(&mut jigsaws, rng);
-    order_jigsaws_by_priorities(&mut jigsaws, &cached.priorities_desc);
-    jigsaws
-}
-
-fn get_cached_template_jigsaws<'cache, 'a>(
-    location: &Identifier,
-    templates: &'a FxHashMap<Identifier, TemplateData>,
-    cache: &'cache mut JigsawTransformCache<'a>,
-    rotation: Rotation,
-) -> &'cache CachedTemplateJigsaws<'a> {
-    let idx = rotation_index(rotation);
-    let by_rotation = cache
-        .entry(location.clone())
-        .or_insert_with(|| [(); 4].map(|()| None));
-    by_rotation[idx].get_or_insert_with(|| {
-        templates.get(location).map_or_else(
-            || CachedTemplateJigsaws {
-                jigsaws: Vec::new(),
-                priorities_desc: Vec::new(),
-            },
-            |template| {
-                let jigsaws = transform_template_jigsaws(template, rotation);
-                let priorities_desc =
-                    descending_priorities(jigsaws.iter().map(|jigsaw| jigsaw.selection_priority));
-                CachedTemplateJigsaws {
-                    jigsaws,
-                    priorities_desc,
-                }
-            },
-        )
-    })
-}
-
-fn transform_template_jigsaws(
-    template: &TemplateData,
-    rotation: Rotation,
-) -> Vec<TransformedJigsaw<'_>> {
-    template
-        .jigsaws
-        .iter()
-        .map(|j| {
-            let pos = rotation.transform_pos(IVec3::from(j.pos), IVec3::ZERO);
-            let orientation = j.orientation.rotate(rotation);
-            TransformedJigsaw {
-                pos,
-                orientation,
-                name: &j.name,
-                target: &j.target,
-                pool: &j.pool,
-                joint: j.joint,
-                selection_priority: j.selection_priority,
-                placement_priority: j.placement_priority,
-            }
-        })
+    let rotated = template_rotated_jigsaws(template, rotation);
+    shuffled_jigsaw_indices(template, rng)
+        .into_iter()
+        .map(|idx| jigsaw_view(&rotated[idx]))
         .collect()
-}
-
-struct CachedTemplateJigsaws<'a> {
-    jigsaws: Vec<TransformedJigsaw<'a>>,
-    priorities_desc: Vec<i32>,
 }
 
 /// A jigsaw block with its position transformed by rotation.
@@ -373,7 +247,6 @@ struct TransformedJigsaw<'a> {
     target: &'a Identifier,
     pool: &'a Identifier,
     joint: JointType,
-    selection_priority: i32,
     placement_priority: i32,
 }
 
@@ -690,7 +563,6 @@ fn finish_assembly<'a>(
         space.occupied.add_box(center_bb);
         vec![space]
     };
-    let mut jigsaw_cache = JigsawTransformCache::default();
     let mut pool_template_cache = PoolTemplateCache::default();
     let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
 
@@ -702,7 +574,6 @@ fn finish_assembly<'a>(
         pools,
         templates,
         alias_map,
-        &mut jigsaw_cache,
         &mut pool_template_cache,
         &mut started.pieces,
         &mut free_spaces,
@@ -722,7 +593,6 @@ fn finish_assembly<'a>(
             pools,
             templates,
             alias_map,
-            &mut jigsaw_cache,
             &mut pool_template_cache,
             &mut started.pieces,
             &mut free_spaces,
@@ -888,7 +758,6 @@ fn try_placing_children<'a>(
     pools: &'a FxHashMap<Identifier, TemplatePoolData>,
     templates: &'a FxHashMap<Identifier, TemplateData>,
     alias_map: &FxHashMap<Identifier, Identifier>,
-    jigsaw_cache: &mut JigsawTransformCache<'a>,
     pool_template_cache: &mut PoolTemplateCache<'a>,
     pieces: &mut Vec<PlacedPiece>,
     free_spaces: &mut Vec<FreeSpace>,
@@ -898,10 +767,9 @@ fn try_placing_children<'a>(
 ) {
     let (source_jigsaws, source_bb, source_projection, source_ground_level_delta) = {
         let source_piece = &pieces[source_idx];
-        let mut jigsaws = get_cached_shuffled_jigsaws(
+        let mut jigsaws = get_shuffled_jigsaws(
             &source_piece.element,
             templates,
-            jigsaw_cache,
             source_piece.rotation,
             rng,
         );
@@ -970,33 +838,6 @@ fn try_placing_children<'a>(
 
             let rotations = Rotation::get_shuffled(rng);
             for candidate_rotation in rotations {
-                let fallback_jigsaws;
-                let (candidate_jigsaws, candidate_jigsaw_order) =
-                    if let Some(location) = element_location(candidate_element) {
-                        let cached = get_cached_template_jigsaws(
-                            location,
-                            templates,
-                            jigsaw_cache,
-                            candidate_rotation,
-                        );
-                        (
-                            cached.jigsaws.as_slice(),
-                            shuffled_jigsaw_indices(cached, rng),
-                        )
-                    } else {
-                        fallback_jigsaws = get_cached_shuffled_jigsaws(
-                            candidate_element,
-                            templates,
-                            jigsaw_cache,
-                            candidate_rotation,
-                            rng,
-                        );
-                        (
-                            fallback_jigsaws.as_slice(),
-                            (0..fallback_jigsaws.len()).collect(),
-                        )
-                    };
-
                 let expand_to = if config.use_expansion_hack {
                     let hack_data =
                         element_location(candidate_element).and_then(|loc| templates.get(loc));
@@ -1005,13 +846,11 @@ fn try_placing_children<'a>(
                             .get_bounding_box(IVec3::ZERO, IVec3::from(template_data.size));
                         if hack_box.max_y() - hack_box.min_y() < 16 {
                             template_data
-                                .jigsaws
+                                .rotated_jigsaws[rotation_index(candidate_rotation)]
                                 .iter()
                                 .map(|j| {
-                                    let pos = candidate_rotation
-                                        .transform_pos(IVec3::from(j.pos), IVec3::ZERO);
-                                    let front =
-                                        j.orientation.rotate(candidate_rotation).front_direction();
+                                    let pos = IVec3::from(j.pos);
+                                    let front = j.orientation.front_direction();
                                     let front_pos = pos + front.offset_vec();
                                     if !hack_box.contains_xyz(front_pos.x, front_pos.y, front_pos.z)
                                     {
@@ -1041,10 +880,9 @@ fn try_placing_children<'a>(
 
                 let mut candidate_bb_at_origin: Option<BoundingBox> = None;
 
-                for target_jigsaw_idx in candidate_jigsaw_order {
-                    let target_jigsaw = candidate_jigsaws[target_jigsaw_idx];
+                let mut try_target_jigsaw = |target_jigsaw: TransformedJigsaw<'_>| -> bool {
                     if !can_attach(source_jigsaw, &target_jigsaw) {
-                        continue;
+                        return false;
                     }
 
                     let target_jigsaw_local = target_jigsaw.pos;
@@ -1064,7 +902,7 @@ fn try_placing_children<'a>(
                             IVec3::ZERO,
                             candidate_rotation,
                         ) else {
-                            continue;
+                            return false;
                         };
                         candidate_bb_at_origin = Some(bb);
                         bb.translate(IVec3::new(raw_target.x, 0, raw_target.z))
@@ -1119,7 +957,7 @@ fn try_placing_children<'a>(
                     };
 
                     if free_spaces[effective_ctx].collides(&expanded_bb) {
-                        continue;
+                        return false;
                     }
 
                     free_spaces[effective_ctx].occupied.add_box(expanded_bb);
@@ -1181,7 +1019,30 @@ fn try_placing_children<'a>(
                         queue.push((new_piece_idx, depth + 1, placement_priority, effective_ctx));
                     }
 
-                    continue 'source_jigsaw;
+                    true
+                };
+
+                if let Some(location) = element_location(candidate_element) {
+                    let Some(template) = templates.get(location) else {
+                        continue;
+                    };
+                    let rotated = template_rotated_jigsaws(template, candidate_rotation);
+                    for target_jigsaw_idx in shuffled_jigsaw_indices(template, rng) {
+                        if try_target_jigsaw(jigsaw_view(&rotated[target_jigsaw_idx])) {
+                            continue 'source_jigsaw;
+                        }
+                    }
+                } else {
+                    for target_jigsaw in get_shuffled_jigsaws(
+                        candidate_element,
+                        templates,
+                        candidate_rotation,
+                        rng,
+                    ) {
+                        if try_target_jigsaw(target_jigsaw) {
+                            continue 'source_jigsaw;
+                        }
+                    }
                 }
             }
         }

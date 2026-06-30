@@ -5,6 +5,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
+use steel_utils::Identifier;
+
+#[path = "jigsaw_prep.rs"]
+mod jigsaw_prep;
+use jigsaw_prep::{rotated_jigsaw_sets, selection_priorities_desc, JigsawBlock, JigsawOrientation, JointType};
 
 // ── JSON structures ──
 
@@ -306,29 +311,85 @@ fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
     }
 }
 
-fn gen_orientation(s: &str) -> TokenStream {
+fn parse_joint(s: &str) -> JointType {
     match s {
-        "down_east" => quote! { JigsawOrientation::DownEast },
-        "down_north" => quote! { JigsawOrientation::DownNorth },
-        "down_south" => quote! { JigsawOrientation::DownSouth },
-        "down_west" => quote! { JigsawOrientation::DownWest },
-        "up_east" => quote! { JigsawOrientation::UpEast },
-        "up_north" => quote! { JigsawOrientation::UpNorth },
-        "up_south" => quote! { JigsawOrientation::UpSouth },
-        "up_west" => quote! { JigsawOrientation::UpWest },
-        "west_up" => quote! { JigsawOrientation::WestUp },
-        "east_up" => quote! { JigsawOrientation::EastUp },
-        "north_up" => quote! { JigsawOrientation::NorthUp },
-        "south_up" => quote! { JigsawOrientation::SouthUp },
-        other => panic!("Unknown jigsaw orientation: {other}"),
+        "aligned" => JointType::Aligned,
+        "rollable" => JointType::Rollable,
+        other => panic!("Unknown jigsaw joint type: {other}"),
     }
 }
 
-fn gen_joint(s: &str) -> TokenStream {
-    match s {
-        "aligned" => quote! { JointType::Aligned },
-        "rollable" => quote! { JointType::Rollable },
-        other => panic!("Unknown jigsaw joint type: {other}"),
+fn parse_identifier(id: &str) -> Identifier {
+    if id.is_empty() {
+        panic!("Cannot parse an empty identifier");
+    }
+    if let Some((namespace, path)) = id.split_once(':') {
+        Identifier::new(namespace.to_string(), path.to_string())
+    } else {
+        Identifier::vanilla(id.to_string())
+    }
+}
+
+fn extracted_jigsaw_to_block(j: &ExtractedJigsaw) -> JigsawBlock {
+    JigsawBlock {
+        pos: j.pos,
+        orientation: JigsawOrientation::parse(&j.orientation)
+            .unwrap_or_else(|| panic!("Unknown jigsaw orientation {}", j.orientation)),
+        name: parse_identifier(&j.name),
+        target: parse_identifier(&j.target),
+        pool: parse_identifier(&j.pool),
+        joint: parse_joint(&j.joint),
+        final_state: parse_identifier(&j.final_state),
+        selection_priority: j.selection_priority,
+        placement_priority: j.placement_priority,
+    }
+}
+
+fn gen_jigsaw_block(j: &JigsawBlock) -> TokenStream {
+    let px = j.pos[0];
+    let py = j.pos[1];
+    let pz = j.pos[2];
+    let orientation = gen_orientation_from_enum(j.orientation);
+    let jname = gen_identifier(&format!("{}:{}", j.name.namespace, j.name.path));
+    let target = gen_identifier(&format!("{}:{}", j.target.namespace, j.target.path));
+    let pool = gen_identifier(&format!("{}:{}", j.pool.namespace, j.pool.path));
+    let joint = match j.joint {
+        JointType::Rollable => quote! { JointType::Rollable },
+        JointType::Aligned => quote! { JointType::Aligned },
+    };
+    let final_state = gen_identifier(&format!("{}:{}", j.final_state.namespace, j.final_state.path));
+    let sel_pri = j.selection_priority;
+    let plc_pri = j.placement_priority;
+
+    quote! {
+        JigsawBlock {
+            pos: [#px, #py, #pz],
+            orientation: #orientation,
+            name: #jname,
+            target: #target,
+            pool: #pool,
+            joint: #joint,
+            final_state: #final_state,
+            selection_priority: #sel_pri,
+            placement_priority: #plc_pri,
+        }
+    }
+}
+
+fn gen_orientation_from_enum(orientation: JigsawOrientation) -> TokenStream {
+    match orientation {
+        JigsawOrientation::DownEast => quote! { JigsawOrientation::DownEast },
+        JigsawOrientation::DownNorth => quote! { JigsawOrientation::DownNorth },
+        JigsawOrientation::DownSouth => quote! { JigsawOrientation::DownSouth },
+        JigsawOrientation::DownWest => quote! { JigsawOrientation::DownWest },
+        JigsawOrientation::UpEast => quote! { JigsawOrientation::UpEast },
+        JigsawOrientation::UpNorth => quote! { JigsawOrientation::UpNorth },
+        JigsawOrientation::UpSouth => quote! { JigsawOrientation::UpSouth },
+        JigsawOrientation::UpWest => quote! { JigsawOrientation::UpWest },
+        JigsawOrientation::WestUp => quote! { JigsawOrientation::WestUp },
+        JigsawOrientation::EastUp => quote! { JigsawOrientation::EastUp },
+        JigsawOrientation::NorthUp => quote! { JigsawOrientation::NorthUp },
+        JigsawOrientation::SouthUp => quote! { JigsawOrientation::SouthUp },
     }
 }
 
@@ -391,42 +452,30 @@ pub(crate) fn build() -> TokenStream {
             "../../../steel-utils/build_assets/builtin_datapacks/minecraft/structure/{name}.nbt"
         );
 
-        let jigsaw_tokens: Vec<TokenStream> = tmpl
-            .jigsaws
-            .iter()
-            .map(|j| {
-                let px = j.pos[0];
-                let py = j.pos[1];
-                let pz = j.pos[2];
-                let orientation = gen_orientation(&j.orientation);
-                let jname = gen_identifier(&j.name);
-                let target = gen_identifier(&j.target);
-                let pool = gen_identifier(&j.pool);
-                let joint = gen_joint(&j.joint);
-                let final_state = gen_identifier(&j.final_state);
-                let sel_pri = j.selection_priority;
-                let plc_pri = j.placement_priority;
+        let jigsaw_blocks: Vec<JigsawBlock> =
+            tmpl.jigsaws.iter().map(extracted_jigsaw_to_block).collect();
+        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaw_blocks);
+        let selection_priorities_desc = selection_priorities_desc(&jigsaw_blocks);
 
-                quote! {
-                    JigsawBlock {
-                        pos: [#px, #py, #pz],
-                        orientation: #orientation,
-                        name: #jname,
-                        target: #target,
-                        pool: #pool,
-                        joint: #joint,
-                        final_state: #final_state,
-                        selection_priority: #sel_pri,
-                        placement_priority: #plc_pri,
-                    }
-                }
+        let jigsaw_tokens: Vec<TokenStream> = jigsaw_blocks.iter().map(gen_jigsaw_block).collect();
+        let rotated_jigsaw_tokens: Vec<TokenStream> = rotated_jigsaws
+            .iter()
+            .map(|rotation_jigsaws| {
+                let blocks: Vec<TokenStream> = rotation_jigsaws.iter().map(gen_jigsaw_block).collect();
+                quote! { vec![#(#blocks),*] }
             })
+            .collect();
+        let priority_tokens: Vec<TokenStream> = selection_priorities_desc
+            .iter()
+            .map(|priority| quote! { #priority })
             .collect();
 
         template_tokens.extend(quote! {
             (#key, TemplateData {
                 size: [#sx, #sy, #sz],
                 jigsaws: vec![#(#jigsaw_tokens),*],
+                rotated_jigsaws: [#(#rotated_jigsaw_tokens),*],
+                selection_priorities_desc: vec![#(#priority_tokens),*],
             }),
         });
         template_nbt_match_arms.extend(quote! {

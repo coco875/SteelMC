@@ -3,7 +3,15 @@
 //! Parsed at build time from vanilla datapack JSONs and structure NBT files.
 //! Used by the jigsaw placement system to assemble structures from pools.
 
+use glam::IVec3;
 use steel_utils::{Direction, Identifier, Rotation};
+
+const ROTATIONS: [Rotation; 4] = [
+    Rotation::None,
+    Rotation::Clockwise90,
+    Rotation::Clockwise180,
+    Rotation::CounterClockwise90,
+];
 
 /// Orientation of a jigsaw block, encoding both facing direction and up direction.
 ///
@@ -144,6 +152,53 @@ pub struct JigsawBlock {
     pub placement_priority: i32,
 }
 
+impl JigsawBlock {
+    /// Returns a copy of this jigsaw with its position and orientation rotated.
+    #[must_use]
+    pub fn rotated(block: &Self, rotation: Rotation) -> Self {
+        let pos = rotation.transform_pos(IVec3::from(block.pos), IVec3::ZERO);
+        Self {
+            pos: [pos.x, pos.y, pos.z],
+            orientation: block.orientation.rotate(rotation),
+            name: block.name.clone(),
+            target: block.target.clone(),
+            pool: block.pool.clone(),
+            joint: block.joint,
+            final_state: block.final_state.clone(),
+            selection_priority: block.selection_priority,
+            placement_priority: block.placement_priority,
+        }
+    }
+}
+
+/// Precomputes jigsaw blocks for each vanilla Y rotation.
+#[must_use]
+pub fn rotated_jigsaw_sets(jigsaws: &[JigsawBlock]) -> [Vec<JigsawBlock>; 4] {
+    std::array::from_fn(|idx| {
+        jigsaws
+            .iter()
+            .map(|jigsaw| JigsawBlock::rotated(jigsaw, ROTATIONS[idx]))
+            .collect()
+    })
+}
+
+/// Precomputes descending selection priorities for shuffle ordering.
+///
+/// Matches vanilla's `sortBySelectionPriority` grouping on the unrotated jigsaw list.
+#[must_use]
+pub fn selection_priorities_desc(jigsaws: &[JigsawBlock]) -> Vec<i32> {
+    let mut priorities_desc = Vec::new();
+    for jigsaw in jigsaws {
+        if !priorities_desc.contains(&jigsaw.selection_priority) {
+            priorities_desc.push(jigsaw.selection_priority);
+        }
+    }
+    if priorities_desc.len() > 1 {
+        priorities_desc.sort_unstable_by(|a, b| b.cmp(a));
+    }
+    priorities_desc
+}
+
 /// Extracted data from a structure template NBT file.
 ///
 /// Contains only the information needed for jigsaw assembly — not the full
@@ -154,6 +209,25 @@ pub struct TemplateData {
     pub size: [i32; 3],
     /// Jigsaw connector blocks in this template.
     pub jigsaws: Vec<JigsawBlock>,
+    /// Jigsaw blocks pre-rotated for each vanilla Y rotation.
+    pub rotated_jigsaws: [Vec<JigsawBlock>; 4],
+    /// Distinct selection priorities in descending order.
+    pub selection_priorities_desc: Vec<i32>,
+}
+
+impl TemplateData {
+    /// Builds template assembly metadata from unrotated jigsaw blocks.
+    #[must_use]
+    pub fn from_jigsaws(size: [i32; 3], jigsaws: Vec<JigsawBlock>) -> Self {
+        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaws);
+        let selection_priorities_desc = selection_priorities_desc(&jigsaws);
+        Self {
+            size,
+            jigsaws,
+            rotated_jigsaws,
+            selection_priorities_desc,
+        }
+    }
 }
 
 /// Projection mode for pool elements.
