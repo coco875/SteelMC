@@ -678,7 +678,7 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        Self::palette_blocks_for_placement(&palette.blocks, position, settings, |block| {
+        for block in &palette.blocks {
             let original = ProcessedBlockInfo {
                 template_pos: block.pos,
                 world_pos: block.pos,
@@ -704,7 +704,7 @@ impl StructureTemplate {
                 original_blocks.push(original);
                 processed_blocks.push(processed);
             }
-        });
+        }
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -1218,43 +1218,6 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
-    }
-
-    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
-    /// Disabled when a `Capped` processor is present — it needs the full block list
-    /// in `finalize_processing` (Trail Ruins).
-    fn palette_blocks_for_placement<F: FnMut(&StructureBlockInfo)>(
-        blocks: &[StructureBlockInfo],
-        position: BlockPos,
-        settings: &StructurePlaceSettings<'_>,
-        mut f: F,
-    ) {
-        if settings
-            .processors
-            .iter()
-            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
-        {
-            for block in blocks {
-                f(block);
-            }
-            return;
-        }
-
-        let mut empty = true;
-
-        for block in blocks.iter().filter(|block| {
-            settings
-                .bounding_box
-                .contains_blockpos(Self::transformed_position(position, block.pos, settings))
-        }) {
-            empty = false;
-            f(block);
-        }
-
-        // Empty list makes vanilla drop the piece from multi-chunk placement.
-        if empty && !blocks.is_empty() {
-            f(&blocks[0]);
-        }
     }
 
     const fn transformed_position(
