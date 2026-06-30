@@ -60,6 +60,23 @@ impl BoxOctree {
         self.inner_boxes.push(bbox);
     }
 
+    pub fn boundary_contains(&self, position: IVec3) -> bool {
+        self.boundary
+            .contains_xyz(position.x, position.y, position.z)
+    }
+
+    pub fn within_any_box(&self, position: IVec3) -> bool {
+        if !self.children.is_empty() {
+            return self
+                .children
+                .iter()
+                .any(|child| child.boundary_contains(position) && child.within_any_box(position));
+        }
+        self.inner_boxes
+            .iter()
+            .any(|bbox| bbox.contains_xyz(position.x, position.y, position.z))
+    }
+
     pub fn intersects_any_box(&self, candidate: BoundingBox) -> bool {
         if !self.children.is_empty() {
             return self.children.iter().any(|child| {
@@ -69,6 +86,17 @@ impl BoxOctree {
         self.inner_boxes
             .iter()
             .any(|bbox| candidate.intersects(*bbox))
+    }
+
+    /// Vanilla jigsaw placement uses `AABB.of(bb).deflate(0.25)` before collision checks.
+    pub fn within_bounds_but_not_intersecting_children(&self, candidate: BoundingBox) -> bool {
+        self.boundary_entirely_contains(candidate) && !self.intersects_any_box(candidate)
+    }
+
+    pub fn boundary_entirely_contains(&self, candidate: BoundingBox) -> bool {
+        self.boundary.contains_xyz(candidate.min_x(), candidate.min_y(), candidate.min_z())
+            && self.boundary
+                .contains_xyz(candidate.max_x(), candidate.max_y(), candidate.max_z())
     }
 
     fn boundary_intersects(&self, candidate: BoundingBox) -> bool {
@@ -168,5 +196,18 @@ mod tests {
 
         let candidate = BoundingBox::new(IVec3::new(4, 4, 4), IVec3::new(8, 8, 8));
         assert!(tree.intersects_any_box(candidate));
+    }
+
+    #[test]
+    fn within_any_box_detects_occupied_positions() {
+        let boundary = BoundingBox::new(IVec3::ZERO, IVec3::new(100, 100, 100));
+        let mut tree = BoxOctree::new(boundary);
+        tree.add_box(BoundingBox::new(
+            IVec3::new(10, 10, 10),
+            IVec3::new(15, 15, 15),
+        ));
+
+        assert!(tree.within_any_box(IVec3::new(12, 12, 12)));
+        assert!(!tree.within_any_box(IVec3::new(20, 20, 20)));
     }
 }
