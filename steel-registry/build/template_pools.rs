@@ -9,7 +9,10 @@ use steel_utils::Identifier;
 
 #[path = "jigsaw_prep.rs"]
 mod jigsaw_prep;
-use jigsaw_prep::{rotated_jigsaw_sets, selection_priorities_desc, JigsawBlock, JigsawOrientation, JointType};
+use jigsaw_prep::{
+    assign_selection_priority_buckets, rotated_jigsaw_sets, selection_priorities_desc, JigsawBlock,
+    JigsawOrientation, JointType,
+};
 
 // ── JSON structures ──
 
@@ -341,6 +344,7 @@ fn extracted_jigsaw_to_block(j: &ExtractedJigsaw) -> JigsawBlock {
         joint: parse_joint(&j.joint),
         final_state: parse_identifier(&j.final_state),
         selection_priority: j.selection_priority,
+        selection_priority_bucket: 0,
         placement_priority: j.placement_priority,
     }
 }
@@ -359,6 +363,7 @@ fn gen_jigsaw_block(j: &JigsawBlock) -> TokenStream {
     };
     let final_state = gen_identifier(&format!("{}:{}", j.final_state.namespace, j.final_state.path));
     let sel_pri = j.selection_priority;
+    let sel_bucket = j.selection_priority_bucket;
     let plc_pri = j.placement_priority;
 
     quote! {
@@ -371,6 +376,7 @@ fn gen_jigsaw_block(j: &JigsawBlock) -> TokenStream {
             joint: #joint,
             final_state: #final_state,
             selection_priority: #sel_pri,
+            selection_priority_bucket: #sel_bucket,
             placement_priority: #plc_pri,
         }
     }
@@ -452,10 +458,11 @@ pub(crate) fn build() -> TokenStream {
             "../../../steel-utils/build_assets/builtin_datapacks/minecraft/structure/{name}.nbt"
         );
 
-        let jigsaw_blocks: Vec<JigsawBlock> =
+        let mut jigsaw_blocks: Vec<JigsawBlock> =
             tmpl.jigsaws.iter().map(extracted_jigsaw_to_block).collect();
-        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaw_blocks);
         let selection_priorities_desc = selection_priorities_desc(&jigsaw_blocks);
+        assign_selection_priority_buckets(&mut jigsaw_blocks, &selection_priorities_desc);
+        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaw_blocks);
 
         let jigsaw_tokens: Vec<TokenStream> = jigsaw_blocks.iter().map(gen_jigsaw_block).collect();
         let rotated_jigsaw_tokens: Vec<TokenStream> = rotated_jigsaws

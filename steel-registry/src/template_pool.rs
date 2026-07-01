@@ -148,6 +148,8 @@ pub struct JigsawBlock {
     pub final_state: Identifier,
     /// Priority for selecting this jigsaw among siblings in a piece (higher = tried first).
     pub selection_priority: i32,
+    /// Index into [`TemplateData::selection_priorities_desc`] for stable bucket grouping.
+    pub selection_priority_bucket: u8,
     /// Priority for BFS queue ordering when placing children (higher = processed first).
     pub placement_priority: i32,
 }
@@ -166,6 +168,7 @@ impl JigsawBlock {
             joint: block.joint,
             final_state: block.final_state.clone(),
             selection_priority: block.selection_priority,
+            selection_priority_bucket: block.selection_priority_bucket,
             placement_priority: block.placement_priority,
         }
     }
@@ -199,6 +202,19 @@ pub fn selection_priorities_desc(jigsaws: &[JigsawBlock]) -> Vec<i32> {
     priorities_desc
 }
 
+/// Assigns [`JigsawBlock::selection_priority_bucket`] from descending priority list.
+pub fn assign_selection_priority_buckets(
+    jigsaws: &mut [JigsawBlock],
+    priorities_desc: &[i32],
+) {
+    for jigsaw in jigsaws.iter_mut() {
+        jigsaw.selection_priority_bucket = priorities_desc
+            .iter()
+            .position(|&priority| priority == jigsaw.selection_priority)
+            .unwrap_or(priorities_desc.len()) as u8;
+    }
+}
+
 /// Extracted data from a structure template NBT file.
 ///
 /// Contains only the information needed for jigsaw assembly — not the full
@@ -218,9 +234,10 @@ pub struct TemplateData {
 impl TemplateData {
     /// Builds template assembly metadata from unrotated jigsaw blocks.
     #[must_use]
-    pub fn from_jigsaws(size: [i32; 3], jigsaws: Vec<JigsawBlock>) -> Self {
-        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaws);
+    pub fn from_jigsaws(size: [i32; 3], mut jigsaws: Vec<JigsawBlock>) -> Self {
         let selection_priorities_desc = selection_priorities_desc(&jigsaws);
+        assign_selection_priority_buckets(&mut jigsaws, &selection_priorities_desc);
+        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaws);
         Self {
             size,
             jigsaws,

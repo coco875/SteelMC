@@ -98,6 +98,7 @@ pub struct JigsawBlock {
     pub joint: JointType,
     pub final_state: Identifier,
     pub selection_priority: i32,
+    pub selection_priority_bucket: u8,
     pub placement_priority: i32,
 }
 
@@ -120,6 +121,7 @@ impl JigsawBlock {
             joint: block.joint,
             final_state: block.final_state.clone(),
             selection_priority: block.selection_priority,
+            selection_priority_bucket: block.selection_priority_bucket,
             placement_priority: block.placement_priority,
         }
     }
@@ -145,4 +147,16 @@ pub fn selection_priorities_desc(jigsaws: &[JigsawBlock]) -> Vec<i32> {
         priorities_desc.sort_unstable_by(|a, b| b.cmp(a));
     }
     priorities_desc
+}
+
+pub fn assign_selection_priority_buckets(
+    jigsaws: &mut [JigsawBlock],
+    priorities_desc: &[i32],
+) {
+    for jigsaw in jigsaws.iter_mut() {
+        jigsaw.selection_priority_bucket = priorities_desc
+            .iter()
+            .position(|&priority| priority == jigsaw.selection_priority)
+            .unwrap_or(priorities_desc.len()) as u8;
+    }
 }
