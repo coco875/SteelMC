@@ -17,7 +17,6 @@ use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::random::{PositionalRandom, Random};
 use steel_utils::{BoundingBox, Identifier, Rotation};
 
-use crate::structure::box_octree::BoxOctree;
 use crate::structure::{
     GenerationStub, Structure, StructureGenerationContext, StructurePiece, StructurePiecePayload,
 };
@@ -375,21 +374,15 @@ fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -
 }
 
 /// Hierarchical free-space tracker. Vanilla uses `MutableObject<VoxelShape>`
-/// with subtraction; Steel uses a `BoxOctree` for occupied bounds (equivalent to
-/// scanning all placed pieces, faster for large structures).
+/// with subtraction; for integer-aligned BBs, `constraint + occupied` is
+/// equivalent. Internal children share the source's internal free space;
+/// external children share the parent's context.
 struct FreeSpace {
     constraint: BoundingBox,
-    occupied: BoxOctree,
+    occupied: Vec<BoundingBox>,
 }
 
 impl FreeSpace {
-    fn new(constraint: BoundingBox) -> Self {
-        Self {
-            occupied: BoxOctree::new(constraint),
-            constraint,
-        }
-    }
-
     fn collides(&self, candidate: &BoundingBox) -> bool {
         if candidate.min_x() < self.constraint.min_x()
             || candidate.max_x() > self.constraint.max_x()
@@ -400,7 +393,7 @@ impl FreeSpace {
         {
             return true;
         }
-        self.occupied.intersects_any_box(*candidate)
+        self.occupied.iter().any(|p| candidate.intersects(*p))
     }
 }
 
@@ -949,7 +942,10 @@ fn try_placing_children<'a>(
 
                     let effective_ctx = if attach_inside {
                         *internal_ctx_idx.get_or_insert_with(|| {
-                            free_spaces.push(FreeSpace::new(source_bb));
+                            free_spaces.push(FreeSpace {
+                                constraint: source_bb,
+                                occupied: Vec::new(),
+                            });
                             free_spaces.len() - 1
                         })
                     } else {
@@ -960,7 +956,7 @@ fn try_placing_children<'a>(
                         return false;
                     }
 
-                    free_spaces[effective_ctx].occupied.add_box(expanded_bb);
+                    free_spaces[effective_ctx].occupied.push(expanded_bb);
 
                     let target_ground_level_delta = if candidate_rigid {
                         source_ground_level_delta - delta_y

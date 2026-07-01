@@ -39,7 +39,7 @@ use steel_utils::{
 use text_components::TextComponent;
 use uuid::Uuid;
 
-use crate::behavior::{BLOCK_BEHAVIORS, FLUID_BEHAVIORS};
+use crate::behavior::BLOCK_BEHAVIORS;
 use crate::chunk::heightmap::HeightmapType;
 use crate::entity::{
     DEFAULT_MAX_AIR_SUPPLY, ENTITIES, EntityBaseSaveData, EntityFireFreezeState, EntityLoadRequest,
@@ -678,7 +678,7 @@ impl StructureTemplate {
         let mut original_blocks = Vec::with_capacity(palette.blocks.len());
         let mut processed_blocks = Vec::with_capacity(palette.blocks.len());
 
-        Self::palette_blocks_for_placement(&palette.blocks, position, settings, |block| {
+        for block in &palette.blocks {
             let original = ProcessedBlockInfo {
                 template_pos: block.pos,
                 world_pos: block.pos,
@@ -704,7 +704,7 @@ impl StructureTemplate {
                 original_blocks.push(original);
                 processed_blocks.push(processed);
             }
-        });
+        }
 
         let processed_blocks = Self::finalize_processing(
             region,
@@ -971,7 +971,7 @@ impl StructureTemplate {
     }
 
     fn update_shape_at_edge(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         flags: UpdateFlags,
         placed_positions: &[BlockPos],
         min: BlockPos,
@@ -1044,7 +1044,7 @@ impl StructureTemplate {
     }
 
     fn fill_neighbor_source_liquids(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         to_fill: &mut Vec<BlockPos>,
         locked_fluids: &[BlockPos],
     ) {
@@ -1076,9 +1076,8 @@ impl StructureTemplate {
 
                 if to_place.is_source() {
                     let state = region.block_state(pos);
-                    if Self::is_liquid_block_container(state)
-                        && Self::place_liquid(region, pos, state, to_place)
-                    {
+                    if Self::is_liquid_block_container(state) {
+                        let _ = Self::place_liquid(region, pos, state, to_place);
                         filled = true;
                         to_fill.remove(index);
                         continue;
@@ -1101,42 +1100,19 @@ impl StructureTemplate {
     }
 
     fn is_liquid_block_container(state: BlockStateId) -> bool {
-        state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_some()
+        BLOCK_BEHAVIORS
+            .get_behavior(state.get_block())
+            .is_liquid_container(state)
     }
 
     fn place_liquid(
-        region: &mut WorldGenRegion<'_>,
+        region: &WorldGenRegion<'_>,
         pos: BlockPos,
         state: BlockStateId,
         fluid_state: FluidState,
     ) -> bool {
         let behavior = BLOCK_BEHAVIORS.get_behavior(state.get_block());
-        if state
-            .try_get_value(&BlockStateProperties::WATERLOGGED)
-            .is_none()
-        {
-            return false;
-        }
-        if !behavior.can_place_liquid(state, fluid_state.fluid_id) {
-            return false;
-        }
-
-        let waterlogged = state.set_value(&BlockStateProperties::WATERLOGGED, true);
-        if !region.set_block_state(pos, waterlogged, UpdateFlags::UPDATE_ALL) {
-            return false;
-        }
-
-        let delay = region.weak_world().upgrade().map_or_else(
-            || i32::try_from(fluid_state.fluid_id.tick_delay).unwrap_or(i32::MAX),
-            |world| {
-                FLUID_BEHAVIORS
-                    .get_behavior(fluid_state.fluid_id)
-                    .tick_delay(&world)
-            },
-        );
-        region.schedule_fluid_tick_default(pos, fluid_state.fluid_id, delay)
+        behavior.place_liquid(region, pos, state, fluid_state)
     }
 
     fn for_all_shape_faces(
@@ -1218,43 +1194,6 @@ impl StructureTemplate {
             }
         };
         Some(&self.palettes[index as usize])
-    }
-
-    /// `StructureLayoutOptimizer`: skip out-of-bounds blocks before processors run.
-    /// Disabled when a `Capped` processor is present — it needs the full block list
-    /// in `finalize_processing` (Trail Ruins).
-    fn palette_blocks_for_placement<F: FnMut(&StructureBlockInfo)>(
-        blocks: &[StructureBlockInfo],
-        position: BlockPos,
-        settings: &StructurePlaceSettings<'_>,
-        mut f: F,
-    ) {
-        if settings
-            .processors
-            .iter()
-            .any(|processor| matches!(processor, StructureProcessorKind::Capped { .. }))
-        {
-            for block in blocks {
-                f(block);
-            }
-            return;
-        }
-
-        let mut empty = true;
-
-        for block in blocks.iter().filter(|block| {
-            settings
-                .bounding_box
-                .contains_blockpos(Self::transformed_position(position, block.pos, settings))
-        }) {
-            empty = false;
-            f(block);
-        }
-
-        // Empty list makes vanilla drop the piece from multi-chunk placement.
-        if empty && !blocks.is_empty() {
-            f(&blocks[0]);
-        }
     }
 
     const fn transformed_position(
