@@ -270,6 +270,10 @@ fn shuffle_jigsaw_indices_into(
     }
     out.extend(0..template.jigsaws.len());
     vanilla_shuffle(out, rng);
+    order_jigsaw_indices_by_priorities(template, out);
+}
+
+fn order_jigsaw_indices_by_priorities(template: &TemplateData, out: &mut Vec<usize>) {
     let priorities = descending_priorities(&template.jigsaws);
     if priorities.len() <= 1 {
         return;
@@ -881,11 +885,7 @@ fn try_placing_children<'a>(
         .and_then(|location| templates.get(location).map(|template| (location, template)));
 
     if let Some((_, template)) = source_template {
-        shuffle_jigsaw_indices_into(
-            template,
-            rng,
-            &mut scratch.source_jigsaw_indices,
-        );
+        shuffle_jigsaw_indices_into(template, rng, &mut scratch.source_jigsaw_indices);
         if scratch.source_jigsaw_indices.is_empty() {
             return;
         }
@@ -1010,14 +1010,15 @@ fn try_placing_children<'a>(
                                         templates,
                                         &mut scratch.pool_max_y_cache,
                                     );
-                                    let child_fallback_size = pools.get(child_pool_key).map_or(0, |pool| {
-                                        cached_pool_max_y_size(
-                                            &pool.fallback,
-                                            pools,
-                                            templates,
-                                            &mut scratch.pool_max_y_cache,
-                                        )
-                                    });
+                                    let child_fallback_size =
+                                        pools.get(child_pool_key).map_or(0, |pool| {
+                                            cached_pool_max_y_size(
+                                                &pool.fallback,
+                                                pools,
+                                                templates,
+                                                &mut scratch.pool_max_y_cache,
+                                            )
+                                        });
                                     child_pool_size.max(child_fallback_size)
                                 })
                                 .max()
@@ -1068,9 +1069,8 @@ fn try_placing_children<'a>(
                     let target_box_y = if source_rigid && candidate_rigid {
                         source_box_y + delta_y
                     } else {
-                        let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source.pos.x, source.pos.z)
-                        });
+                        let base_height = *source_jigsaw_base_height
+                            .get_or_insert_with(|| get_height(source.pos.x, source.pos.z));
                         base_height - target_jigsaw_local_y
                     };
 
@@ -1127,9 +1127,8 @@ fn try_placing_children<'a>(
                     } else if candidate_rigid {
                         target_box_y + target_jigsaw_local_y
                     } else {
-                        let base_height = *source_jigsaw_base_height.get_or_insert_with(|| {
-                            get_height(source.pos.x, source.pos.z)
-                        });
+                        let base_height = *source_jigsaw_base_height
+                            .get_or_insert_with(|| get_height(source.pos.x, source.pos.z));
                         base_height + delta_y / 2
                     };
 
