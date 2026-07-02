@@ -2,8 +2,7 @@
 //! jigsaw blocks given a start pool + config. Produces typed piece state;
 //! block placement runs in a later worldgen stage.
 
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use std::cmp::Reverse;
 use std::ptr;
 use std::sync::LazyLock;
 
@@ -154,7 +153,6 @@ struct AssemblyScratch {
     candidate_jigsaw_indices: Vec<usize>,
     pool_max_y_cache: FxHashMap<Identifier, i32>,
     jigsaw_rotation_cache: JigsawRotationCache,
-    queue_order: u64,
 }
 
 impl AssemblyScratch {
@@ -165,32 +163,7 @@ impl AssemblyScratch {
             candidate_jigsaw_indices: Vec::new(),
             pool_max_y_cache: FxHashMap::default(),
             jigsaw_rotation_cache: JigsawRotationCache::default(),
-            queue_order: 0,
         }
-    }
-}
-
-/// BFS queue entry ordered by descending `placement_priority`, FIFO within ties.
-#[derive(Eq, PartialEq)]
-struct PieceQueueEntry {
-    priority: i32,
-    order: u64,
-    piece_idx: usize,
-    depth: i32,
-    context_idx: usize,
-}
-
-impl Ord for PieceQueueEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.priority
-            .cmp(&other.priority)
-            .then_with(|| other.order.cmp(&self.order))
-    }
-}
-
-impl PartialOrd for PieceQueueEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
@@ -668,7 +641,7 @@ fn finish_assembly<'a>(
     };
     let mut pool_template_cache = PoolTemplateCache::default();
     let mut assembly_scratch = AssemblyScratch::new();
-    let mut queue: BinaryHeap<PieceQueueEntry> = BinaryHeap::new();
+    let mut queue: Vec<(usize, i32, i32, usize)> = Vec::new();
 
     try_placing_children(
         0,
@@ -687,11 +660,13 @@ fn finish_assembly<'a>(
         get_height,
     );
 
-    while let Some(entry) = queue.pop() {
+    while !queue.is_empty() {
+        queue.sort_by_key(|entry| Reverse(entry.2));
+        let (piece_idx, depth, _priority, context_idx) = queue.remove(0);
         try_placing_children(
-            entry.piece_idx,
-            entry.depth,
-            entry.context_idx,
+            piece_idx,
+            depth,
+            context_idx,
             config,
             pools,
             templates,
@@ -866,7 +841,7 @@ fn try_placing_children<'a>(
     scratch: &mut AssemblyScratch,
     pieces: &mut Vec<PlacedPiece>,
     free_spaces: &mut Vec<FreeSpace>,
-    queue: &mut BinaryHeap<PieceQueueEntry>,
+    queue: &mut Vec<(usize, i32, i32, usize)>,
     rng: &mut LegacyRandom,
     get_height: &mut dyn FnMut(i32, i32) -> i32,
 ) {
@@ -1170,14 +1145,12 @@ fn try_placing_children<'a>(
                     pieces.push(target_piece);
 
                     if depth < config.max_depth {
-                        scratch.queue_order += 1;
-                        queue.push(PieceQueueEntry {
-                            priority: placement_priority,
-                            order: scratch.queue_order,
-                            piece_idx: new_piece_idx,
-                            depth: depth + 1,
-                            context_idx: effective_ctx,
-                        });
+                        queue.push((
+                            new_piece_idx,
+                            depth + 1,
+                            placement_priority,
+                            effective_ctx,
+                        ));
                     }
 
                     true
