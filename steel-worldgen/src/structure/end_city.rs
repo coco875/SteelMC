@@ -569,7 +569,10 @@ mod tests {
         let mut templates = FxHashMap::default();
         templates.insert(
             Identifier::new("minecraft", format!("end_city/{name}")),
-            TemplateData::from_jigsaws(size.into(), Vec::new()),
+            TemplateData {
+                size: size.into(),
+                jigsaws: Vec::new(),
+            },
         );
         templates
     }

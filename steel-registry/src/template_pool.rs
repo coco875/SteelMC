@@ -6,13 +6,6 @@
 use glam::IVec3;
 use steel_utils::{Direction, Identifier, Rotation};
 
-const ROTATIONS: [Rotation; 4] = [
-    Rotation::None,
-    Rotation::Clockwise90,
-    Rotation::Clockwise180,
-    Rotation::CounterClockwise90,
-];
-
 /// Orientation of a jigsaw block, encoding both facing direction and up direction.
 ///
 /// Vanilla's `FrontAndTop` enum — the orientation block state property.
@@ -148,8 +141,6 @@ pub struct JigsawBlock {
     pub final_state: Identifier,
     /// Priority for selecting this jigsaw among siblings in a piece (higher = tried first).
     pub selection_priority: i32,
-    /// Index into [`TemplateData::selection_priorities_desc`] for stable bucket grouping.
-    pub selection_priority_bucket: u8,
     /// Priority for BFS queue ordering when placing children (higher = processed first).
     pub placement_priority: i32,
 }
@@ -168,50 +159,8 @@ impl JigsawBlock {
             joint: block.joint,
             final_state: block.final_state.clone(),
             selection_priority: block.selection_priority,
-            selection_priority_bucket: block.selection_priority_bucket,
             placement_priority: block.placement_priority,
         }
-    }
-}
-
-/// Precomputes jigsaw blocks for each vanilla Y rotation.
-#[must_use]
-pub fn rotated_jigsaw_sets(jigsaws: &[JigsawBlock]) -> [Vec<JigsawBlock>; 4] {
-    std::array::from_fn(|idx| {
-        jigsaws
-            .iter()
-            .map(|jigsaw| JigsawBlock::rotated(jigsaw, ROTATIONS[idx]))
-            .collect()
-    })
-}
-
-/// Precomputes descending selection priorities for shuffle ordering.
-///
-/// Matches vanilla's `sortBySelectionPriority` grouping on the unrotated jigsaw list.
-#[must_use]
-pub fn selection_priorities_desc(jigsaws: &[JigsawBlock]) -> Vec<i32> {
-    let mut priorities_desc = Vec::new();
-    for jigsaw in jigsaws {
-        if !priorities_desc.contains(&jigsaw.selection_priority) {
-            priorities_desc.push(jigsaw.selection_priority);
-        }
-    }
-    if priorities_desc.len() > 1 {
-        priorities_desc.sort_unstable_by(|a, b| b.cmp(a));
-    }
-    priorities_desc
-}
-
-/// Assigns [`JigsawBlock::selection_priority_bucket`] from descending priority list.
-pub fn assign_selection_priority_buckets(
-    jigsaws: &mut [JigsawBlock],
-    priorities_desc: &[i32],
-) {
-    for jigsaw in jigsaws.iter_mut() {
-        jigsaw.selection_priority_bucket = priorities_desc
-            .iter()
-            .position(|&priority| priority == jigsaw.selection_priority)
-            .unwrap_or(priorities_desc.len()) as u8;
     }
 }
 
@@ -225,26 +174,6 @@ pub struct TemplateData {
     pub size: [i32; 3],
     /// Jigsaw connector blocks in this template.
     pub jigsaws: Vec<JigsawBlock>,
-    /// Jigsaw blocks pre-rotated for each vanilla Y rotation.
-    pub rotated_jigsaws: [Vec<JigsawBlock>; 4],
-    /// Distinct selection priorities in descending order.
-    pub selection_priorities_desc: Vec<i32>,
-}
-
-impl TemplateData {
-    /// Builds template assembly metadata from unrotated jigsaw blocks.
-    #[must_use]
-    pub fn from_jigsaws(size: [i32; 3], mut jigsaws: Vec<JigsawBlock>) -> Self {
-        let selection_priorities_desc = selection_priorities_desc(&jigsaws);
-        assign_selection_priority_buckets(&mut jigsaws, &selection_priorities_desc);
-        let rotated_jigsaws = rotated_jigsaw_sets(&jigsaws);
-        Self {
-            size,
-            jigsaws,
-            rotated_jigsaws,
-            selection_priorities_desc,
-        }
-    }
 }
 
 /// Projection mode for pool elements.
