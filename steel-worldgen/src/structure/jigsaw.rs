@@ -250,13 +250,15 @@ fn cached_runtime_rotated_jigsaws<'cache>(
     let by_rotation = cache
         .entry(location.clone())
         .or_insert_with(|| std::array::from_fn(|_| None));
-    by_rotation[idx].get_or_insert_with(|| {
-        template
-            .jigsaws
-            .iter()
-            .map(|jigsaw| JigsawBlock::rotated(jigsaw, rotation))
-            .collect()
-    })
+    by_rotation[idx].get_or_insert_with(|| transform_template_jigsaws(template, rotation))
+}
+
+fn transform_template_jigsaws(template: &TemplateData, rotation: Rotation) -> Vec<JigsawBlock> {
+    template
+        .jigsaws
+        .iter()
+        .map(|jigsaw| JigsawBlock::rotated(jigsaw, rotation))
+        .collect()
 }
 
 fn shuffle_jigsaw_indices_into(
@@ -457,14 +459,8 @@ fn dedupe_shuffled_templates_in_place<'a>(out: &mut Vec<&'a PoolElement>, start:
 }
 
 /// Vanilla's `StructureTemplatePool.getRandomTemplate`.
-fn get_random_template<'a>(
-    pool: &'a TemplatePoolData,
-    cache: &mut PoolTemplateCache<'a>,
-    rng: &mut LegacyRandom,
-) -> &'a PoolElement {
-    let expanded = cache
-        .entry(pool.key.clone())
-        .or_insert_with(|| expand_pool_weights(pool));
+fn get_random_template<'a>(pool: &'a TemplatePoolData, rng: &mut LegacyRandom) -> &'a PoolElement {
+    let expanded = expand_pool_weights(pool);
     if expanded.is_empty() {
         static EMPTY: PoolElement = PoolElement::Empty;
         return &EMPTY;
@@ -537,22 +533,15 @@ fn start_assembly(
         .get(&config.start_pool)
         .unwrap_or(&config.start_pool);
     let start_pool = pools.get(start_pool_key)?;
-    let mut pool_template_cache = PoolTemplateCache::default();
-    let center_element = get_random_template(start_pool, &mut pool_template_cache, rng);
+    let center_element = get_random_template(start_pool, rng);
     if center_element.is_empty() {
         return None;
     }
 
-    let mut jigsaw_rotation_cache = JigsawRotationCache::default();
     let anchor_offset = if let Some(ref jigsaw_name) = config.start_jigsaw_name {
         let location = element_location(center_element)?;
         let template = templates.get(location)?;
-        let rotated = cached_runtime_rotated_jigsaws(
-            location,
-            template,
-            center_rotation,
-            &mut jigsaw_rotation_cache,
-        );
+        let rotated = transform_template_jigsaws(template, center_rotation);
         let mut shuffle_indices = Vec::new();
         shuffle_jigsaw_indices_into(template, rng, &mut shuffle_indices);
         shuffle_indices.iter().find_map(|&idx| {
