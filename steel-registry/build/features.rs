@@ -2,6 +2,9 @@
 
 use std::fs;
 
+use crate::generator_functions::{
+    generate_static_identifier as generate_identifier, registry_entry_ident,
+};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -16,33 +19,14 @@ mod feature_data;
 
 use feature_data::*;
 
-fn sorted_json_files(dir: &str) -> Vec<fs::DirEntry> {
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .unwrap_or_else(|err| panic!("{dir} missing: {err}"))
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    files.sort_by_key(|entry| entry.file_name());
-    files
-}
-
-fn resource_name(entry: &fs::DirEntry) -> String {
-    entry
-        .path()
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_else(|| panic!("invalid feature file name: {:?}", entry.path()))
-        .to_owned()
-}
-
-fn generate_identifier(identifier: &Identifier) -> TokenStream {
-    let namespace = identifier.namespace.as_ref();
-    let path = identifier.path.as_ref();
-    if namespace == Identifier::VANILLA_NAMESPACE {
-        quote! { Identifier::vanilla_static(#path) }
-    } else {
-        quote! { Identifier::new_static(#namespace, #path) }
-    }
+fn sorted_json_registry_entries(
+    overlay: &DatapackOverlay,
+    path_suffix: &str,
+) -> Vec<(String, String)> {
+    overlay
+        .list_json_registry_ids_with_suffix(path_suffix)
+        .into_iter()
+        .collect()
 }
 
 fn vanilla_registry_ident(identifier: &Identifier, kind: &str) -> Ident {
@@ -1956,19 +1940,13 @@ fn generate_vegetation_patch_kind(
     }
 }
 
-pub(crate) fn build_configured() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let kind = serde_json::from_str::<ConfiguredFeatureKind>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse configured feature {name}: {err}"));
-        entries.push((name, generate_configured_feature_kind(&kind)));
+    for (registry_id, content) in
+        sorted_json_registry_entries(overlay, "worldgen/configured_feature")
+    {
+        let kind = parse_configured_feature_json(&registry_id, &content);
+        entries.push((registry_id, generate_configured_feature_kind(&kind)));
     }
 
     let mut stream = TokenStream::new();
@@ -1984,12 +1962,16 @@ pub(crate) fn build_configured() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, kind) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, kind) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+            panic!("invalid configured feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<ConfiguredFeature> = LazyLock::new(|| {
                 ConfiguredFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     kind: #kind,
                     id: OnceLock::new(),
                 }
