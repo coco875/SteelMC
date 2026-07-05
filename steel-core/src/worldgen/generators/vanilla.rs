@@ -465,6 +465,8 @@ impl<N: DimensionNoises> ChunkGenerator for VanillaGenerator<N> {
                 // Start scanning from one above the highest non-air block
                 let mut start_height =
                     chunk.height_at(HeightmapType::WorldSurfaceWg, local_x, local_z);
+                let max_valid_y = min_y + (section_count * 16) as i32 - 1;
+                start_height = start_height.min(max_valid_y);
 
                 // Column-local Voronoi cache for fuzzed biome lookups.
                 let mut biome_col = biome_data.as_deref().map(|biome_data| {
