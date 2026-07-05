@@ -7,12 +7,20 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
+use steel_utils::Identifier;
 
 /// A number provider can be a constant number or an object with type.
+#[derive(Deserialize, Debug, Clone)]
+struct UniformRangeJson {
+    min: Box<NumberProviderJson>,
+    max: Box<NumberProviderJson>,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum NumberProviderJson {
     Constant(f32),
+    UniformRange(UniformRangeJson),
     Object {
         #[serde(rename = "type")]
         provider_type: String,
@@ -20,12 +28,20 @@ enum NumberProviderJson {
         value: Option<f32>,
         #[serde(default)]
         min: Option<f32>,
+        min: Option<Box<NumberProviderJson>>,
         #[serde(default)]
         max: Option<f32>,
+        max: Option<Box<NumberProviderJson>>,
         #[serde(default)]
         n: Option<f32>, // Can be float in JSON, convert to i32 later
         #[serde(default)]
         p: Option<f32>,
+        #[serde(default)]
+        target: Option<ScoreboardTargetJson>,
+        #[serde(default)]
+        score: Option<String>,
+        #[serde(default)]
+        scale: Option<f32>,
     },
 }
 
@@ -48,14 +64,31 @@ enum EnchantmentOptionsJson {
 #[serde(untagged)]
 enum LootTableValueJson {
     Reference(String),
-    Inline(Box<InlineLootTableJson>),
+    Inline(Box<LootTableJson>),
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
-struct InlineLootTableJson {
-    #[serde(default)]
-    pools: Vec<LootPoolJson>,
+#[serde(untagged)]
+enum ScoreboardTargetJson {
+    Name(String),
+    Object {
+        #[serde(rename = "type")]
+        target_type: String,
+        #[serde(default)]
+        name: Option<String>,
+    },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum NumberProviderRangeJson {
+    Exact(f32),
+    Range {
+        #[serde(default)]
+        min: Option<NumberProviderJson>,
+        #[serde(default)]
+        max: Option<NumberProviderJson>,
+    },
 }
 
 /// Enchanted chance can be a constant or linear formula.
@@ -120,6 +153,8 @@ struct LootTableJson {
     functions: Vec<LootFunctionJson>,
     #[serde(default)]
     random_sequence: Option<String>,
+    #[serde(default, rename = "__smithed__")]
+    _smithed: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -127,8 +162,8 @@ struct LootTableJson {
 struct LootPoolJson {
     #[serde(default)]
     rolls: NumberProviderJson,
-    #[serde(default)]
-    bonus_rolls: f32,
+    #[serde(default = "default_bonus_rolls")]
+    bonus_rolls: NumberProviderJson,
     #[serde(default)]
     entries: Vec<LootEntryJson>,
     #[serde(default)]
@@ -164,10 +199,17 @@ fn default_weight() -> i32 {
     1
 }
 
+fn default_bonus_rolls() -> NumberProviderJson {
+    NumberProviderJson::Constant(0.0)
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 struct LootConditionJson {
     condition: String,
+    // reference
+    #[serde(default)]
+    name: Option<String>,
     // block_state_property
     #[serde(default)]
     block: Option<String>,
@@ -189,7 +231,12 @@ struct LootConditionJson {
     terms: Option<Vec<LootConditionJson>>,
     // random_chance
     #[serde(default)]
-    chance: Option<f32>,
+    chance: Option<NumberProviderJson>,
+    // value_check / time_check
+    #[serde(default)]
+    value: Option<NumberProviderJson>,
+    #[serde(default)]
+    range: Option<NumberProviderRangeJson>,
     // random_chance_with_enchanted_bonus
     #[serde(default)]
     unenchanted_chance: Option<f32>,
@@ -323,10 +370,11 @@ struct ToolPredicateJson {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
 struct ToolPredicatesJson {
     #[serde(rename = "minecraft:enchantments", default)]
     enchantments: Option<Vec<EnchantmentPredicateJson>>,
+    #[serde(rename = "minecraft:custom_data", default)]
+    custom_data: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -369,9 +417,16 @@ struct LootFunctionJson {
     // enchant_randomly / enchant_with_levels / set_instrument
     #[serde(default)]
     options: Option<EnchantmentOptionsJson>,
+    #[serde(default = "default_true")]
+    only_compatible: bool,
+    #[serde(default)]
+    #[serde(rename = "include_additional_cost_component")]
+    _include_additional_cost_component: bool,
     // enchant_with_levels
     #[serde(default)]
     levels: Option<NumberProviderJson>,
+    #[serde(default, rename = "treasure")]
+    _treasure: Option<bool>,
     // copy_components
     #[serde(default)]
     source: Option<String>,
@@ -398,11 +453,48 @@ struct LootFunctionJson {
     zoom: Option<i32>,
     #[serde(default)]
     skip_existing_chunks: Option<bool>,
+    #[serde(default)]
+    search_radius: Option<i32>,
+    // set_fireworks
+    #[serde(default)]
+    #[serde(rename = "explosions")]
+    _explosions: Option<serde_json::Value>,
+    #[serde(default)]
+    flight_duration: Option<i32>,
+    // set_firework_explosion
+    #[serde(default)]
+    shape: Option<String>,
+    #[serde(default)]
+    colors: Vec<i32>,
+    #[serde(default)]
+    fade_colors: Vec<i32>,
+    #[serde(default)]
+    has_trail: bool,
+    #[serde(default)]
+    has_twinkle: bool,
+    // set_attributes
+    #[serde(default)]
+    modifiers: Vec<AttributeModifierJson>,
+    #[serde(default)]
+    replace: bool,
+    // set_banner_pattern
+    #[serde(default)]
+    patterns: Vec<BannerPatternJson>,
+    #[serde(default)]
+    append: bool,
     // set_name (keep as raw value for text component)
     #[serde(default)]
     name: Option<serde_json::Value>,
     #[serde(default)]
     target: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "entity")]
+    _entity: Option<String>,
+    // set_lore
+    #[serde(default)]
+    lore: Vec<serde_json::Value>,
+    #[serde(default)]
+    mode: Option<ListOperationJson>,
     // set_ominous_bottle_amplifier
     #[serde(default)]
     amplifier: Option<NumberProviderJson>,
@@ -418,6 +510,46 @@ struct LootFunctionJson {
     // conditions for conditional functions
     #[serde(default)]
     conditions: Option<Vec<LootConditionJson>>,
+    // filtered
+    #[serde(default)]
+    item_filter: Option<ToolPredicateJson>,
+    #[serde(default)]
+    modifier: Option<Box<LootFunctionJson>>,
+    #[serde(default)]
+    on_pass: Option<Box<LootFunctionJson>>,
+    #[serde(default)]
+    #[serde(rename = "on_fail")]
+    _on_fail: Option<Box<LootFunctionJson>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+struct AttributeModifierJson {
+    attribute: String,
+    operation: String,
+    amount: NumberProviderJson,
+    id: String,
+    slot: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+struct BannerPatternJson {
+    pattern: String,
+    color: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+enum ListOperationJson {
+    Mode(String),
+    Object {
+        mode: String,
+        #[serde(default)]
+        offset: Option<i32>,
+        #[serde(default)]
+        size: Option<i32>,
+    },
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -431,10 +563,84 @@ struct BonusParametersJson {
     probability: Option<f32>,
 }
 
+fn number_provider_constant(value: &NumberProviderJson) -> Option<f32> {
+    match value {
+        NumberProviderJson::Constant(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn generate_uniform_number_provider(
+    min: &NumberProviderJson,
+    max: &NumberProviderJson,
+) -> TokenStream {
+    if let (Some(min), Some(max)) = (number_provider_constant(min), number_provider_constant(max)) {
+        return quote! { NumberProvider::Uniform { min: #min, max: #max } };
+    }
+
+    let min = generate_number_provider(min);
+    let max = generate_number_provider(max);
+    quote! {
+        NumberProvider::UniformProvider {
+            min: &#min,
+            max: &#max,
+        }
+    }
+}
+
+fn generate_scoreboard_target(target: Option<&ScoreboardTargetJson>) -> TokenStream {
+    match target {
+        Some(ScoreboardTargetJson::Name(name)) => match name.as_str() {
+            "this" => quote! { ScoreboardTarget::This },
+            "killer" => quote! { ScoreboardTarget::Killer },
+            "direct_killer" => quote! { ScoreboardTarget::DirectKiller },
+            "killer_player" => quote! { ScoreboardTarget::KillerPlayer },
+            fixed => quote! { ScoreboardTarget::Fixed(#fixed) },
+        },
+        Some(ScoreboardTargetJson::Object { target_type, name }) => match target_type.as_str() {
+            "minecraft:this" | "this" => quote! { ScoreboardTarget::This },
+            "minecraft:killer" | "killer" => quote! { ScoreboardTarget::Killer },
+            "minecraft:direct_killer" | "direct_killer" => {
+                quote! { ScoreboardTarget::DirectKiller }
+            }
+            "minecraft:killer_player" | "killer_player" => {
+                quote! { ScoreboardTarget::KillerPlayer }
+            }
+            "minecraft:fixed" | "fixed" => {
+                let name = name
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("fixed scoreboard target missing name"));
+                quote! { ScoreboardTarget::Fixed(#name) }
+            }
+            other => panic!("Unknown scoreboard target type: {other}"),
+        },
+        None => quote! { ScoreboardTarget::This },
+    }
+}
+
+fn generate_number_provider_range(range: &NumberProviderRangeJson) -> TokenStream {
+    match range {
+        NumberProviderRangeJson::Exact(value) => quote! { NumberProviderRange::exact(#value) },
+        NumberProviderRangeJson::Range { min, max } => {
+            let min = generate_option(min, generate_number_provider);
+            let max = generate_option(max, generate_number_provider);
+            quote! {
+                NumberProviderRange {
+                    min: #min,
+                    max: #max,
+                }
+            }
+        }
+    }
+}
+
 fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
     match value {
         NumberProviderJson::Constant(v) => {
             quote! { NumberProvider::Constant(#v) }
+        }
+        NumberProviderJson::UniformRange(range) => {
+            generate_uniform_number_provider(&range.min, &range.max)
         }
         NumberProviderJson::Object {
             provider_type,
@@ -443,16 +649,35 @@ fn generate_number_provider(value: &NumberProviderJson) -> TokenStream {
             max,
             n,
             p,
+            target,
+            score,
+            scale,
         } => match provider_type.as_str() {
             "minecraft:uniform" => {
-                let min = min.unwrap_or(0.0);
-                let max = max.unwrap_or(1.0);
-                quote! { NumberProvider::Uniform { min: #min, max: #max } }
+                let default_min = NumberProviderJson::Constant(0.0);
+                let default_max = NumberProviderJson::Constant(1.0);
+                let min = min.as_deref().unwrap_or(&default_min);
+                let max = max.as_deref().unwrap_or(&default_max);
+                generate_uniform_number_provider(min, max)
             }
             "minecraft:binomial" => {
                 let n = n.unwrap_or(1.0) as i32;
                 let p = p.unwrap_or(0.5);
                 quote! { NumberProvider::Binomial { n: #n, p: #p } }
+            }
+            "minecraft:score" => {
+                let target = generate_scoreboard_target(target.as_ref());
+                let score = score
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("score number provider missing score"));
+                let scale = scale.unwrap_or(1.0);
+                quote! {
+                    NumberProvider::Score {
+                        target: #target,
+                        score: #score,
+                        scale: #scale,
+                    }
+                }
             }
             _ => {
                 let v = value.unwrap_or(1.0);
@@ -474,8 +699,6 @@ fn generate_loot_context_entity(entity: &str) -> TokenStream {
     }
 }
 
-/// Generate the EquipmentSlotGroup enum variant at build time.
-#[expect(dead_code)]
 fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     match slot {
         "any" => quote! { EquipmentSlotGroup::Any },
@@ -492,8 +715,43 @@ fn generate_equipment_slot_group(slot: &str) -> TokenStream {
     }
 }
 
-/// Generate the DyeColor enum variant at build time.
-#[expect(dead_code)]
+fn generate_attribute_operation(operation: &str) -> TokenStream {
+    match operation {
+        "add_value" => quote! { AttributeOperation::AddValue },
+        "add_multiplied_base" => quote! { AttributeOperation::AddMultipliedBase },
+        "add_multiplied_total" => quote! { AttributeOperation::AddMultipliedTotal },
+        other => panic!("Unknown attribute modifier operation: {other}"),
+    }
+}
+
+fn generate_attribute_modifier(modifier: &AttributeModifierJson) -> TokenStream {
+    let attribute = generate_static_identifier_from_str(&modifier.attribute, "attribute modifier");
+    let operation = generate_attribute_operation(&modifier.operation);
+    let amount = generate_number_provider(&modifier.amount);
+    let id = generate_static_identifier_from_str(&modifier.id, "attribute modifier");
+    let slot = generate_equipment_slot_group(&modifier.slot);
+    quote! {
+        AttributeModifier {
+            attribute: #attribute,
+            operation: #operation,
+            amount: #amount,
+            id: #id,
+            slot: #slot,
+        }
+    }
+}
+
+fn generate_banner_pattern(pattern: &BannerPatternJson) -> TokenStream {
+    let pattern_id = generate_static_identifier_from_str(&pattern.pattern, "banner pattern");
+    let color = generate_dye_color(&pattern.color);
+    quote! {
+        BannerPattern {
+            pattern: #pattern_id,
+            color: #color,
+        }
+    }
+}
+
 fn generate_dye_color(color: &str) -> TokenStream {
     match color {
         "white" => quote! { DyeColor::White },
@@ -516,9 +774,26 @@ fn generate_dye_color(color: &str) -> TokenStream {
     }
 }
 
+fn generate_firework_shape(shape: &str) -> TokenStream {
+    match shape {
+        "small_ball" => quote! { FireworkShape::SmallBall },
+        "large_ball" => quote! { FireworkShape::LargeBall },
+        "star" => quote! { FireworkShape::Star },
+        "creeper" => quote! { FireworkShape::Creeper },
+        "burst" => quote! { FireworkShape::Burst },
+        other => panic!("Unknown firework explosion shape: {other}"),
+    }
+}
+
 /// Generate the LootType enum variant at build time.
 fn generate_loot_type(loot_type: &str) -> TokenStream {
-    match loot_type {
+    let loot_type = if loot_type.contains(':') {
+        loot_type.to_string()
+    } else {
+        format!("minecraft:{loot_type}")
+    };
+
+    match loot_type.as_str() {
         "minecraft:block" => quote! { LootType::Block },
         "minecraft:entity" => quote! { LootType::Entity },
         "minecraft:chest" => quote! { LootType::Chest },
@@ -536,6 +811,56 @@ fn generate_loot_type(loot_type: &str) -> TokenStream {
     }
 }
 
+fn generate_tool_predicate_from_predicates(predicates: &ToolPredicatesJson) -> Option<TokenStream> {
+    if let Some(enchants) = &predicates.enchantments
+        && let Some(first) = enchants.first()
+        && let Some(enchant_name) = &first.enchantments
+    {
+        let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
+            enchant_name
+                .strip_prefix("minecraft:")
+                .unwrap_or(enchant_name),
+        );
+        let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
+        return Some(quote! {
+            ToolPredicate::HasEnchantment {
+                enchantment: Identifier::vanilla_static(#enchant_name),
+                min_level: #min_level,
+            }
+        });
+    }
+
+    if let Some(custom_data) = &predicates.custom_data {
+        let tag = custom_data.to_string();
+        return Some(quote! {
+            ToolPredicate::CustomData { tag: #tag }
+        });
+    }
+
+    None
+}
+
+fn generate_tool_predicate_from_item_predicate(pred: &ToolPredicateJson) -> TokenStream {
+    if let Some(item_str) = &pred.items {
+        if item_str.starts_with('#') {
+            let tag = item_str
+                .strip_prefix("#minecraft:")
+                .unwrap_or(item_str.strip_prefix('#').unwrap_or(item_str));
+            return quote! { ToolPredicate::Tag(Identifier::vanilla_static(#tag)) };
+        }
+        let item = generate_static_identifier_from_str(item_str, "loot");
+        return quote! { ToolPredicate::Item(#item) };
+    }
+
+    if let Some(predicates) = &pred.predicates
+        && let Some(generated) = generate_tool_predicate_from_predicates(predicates)
+    {
+        return generated;
+    }
+
+    quote! { ToolPredicate::Any }
+}
+
 fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> TokenStream {
     let Some(pred) = predicate else {
         return quote! { ToolPredicate::Any };
@@ -549,42 +874,7 @@ fn generate_tool_predicate(predicate: &Option<PredicateJson>) -> TokenStream {
         PredicateJson::Entity(_) => return quote! { ToolPredicate::Any },
     };
 
-    // Check for items field (can be a string or tag reference)
-    if let Some(item_str) = &pred.items {
-        if item_str.starts_with('#') {
-            // Tag reference like "#minecraft:pickaxes"
-            let tag = item_str
-                .strip_prefix("#minecraft:")
-                .unwrap_or(item_str.strip_prefix('#').unwrap_or(item_str));
-            return quote! { ToolPredicate::Tag(Identifier::vanilla_static(#tag)) };
-        } else {
-            let item = item_str.strip_prefix("minecraft:").unwrap_or(item_str);
-            return quote! { ToolPredicate::Item(Identifier::vanilla_static(#item)) };
-        }
-    }
-
-    // Check for enchantment predicates
-    if let Some(predicates) = &pred.predicates
-        && let Some(enchants) = &predicates.enchantments
-        && let Some(first) = enchants.first()
-        && let Some(enchant_name) = &first.enchantments
-    {
-        let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
-            enchant_name
-                .strip_prefix("minecraft:")
-                .unwrap_or(enchant_name),
-        );
-        let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
-
-        return quote! {
-            ToolPredicate::HasEnchantment {
-                enchantment: Identifier::vanilla_static(#enchant_name),
-                min_level: #min_level,
-            }
-        };
-    }
-
-    quote! { ToolPredicate::Any }
+    generate_tool_predicate_from_item_predicate(pred)
 }
 
 fn generate_enchantment_options(options: &Option<EnchantmentOptionsJson>) -> TokenStream {
@@ -657,29 +947,15 @@ fn generate_equipment_slot_predicate(slot: &Option<EquipmentSlotJson>) -> TokenS
                         .strip_prefix("#minecraft:")
                         .unwrap_or(items.strip_prefix('#').unwrap_or(items));
                     return quote! { Some(ToolPredicate::Tag(Identifier::vanilla_static(#tag))) };
-                } else {
-                    let item = items.strip_prefix("minecraft:").unwrap_or(items);
-                    return quote! { Some(ToolPredicate::Item(Identifier::vanilla_static(#item))) };
                 }
+                let item = generate_static_identifier_from_str(items, "loot");
+                return quote! { Some(ToolPredicate::Item(#item)) };
             }
 
             if let Some(predicates) = &s.predicates
-                && let Some(enchants) = &predicates.enchantments
-                && let Some(first) = enchants.first()
-                && let Some(enchant_name) = &first.enchantments
+                && let Some(generated) = generate_tool_predicate_from_predicates(predicates)
             {
-                let enchant_name = enchant_name.strip_prefix("#minecraft:").unwrap_or(
-                    enchant_name
-                        .strip_prefix("minecraft:")
-                        .unwrap_or(enchant_name),
-                );
-                let min_level = first.levels.as_ref().and_then(|l| l.min).unwrap_or(1);
-                return quote! {
-                    Some(ToolPredicate::HasEnchantment {
-                        enchantment: Identifier::vanilla_static(#enchant_name),
-                        min_level: #min_level,
-                    })
-                };
+                return quote! { Some(#generated) };
             }
 
             quote! { Some(ToolPredicate::Any) }
@@ -832,7 +1108,13 @@ fn generate_location_predicate(predicate: &LocationPredicateJson) -> TokenStream
 }
 
 fn generate_condition(condition: &LootConditionJson) -> TokenStream {
-    match condition.condition.as_str() {
+    let condition_name = if condition.condition.contains(':') {
+        condition.condition.clone()
+    } else {
+        format!("minecraft:{}", condition.condition)
+    };
+
+    match condition_name.as_str() {
         "minecraft:survives_explosion" => {
             quote! { LootCondition::SurvivesExplosion }
         }
@@ -924,7 +1206,13 @@ fn generate_condition(condition: &LootConditionJson) -> TokenStream {
             quote! { LootCondition::AllOf(&[#(#terms),*]) }
         }
         "minecraft:random_chance" => {
-            let chance = condition.chance.unwrap_or(0.5);
+            let chance = match &condition.chance {
+                Some(chance) => {
+                    // Score-backed chances need scoreboard context support. Until then, fail closed.
+                    number_provider_constant(chance).unwrap_or(0.0)
+                }
+                None => 0.5,
+            };
             quote! { LootCondition::RandomChance(#chance) }
         }
         "minecraft:random_chance_with_enchanted_bonus" => {
@@ -1064,6 +1352,32 @@ fn generate_condition(condition: &LootConditionJson) -> TokenStream {
                 }
             }
         }
+        "minecraft:reference" => {
+            let name = condition
+                .name
+                .as_deref()
+                .unwrap_or_else(|| panic!("reference loot condition missing name"));
+            let name = generate_static_identifier_from_str(name, "loot condition");
+            quote! { LootCondition::Reference(#name) }
+        }
+        "minecraft:value_check" => {
+            let value = condition
+                .value
+                .as_ref()
+                .map(generate_number_provider)
+                .unwrap_or_else(|| quote! { NumberProvider::Constant(0.0) });
+            let range = condition
+                .range
+                .as_ref()
+                .map(generate_number_provider_range)
+                .unwrap_or_else(|| quote! { NumberProviderRange::exact(0.0) });
+            quote! {
+                LootCondition::ValueCheck {
+                    value: #value,
+                    range: #range,
+                }
+            }
+        }
         other => {
             panic!("Unknown loot condition type: {}", other);
         }
@@ -1071,7 +1385,31 @@ fn generate_condition(condition: &LootConditionJson) -> TokenStream {
 }
 
 fn generate_function(function: &LootFunctionJson) -> TokenStream {
-    let func_body = match function.function.as_str() {
+    let func_body = generate_function_body(function);
+
+    // Wrap the function with conditions
+    let conditions: Vec<TokenStream> = function
+        .conditions
+        .as_ref()
+        .map(|conds| conds.iter().map(generate_condition).collect())
+        .unwrap_or_default();
+
+    quote! {
+        ConditionalLootFunction {
+            function: #func_body,
+            conditions: &[#(#conditions),*],
+        }
+    }
+}
+
+fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
+    let function_name = if function.function.contains(':') {
+        function.function.clone()
+    } else {
+        format!("minecraft:{}", function.function)
+    };
+
+    match function_name.as_str() {
         "minecraft:set_count" => {
             let count = function
                 .count
@@ -1190,7 +1528,13 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
         }
         "minecraft:enchant_randomly" => {
             let options = generate_enchantment_options(&function.options);
-            quote! { LootFunction::EnchantRandomly { options: #options } }
+            let only_compatible = function.only_compatible;
+            quote! {
+                LootFunction::EnchantRandomly {
+                    options: #options,
+                    only_compatible: #only_compatible,
+                }
+            }
         }
         "minecraft:enchant_with_levels" => {
             let levels = function
@@ -1260,31 +1604,99 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 .unwrap_or_else(|| "{}".to_string());
             quote! { LootFunction::SetComponents { components: #components_str } }
         }
+        "minecraft:set_attributes" => {
+            let modifiers: Vec<TokenStream> = function
+                .modifiers
+                .iter()
+                .map(generate_attribute_modifier)
+                .collect();
+            let replace = function.replace;
+            quote! {
+                LootFunction::SetAttributes {
+                    modifiers: &[#(#modifiers),*],
+                    replace: #replace,
+                }
+            }
+        }
+        "minecraft:set_banner_pattern" => {
+            let patterns: Vec<TokenStream> = function
+                .patterns
+                .iter()
+                .map(generate_banner_pattern)
+                .collect();
+            let append = function.append;
+            quote! {
+                LootFunction::SetBannerPattern {
+                    patterns: &[#(#patterns),*],
+                    append: #append,
+                }
+            }
+        }
         "minecraft:furnace_smelt" => {
             let use_input_count = function.use_input_count.unwrap_or(true);
             quote! { LootFunction::FurnaceSmelt { use_input_count: #use_input_count } }
         }
         "minecraft:exploration_map" => {
-            let destination = function
-                .destination
-                .as_deref()
-                .unwrap_or("minecraft:buried_treasure");
-            let destination = destination
-                .strip_prefix("minecraft:")
-                .unwrap_or(destination);
-
-            let decoration = function.decoration.as_deref().unwrap_or("minecraft:red_x");
-            let decoration = decoration.strip_prefix("minecraft:").unwrap_or(decoration);
+            let destination = generate_static_identifier_from_str(
+                function
+                    .destination
+                    .as_deref()
+                    .unwrap_or("minecraft:on_treasure_maps"),
+                "loot",
+            );
+            let decoration = generate_static_identifier_from_str(
+                function
+                    .decoration
+                    .as_deref()
+                    .unwrap_or("minecraft:mansion"),
+                "loot",
+            );
 
             let zoom = function.zoom.unwrap_or(2);
             let skip_existing_chunks = function.skip_existing_chunks.unwrap_or(true);
+            let search_radius = function.search_radius.unwrap_or(50);
 
             quote! {
                 LootFunction::ExplorationMap {
-                    destination: Identifier::vanilla_static(#destination),
-                    decoration: Identifier::vanilla_static(#decoration),
+                    destination: #destination,
+                    decoration: #decoration,
                     zoom: #zoom,
                     skip_existing_chunks: #skip_existing_chunks,
+                    search_radius: #search_radius,
+                }
+            }
+        }
+        "minecraft:set_fireworks" => {
+            let flight_duration = match function.flight_duration {
+                Some(duration) => quote! { Some(#duration) },
+                None => quote! { None },
+            };
+            quote! {
+                LootFunction::SetFireworks {
+                    explosions: None,
+                    flight_duration: #flight_duration,
+                }
+            }
+        }
+        "minecraft:set_firework_explosion" => {
+            let shape = function
+                .shape
+                .as_deref()
+                .map(generate_firework_shape)
+                .unwrap_or_else(|| quote! { FireworkShape::SmallBall });
+            let colors = &function.colors;
+            let fade_colors = &function.fade_colors;
+            let has_trail = function.has_trail;
+            let has_twinkle = function.has_twinkle;
+            quote! {
+                LootFunction::SetFireworkExplosion {
+                    explosion: FireworkExplosion {
+                        shape: #shape,
+                        colors: &[#(#colors),*],
+                        fade_colors: &[#(#fade_colors),*],
+                        has_trail: #has_trail,
+                        has_twinkle: #has_twinkle,
+                    },
                 }
             }
         }
@@ -1305,6 +1717,17 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 LootFunction::SetName {
                     name: #name_str,
                     target: #target,
+                }
+            }
+        }
+        "minecraft:set_lore" => {
+            let lore: Vec<String> = function.lore.iter().map(|line| line.to_string()).collect();
+            let mode = generate_list_operation(function.mode.as_ref());
+
+            quote! {
+                LootFunction::SetLore {
+                    lore: &[#(#lore),*],
+                    mode: #mode,
                 }
             }
         }
@@ -1381,39 +1804,92 @@ fn generate_function(function: &LootFunctionJson) -> TokenStream {
                 }
             }
         }
+        "minecraft:reference" => {
+            let Some(name) = function.name.as_ref().and_then(|value| value.as_str()) else {
+                panic!("reference loot function missing name");
+            };
+            let name = generate_static_identifier_from_str(name, "loot");
+            quote! { LootFunction::Reference(#name) }
+        }
+        "minecraft:filtered" => {
+            let item_filter = function
+                .item_filter
+                .as_ref()
+                .map(generate_tool_predicate_from_item_predicate)
+                .unwrap_or_else(|| quote! { ToolPredicate::Any });
+
+            let modifier_source = function.modifier.as_ref().or(function.on_pass.as_ref());
+            let modifier_func = modifier_source
+                .map(|modifier| generate_function_body(modifier))
+                .unwrap_or_else(|| {
+                    quote! { LootFunction::SetCount { count: NumberProvider::Constant(1.0), add: false } }
+                });
+
+            quote! {
+                LootFunction::Filtered {
+                    item_filter: #item_filter,
+                    modifier: &ConditionalLootFunction {
+                        function: #modifier_func,
+                        conditions: &[],
+                    },
+                }
+            }
+        }
         other => {
             panic!("Unknown loot function type: {}", other);
         }
+    }
+}
+
+fn generate_list_operation(mode: Option<&ListOperationJson>) -> TokenStream {
+    let Some(mode) = mode else {
+        return quote! { ListOperation::Append };
     };
 
-    // Wrap the function with conditions
-    let conditions: Vec<TokenStream> = function
-        .conditions
-        .as_ref()
-        .map(|conds| conds.iter().map(generate_condition).collect())
-        .unwrap_or_default();
+    let (mode, offset, size) = match mode {
+        ListOperationJson::Mode(mode) => (mode.as_str(), None, None),
+        ListOperationJson::Object { mode, offset, size } => (mode.as_str(), *offset, *size),
+    };
 
-    quote! {
-        ConditionalLootFunction {
-            function: #func_body,
-            conditions: &[#(#conditions),*],
+    match mode {
+        "append" => quote! { ListOperation::Append },
+        "insert" => {
+            let offset = offset.unwrap_or(0);
+            quote! { ListOperation::InsertBefore { offset: #offset } }
         }
+        "replace_all" => quote! { ListOperation::ReplaceAll },
+        "replace_section" => {
+            let offset = offset.unwrap_or(0);
+            let size = match size {
+                Some(size) => quote! { Some(#size) },
+                None => quote! { None },
+            };
+            quote! { ListOperation::ReplaceSection { offset: #offset, size: #size } }
+        }
+        other => panic!("Unknown list operation mode: {}", other),
     }
 }
 
 fn generate_entry(entry: &LootEntryJson) -> TokenStream {
     let conditions: Vec<TokenStream> = entry.conditions.iter().map(generate_condition).collect();
     let functions: Vec<TokenStream> = entry.functions.iter().map(generate_function).collect();
+    let entry_type = if entry.entry_type.contains(':') {
+        entry.entry_type.clone()
+    } else {
+        format!("minecraft:{}", entry.entry_type)
+    };
 
-    match entry.entry_type.as_str() {
+    match entry_type.as_str() {
         "minecraft:item" => {
-            let name = entry.name.as_deref().unwrap_or("minecraft:air");
-            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            let name = generate_static_identifier_from_str(
+                entry.name.as_deref().unwrap_or("minecraft:air"),
+                "loot",
+            );
             let weight = entry.weight;
             let quality = entry.quality;
             quote! {
                 LootEntry::Item {
-                    name: Identifier::vanilla_static(#name),
+                    name: #name,
                     weight: #weight,
                     quality: #quality,
                     conditions: &[#(#conditions),*],
@@ -1427,10 +1903,10 @@ fn generate_entry(entry: &LootEntryJson) -> TokenStream {
 
             // Check if it's a string reference or inline loot table
             if let Some(name) = entry.name.as_deref() {
-                let name = name.strip_prefix("minecraft:").unwrap_or(name);
+                let name = generate_static_identifier_from_str(name, "loot");
                 quote! {
                     LootEntry::LootTableRef {
-                        name: Identifier::vanilla_static(#name),
+                        name: #name,
                         weight: #weight,
                         quality: #quality,
                         conditions: &[#(#conditions),*],
@@ -1440,10 +1916,10 @@ fn generate_entry(entry: &LootEntryJson) -> TokenStream {
             } else if let Some(value) = &entry.value {
                 match value {
                     LootTableValueJson::Reference(s) => {
-                        let name = s.strip_prefix("minecraft:").unwrap_or(s);
+                        let name = generate_static_identifier_from_str(s, "loot");
                         quote! {
                             LootEntry::LootTableRef {
-                                name: Identifier::vanilla_static(#name),
+                                name: #name,
                                 weight: #weight,
                                 quality: #quality,
                                 conditions: &[#(#conditions),*],
@@ -1454,10 +1930,13 @@ fn generate_entry(entry: &LootEntryJson) -> TokenStream {
                     LootTableValueJson::Inline(inline) => {
                         let inline_pools: Vec<TokenStream> =
                             inline.pools.iter().map(generate_pool).collect();
+                        let inline_functions: Vec<TokenStream> =
+                            inline.functions.iter().map(generate_function).collect();
 
                         quote! {
                             LootEntry::InlineLootTable {
                                 pools: &[#(#inline_pools),*],
+                                table_functions: &[#(#inline_functions),*],
                                 weight: #weight,
                                 quality: #quality,
                                 conditions: &[#(#conditions),*],
@@ -1479,14 +1958,16 @@ fn generate_entry(entry: &LootEntryJson) -> TokenStream {
             }
         }
         "minecraft:tag" => {
-            let name = entry.name.as_deref().unwrap_or("minecraft:empty");
-            let name = name.strip_prefix("minecraft:").unwrap_or(name);
+            let name = generate_static_identifier_from_str(
+                entry.name.as_deref().unwrap_or("minecraft:empty"),
+                "loot",
+            );
             let expand = entry.expand;
             let weight = entry.weight;
             let quality = entry.quality;
             quote! {
                 LootEntry::Tag {
-                    name: Identifier::vanilla_static(#name),
+                    name: #name,
                     expand: #expand,
                     weight: #weight,
                     quality: #quality,
@@ -1549,7 +2030,7 @@ fn generate_entry(entry: &LootEntryJson) -> TokenStream {
 
 fn generate_pool(pool: &LootPoolJson) -> TokenStream {
     let rolls = generate_number_provider(&pool.rolls);
-    let bonus_rolls = pool.bonus_rolls;
+    let bonus_rolls = generate_number_provider(&pool.bonus_rolls);
     let entries: Vec<TokenStream> = pool.entries.iter().map(generate_entry).collect();
     let conditions: Vec<TokenStream> = pool.conditions.iter().map(generate_condition).collect();
     let functions: Vec<TokenStream> = pool.functions.iter().map(generate_function).collect();
@@ -1566,9 +2047,13 @@ fn generate_pool(pool: &LootPoolJson) -> TokenStream {
 }
 
 struct LootTableData {
-    /// Full key path like "blocks/acacia_button"
-    key: String,
-    /// Rust identifier like "BLOCKS_ACACIA_BUTTON"
+    /// Full registry id like `minecraft:blocks/acacia_button`.
+    registry_id: String,
+    /// Category bucket for generated convenience structs.
+    category_key: String,
+    /// Field name within the category struct.
+    field_name: String,
+    /// Rust identifier like `MINECRAFT_BLOCKS_ACACIA_BUTTON`
     const_ident: Ident,
     /// The loot type as a TokenStream
     loot_type: TokenStream,
@@ -1576,7 +2061,7 @@ struct LootTableData {
     pools: Vec<TokenStream>,
     /// Table-level functions
     functions: Vec<TokenStream>,
-    /// Random sequence identifier
+    /// Random sequence identifier path (without namespace)
     random_sequence: Option<String>,
 }
 
@@ -1584,6 +2069,10 @@ pub(crate) fn build() -> TokenStream {
     let loot_table_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table";
     println!("cargo:rerun-if-changed={loot_table_dir}");
     let mut tables: Vec<LootTableData> = Vec::new();
+fn parsed_loot_table_id(registry_id: &str) -> Identifier {
+    Identifier::parse_or_vanilla(registry_id)
+        .unwrap_or_else(|error| panic!("invalid loot table identifier {registry_id}: {error}"))
+}
 
     // Recursively read all loot table JSON files
     fn read_loot_tables(dir: &Path, base_dir: &Path, tables: &mut Vec<LootTableData>) {
@@ -1591,6 +2080,16 @@ pub(crate) fn build() -> TokenStream {
             Ok(e) => e,
             Err(_) => return,
         };
+fn generate_loot_table_key(registry_id: &str) -> TokenStream {
+    let id = parsed_loot_table_id(registry_id);
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        quote! { Identifier::vanilla_static(#path) }
+    } else {
+        quote! { Identifier::new_static(#namespace, #path) }
+    }
+}
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1644,25 +2143,95 @@ pub(crate) fn build() -> TokenStream {
                 });
             }
         }
+fn loot_table_category_key(registry_id: &str) -> String {
+    let id = parsed_loot_table_id(registry_id);
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
+    let top = path.split('/').next().unwrap_or("other");
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        top.to_string()
+    } else {
+        format!("{namespace}_{top}")
     }
+}
 
     read_loot_tables(
         Path::new(loot_table_dir),
         Path::new(loot_table_dir),
         &mut tables,
     );
+fn loot_table_field_name(registry_id: &str) -> String {
+    let id = parsed_loot_table_id(registry_id);
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
+    let suffix = path
+        .split('/')
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("_")
+        .to_snake_case();
+    let base = if suffix.is_empty() {
+        path.to_snake_case()
+    } else {
+        suffix
+    };
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        base
+    } else {
+        format!("{}_{}", namespace.to_snake_case(), base)
+    }
+}
+
+fn loot_table_const_ident(registry_id: &str) -> Ident {
+    let id = parsed_loot_table_id(registry_id);
+    let name = if id.namespace == Identifier::VANILLA_NAMESPACE {
+        id.path.into_owned()
+    } else {
+        registry_id.replace([':', '/'], "_")
+    };
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
+}
+
+fn parse_loot_table(registry_id: &str, content: &str) -> LootTableData {
+    let loot_table: LootTableJson = serde_json::from_str(content)
+        .unwrap_or_else(|err| panic!("Failed to parse loot table {registry_id}: {err}"));
+
+    let const_ident = loot_table_const_ident(registry_id);
+    let pools: Vec<TokenStream> = loot_table.pools.iter().map(generate_pool).collect();
+    let functions: Vec<TokenStream> = loot_table.functions.iter().map(generate_function).collect();
+    let random_sequence = loot_table.random_sequence.as_ref().map(|sequence| {
+        sequence
+            .strip_prefix("minecraft:")
+            .unwrap_or(sequence.as_str())
+            .to_string()
+    });
+
+    LootTableData {
+        registry_id: registry_id.to_string(),
+        category_key: loot_table_category_key(registry_id),
+        field_name: loot_table_field_name(registry_id),
+        const_ident,
+        loot_type: generate_loot_type(loot_table.loot_type.as_deref().unwrap_or("minecraft:empty")),
+        pools,
+        functions,
+        random_sequence,
+    }
+}
+
 
     let mut stream = TokenStream::new();
 
     // Imports
     stream.extend(quote! {
         use crate::loot_table::{
-            BlockPredicate, BonusFormula, ConditionalLootFunction, CopySource, DamageSourcePredicate,
-            DamageTagPredicate, DyeColor, EnchantedChance, EnchantmentOptions, EntityEquipment,
-            EntityFlags, EntityPredicate, EquipmentSlotGroup, LocationPredicate, LootCondition,
-            LootContextEntity, LootEntry, LootFunction, LootPool, LootTable, LootTableRef,
-            LootTableRegistry, LootType, NameTarget, NumberProvider, PropertyCheck, StewEffect,
-            ToolPredicate,
+            AttributeModifier, AttributeOperation, BannerPattern, BlockPredicate, BonusFormula,
+            ConditionalLootFunction, CopySource, DamageSourcePredicate, DamageTagPredicate,
+            DyeColor, EnchantedChance, EnchantmentOptions, EntityEquipment, EntityFlags,
+            EntityPredicate, EquipmentSlotGroup, FireworkExplosion, FireworkShape,
+            LocationPredicate, LootCondition, LootContextEntity, LootEntry, LootFunction,
+            LootPool, LootTable, LootTableRef, LootTableRegistry, LootType, ListOperation,
+            NameTarget, NumberProvider, NumberProviderRange, PropertyCheck, ScoreboardTarget,
+            StewEffect, ToolPredicate,
         };
         use steel_utils::Identifier;
     });
@@ -1670,7 +2239,7 @@ pub(crate) fn build() -> TokenStream {
     // Generate static constants for each loot table
     for table in &tables {
         let const_ident = &table.const_ident;
-        let key = &table.key;
+        let key = generate_loot_table_key(&table.registry_id);
         let loot_type = &table.loot_type;
         let pools = &table.pools;
         let functions = &table.functions;
@@ -1682,7 +2251,7 @@ pub(crate) fn build() -> TokenStream {
 
         stream.extend(quote! {
             pub static #const_ident: LootTable = LootTable {
-                key: Identifier::vanilla_static(#key),
+                key: #key,
                 loot_type: #loot_type,
                 pools: &[#(#pools),*],
                 functions: &[#(#functions),*],
@@ -1712,22 +2281,11 @@ pub(crate) fn build() -> TokenStream {
         std::collections::BTreeMap::new();
 
     for table in &tables {
-        let category = table.key.split('/').next().unwrap_or("other").to_string();
-        let field_name = table
-            .key
-            .split('/')
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("_")
-            .to_snake_case();
-        let field_name = if field_name.is_empty() {
-            table.key.to_snake_case()
-        } else {
-            field_name
-        };
-        let field_ident = Ident::new(&field_name, Span::call_site());
+        let category = &table.category_key;
+        let field_name = &table.field_name;
+        let field_ident = Ident::new(field_name, Span::call_site());
         categories
-            .entry(category)
+            .entry(category.clone())
             .or_default()
             .push((table, field_ident));
     }
