@@ -48,12 +48,14 @@ fn generate_fluid_ref(identifier: &Identifier) -> TokenStream {
 }
 
 fn generate_configured_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let ident = vanilla_registry_ident(identifier, "configured feature");
+    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
+    let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_configured_features::#ident }
 }
 
 fn generate_placed_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let ident = vanilla_registry_ident(identifier, "placed feature");
+    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
+    let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_placed_features::#ident }
 }
 
@@ -82,11 +84,6 @@ fn generate_offset(offset: &[i32; 3]) -> TokenStream {
     quote! { IVec3::new(#x, #y, #z) }
 }
 
-fn generate_block_ref_list(list: &IdentifierList) -> TokenStream {
-    let values = generate_vec(&list.0, generate_block_ref);
-    quote! { BlockRefList(#values) }
-}
-
 fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
     match set {
         BlockHolderSet::Tag(tag) => {
@@ -100,9 +97,17 @@ fn generate_block_holder_set(set: &BlockHolderSet) -> TokenStream {
     }
 }
 
-fn generate_fluid_ref_list(list: &IdentifierList) -> TokenStream {
-    let values = generate_vec(&list.0, generate_fluid_ref);
-    quote! { FluidRefList(#values) }
+fn generate_fluid_holder_set(set: &FluidHolderSet) -> TokenStream {
+    match set {
+        FluidHolderSet::Tag(tag) => {
+            let tag = generate_identifier(tag);
+            quote! { FluidHolderSet::Tag(#tag) }
+        }
+        FluidHolderSet::Entries(entries) => {
+            let entries = generate_vec(entries, generate_fluid_ref);
+            quote! { FluidHolderSet::Entries(#entries) }
+        }
+    }
 }
 
 fn generate_block_state_data(data: &BlockStateData) -> TokenStream {
@@ -423,7 +428,8 @@ fn generate_dual_noise_provider(provider: &DualNoiseProvider) -> TokenStream {
     let slow_noise = generate_feature_noise_parameters(&provider.slow_noise);
     let slow_scale = provider.slow_scale;
     let states = generate_vec(&provider.states, generate_block_state_data);
-    let [variety_min, variety_max] = provider.variety;
+    let variety_min = provider.variety.min_inclusive;
+    let variety_max = provider.variety.max_inclusive;
     quote! {
         DualNoiseProvider {
             noise: #noise,
@@ -532,12 +538,12 @@ fn generate_block_predicate(predicate: &BlockPredicate) -> TokenStream {
             quote! { BlockPredicate::MatchingBlockTag { tag: #tag, offset: #offset } }
         }
         BlockPredicate::MatchingBlocks { blocks, offset } => {
-            let blocks = generate_block_ref_list(blocks);
+            let blocks = generate_block_holder_set(blocks);
             let offset = generate_offset(offset);
             quote! { BlockPredicate::MatchingBlocks { blocks: #blocks, offset: #offset } }
         }
         BlockPredicate::MatchingFluids { fluids, offset } => {
-            let fluids = generate_fluid_ref_list(fluids);
+            let fluids = generate_fluid_holder_set(fluids);
             let offset = generate_offset(offset);
             quote! { BlockPredicate::MatchingFluids { fluids: #fluids, offset: #offset } }
         }
@@ -814,6 +820,14 @@ fn generate_rule_test(rule: &RuleTest) -> TokenStream {
             let block = generate_block_ref(block);
             quote! { RuleTest::BlockMatch { block: #block } }
         }
+        RuleTest::BlockStateMatch { block_state } => {
+            let block_state = generate_block_state_data(block_state);
+            quote! { RuleTest::BlockStateMatch { block_state: #block_state } }
+        }
+        RuleTest::RandomBlockMatch { block, probability } => {
+            let block = generate_block_ref(block);
+            quote! { RuleTest::RandomBlockMatch { block: #block, probability: #probability } }
+        }
         RuleTest::TagMatch { tag } => {
             let tag = generate_identifier(tag);
             quote! { RuleTest::TagMatch { tag: #tag } }
@@ -1023,7 +1037,7 @@ fn generate_foliage_placer(placer: &FoliagePlacer) -> TokenStream {
         FoliagePlacer::RandomSpread(placer) => {
             let radius = generate_int_provider(&placer.radius);
             let offset = generate_int_provider(&placer.offset);
-            let foliage_height = placer.foliage_height;
+            let foliage_height = generate_int_provider(&placer.foliage_height);
             let leaf_placement_attempts = placer.leaf_placement_attempts;
             quote! {
                 FoliagePlacer::RandomSpread(RandomSpreadFoliagePlacer {
@@ -1108,8 +1122,8 @@ fn generate_above_root_placement(placement: &AboveRootPlacement) -> TokenStream 
 }
 
 fn generate_mangrove_root_placement(placement: &MangroveRootPlacement) -> TokenStream {
-    let can_grow_through = generate_identifier(&placement.can_grow_through);
-    let muddy_roots_in = generate_vec(&placement.muddy_roots_in, generate_identifier);
+    let can_grow_through = generate_block_holder_set(&placement.can_grow_through);
+    let muddy_roots_in = generate_block_holder_set(&placement.muddy_roots_in);
     let muddy_roots_provider = generate_block_state_provider(&placement.muddy_roots_provider);
     let max_root_width = placement.max_root_width;
     let max_root_length = placement.max_root_length;
@@ -1131,7 +1145,8 @@ fn generate_root_placer(placer: &RootPlacer) -> TokenStream {
         RootPlacer::Mangrove(placer) => {
             let trunk_offset_y = generate_int_provider(&placer.trunk_offset_y);
             let root_provider = generate_block_state_provider(&placer.root_provider);
-            let above_root_placement = generate_above_root_placement(&placer.above_root_placement);
+            let above_root_placement =
+                generate_option(&placer.above_root_placement, generate_above_root_placement);
             let mangrove_root_placement =
                 generate_mangrove_root_placement(&placer.mangrove_root_placement);
             quote! {
@@ -1459,8 +1474,10 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
         ConfiguredFeatureKind::Fossil(config) => {
             let fossil_structures = generate_vec(&config.fossil_structures, generate_identifier);
             let overlay_structures = generate_vec(&config.overlay_structures, generate_identifier);
-            let fossil_processors = generate_identifier(&config.fossil_processors);
-            let overlay_processors = generate_identifier(&config.overlay_processors);
+            let fossil_processors =
+                crate::template_pools::gen_processors(Some(&config.fossil_processors), "fossil");
+            let overlay_processors =
+                crate::template_pools::gen_processors(Some(&config.overlay_processors), "fossil");
             let max_empty_corners_allowed = config.max_empty_corners_allowed;
             quote! {
                 ConfiguredFeatureKind::Fossil(FossilConfiguration {
@@ -1588,7 +1605,7 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             let can_place_on_ceiling = config.can_place_on_ceiling;
             let can_place_on_wall = config.can_place_on_wall;
             let chance_of_spreading = config.chance_of_spreading;
-            let can_be_placed_on = generate_vec(&config.can_be_placed_on, generate_block_ref);
+            let can_be_placed_on = generate_block_holder_set(&config.can_be_placed_on);
             quote! {
                 ConfiguredFeatureKind::MultifaceGrowth(MultifaceGrowthConfiguration {
                     block: #block,
@@ -1625,6 +1642,7 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
                 })
             }
         }
+        ConfiguredFeatureKind::NoOp => quote! { ConfiguredFeatureKind::NoOp },
         ConfiguredFeatureKind::Ore(config) => {
             let targets = generate_vec(&config.targets, generate_ore_target);
             let size = config.size;
@@ -1676,6 +1694,14 @@ fn generate_configured_feature_kind(kind: &ConfiguredFeatureKind) -> TokenStream
             quote! {
                 ConfiguredFeatureKind::WeightedRandomSelector(WeightedRandomFeatureConfiguration {
                     features: #features,
+                })
+            }
+        }
+        ConfiguredFeatureKind::ReplaceSingleBlock(config) => {
+            let targets = generate_vec(&config.targets, generate_ore_target);
+            quote! {
+                ConfiguredFeatureKind::ReplaceSingleBlock(ReplaceBlockConfiguration {
+                    targets: #targets,
                 })
             }
         }
@@ -1952,6 +1978,12 @@ pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     let mut stream = TokenStream::new();
     stream.extend(quote! {
         use crate::{feature::*, vanilla_blocks, vanilla_fluids};
+        use crate::structure_processor::{
+            PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
+            StructureProcessorHeightmap, StructureProcessorKind, StructureRuleTestData,
+        };
+        use crate::template_pool::ProcessorList;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         use steel_utils::value_providers::{
             FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
             WeightedIntProvider,
@@ -2019,12 +2051,16 @@ pub(crate) fn build_placed() -> TokenStream {
     });
 
     let mut register = TokenStream::new();
-    for (name, data) in &entries {
-        let ident = Ident::new(&name.to_shouty_snake_case(), Span::call_site());
+    for (registry_id, data) in &entries {
+        let ident = registry_entry_ident(registry_id);
+        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+            panic!("invalid placed feature registry id {registry_id}: {err}")
+        });
+        let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<PlacedFeature> = LazyLock::new(|| {
                 PlacedFeature {
-                    key: Identifier::vanilla_static(#name),
+                    key: #key,
                     data: #data,
                     id: OnceLock::new(),
                 }
