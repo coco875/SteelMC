@@ -112,6 +112,7 @@ fn entity_type_ref_token(s: &str) -> Option<TokenStream> {
         return None;
     }
 
+    let path = id.path.as_ref();
     let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
     Some(quote! { &vanilla_entities::#ident })
 }
