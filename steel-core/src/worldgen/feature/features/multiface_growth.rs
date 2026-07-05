@@ -1,6 +1,7 @@
 use super::super::prelude::*;
 use super::super::runner::FeatureDecorationRunner;
 use smallvec::SmallVec;
+use steel_registry::feature::BlockHolderSet;
 use steel_registry::vanilla_block_tags::BlockTag;
 
 #[derive(Clone, Copy)]
@@ -19,7 +20,7 @@ struct ResolvedMultifaceGrowth<'a> {
     raw: &'a MultifaceGrowthConfiguration,
     place_block: BlockRef,
     default_state: BlockStateId,
-    can_be_placed_on: &'a [BlockRef],
+    can_be_placed_on: &'a BlockHolderSet,
     is_sculk_vein: bool,
 }
 
@@ -402,10 +403,7 @@ impl FeatureDecorationRunner {
         config: &ResolvedMultifaceGrowth<'_>,
         state: BlockStateId,
     ) -> bool {
-        config
-            .can_be_placed_on
-            .iter()
-            .any(|block| state.get_block() == *block)
+        config.can_be_placed_on.contains(state.get_block())
     }
 
     fn multiface_is_place_block(config: &ResolvedMultifaceGrowth<'_>, state: BlockStateId) -> bool {

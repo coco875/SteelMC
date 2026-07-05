@@ -63,12 +63,12 @@ impl FeatureDecorationRunner {
             }
             BlockPredicate::MatchingBlocks { blocks, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));
-                blocks.0.contains(&state.get_block())
+                blocks.contains(state.get_block())
             }
             BlockPredicate::MatchingFluids { fluids, offset } => {
                 let state = region.block_state(Self::offset(origin, offset));
                 let fluid_state = get_fluid_state_from_block(state);
-                fluids.0.contains(&fluid_state.fluid_id)
+                fluids.contains(fluid_state.fluid_id)
             }
             BlockPredicate::Solid { offset } => {
                 region.block_state(Self::offset(origin, offset)).is_solid()
