@@ -19,7 +19,7 @@ fn read_all_fabric_tags(tag_file: &str) -> FxHashMap<String, Vec<String>> {
         && let Ok(content) = fs::read_to_string(tag_file)
     {
         let tag: TagFile = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", tag_file, e));
+            .unwrap_or_else(|e| panic!("Failed to parse {tag_file}: {e}"));
         return tag.item;
     }
     FxHashMap::default()
