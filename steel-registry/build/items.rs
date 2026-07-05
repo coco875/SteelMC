@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs, str::FromStr};
 
-use crate::generator_functions::generate_sound_event_ref;
+use crate::generator_functions::{generate_sound_event_ref, parse_loose_identifier};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -80,14 +80,10 @@ fn parse_block_or_tag(s: &str) -> TokenStream {
         (false, s)
     };
 
-    // Split namespace:path
-    let parts: Vec<&str> = rest.splitn(2, ':').collect();
-    let (namespace, path) = if parts.len() == 2 {
-        (parts[0], parts[1])
-    } else {
-        // Default to minecraft namespace
-        ("minecraft", rest)
-    };
+    let id = parse_loose_identifier(rest)
+        .unwrap_or_else(|error| panic!("invalid item tool rule block/tag reference {s}: {error}"));
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
 
     if is_tag {
         // Prefix namespace with # for tags
@@ -98,18 +94,21 @@ fn parse_block_or_tag(s: &str) -> TokenStream {
     }
 }
 
-fn split_identifier(s: &str) -> (&str, &str) {
-    s.split_once(':').unwrap_or(("minecraft", s))
+fn parse_identifier_or_vanilla(s: &str) -> Identifier {
+    parse_loose_identifier(s)
+        .unwrap_or_else(|error| panic!("invalid item build identifier {s}: {error}"))
 }
 
 fn identifier_token(s: &str) -> TokenStream {
-    let (namespace, path) = split_identifier(s);
+    let id = parse_identifier_or_vanilla(s);
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
     quote! { Identifier::new_static(#namespace, #path) }
 }
 
 fn entity_type_ref_token(s: &str) -> Option<TokenStream> {
-    let (namespace, path) = split_identifier(s);
-    if namespace != "minecraft" {
+    let id = parse_identifier_or_vanilla(s);
+    if id.namespace != Identifier::VANILLA_NAMESPACE {
         return None;
     }
 
@@ -190,11 +189,12 @@ fn optional_identifier_token(value: &Value, field: &str) -> TokenStream {
 }
 
 fn attribute_ref_token(s: &str) -> Option<TokenStream> {
-    let (namespace, path) = split_identifier(s);
-    if namespace != "minecraft" {
+    let id = parse_identifier_or_vanilla(s);
+    if id.namespace != Identifier::VANILLA_NAMESPACE {
         return None;
     }
 
+    let path = id.path.as_ref();
     let ident = Ident::new(&path.to_shouty_snake_case(), Span::call_site());
     Some(quote! { vanilla_attributes::#ident })
 }
