@@ -1,4 +1,4 @@
-use crate::generator_functions::{generate_identifier, read_json_asset};
+use crate::generator_functions::{generate_identifier, read_ordered_minecraft_datapack_entries};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -12,7 +12,7 @@ struct BannerPatternJson {
     translation_key: String,
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     // BannerPatterns.bootstrap defines registry insertion order in Vanilla.
     const VANILLA_ORDER: &[&str] = &[
         "base",
@@ -60,12 +60,8 @@ pub(crate) fn build() -> TokenStream {
         "guster",
     ];
 
-    let patterns = VANILLA_ORDER.iter().map(|name| {
-        let path = format!(
-            "../steel-utils/build_assets/builtin_datapacks/minecraft/banner_pattern/{name}.json"
-        );
-        (*name, read_json_asset::<BannerPatternJson>(&path))
-    });
+    let patterns: Vec<(String, BannerPatternJson)> =
+        read_ordered_minecraft_datapack_entries(overlay, "banner_pattern", VANILLA_ORDER);
 
     let mut definitions = TokenStream::new();
     let mut registrations = TokenStream::new();
@@ -85,7 +81,6 @@ pub(crate) fn build() -> TokenStream {
             registry.register(&#ident);
         });
     }
-
     quote! {
         use crate::banner_pattern::{BannerPattern, BannerPatternRegistry, BannerPatternValue};
         use steel_utils::Identifier;

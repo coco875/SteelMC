@@ -44,6 +44,7 @@ rand.workspace = true
 text_components.workspace = true
 toml.workspace = true
 unicode_names2.workspace = true
+zip = { version = "1.1.4", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 criterion.workspace = true

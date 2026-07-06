@@ -13,8 +13,10 @@ pub(crate) use item::build as item;
 
 macro_rules! simple_tag_builder {
     ($function:ident, $tag_subdir:literal, $registry_module:literal, $registry_type:literal) => {
-        pub(crate) fn $function() -> TokenStream {
-            common::build_simple_tags($tag_subdir, $registry_module, $registry_type)
+        pub(crate) fn $function(
+            overlay: &steel_utils::datapack_overlay::DatapackOverlay,
+        ) -> TokenStream {
+            common::build_simple_tags(overlay, $tag_subdir, $registry_module, $registry_type)
         }
     };
 }

@@ -64,6 +64,41 @@ impl Entity for RawEntity {
         self.entity_type
     }
 
+    fn spawn_data(&self) -> i32 {
+        let is_painting = self.entity_type.key.namespace == "minecraft"
+            && self.entity_type.key.path == "painting";
+        let is_glow_item_frame = self.entity_type.key.namespace == "minecraft"
+            && self.entity_type.key.path == "glow_item_frame";
+
+        if is_painting {
+            let data = self.data.lock();
+            let facing_2d = data
+                .byte("facing")
+                .map(i32::from)
+                .or_else(|| data.int("facing"));
+
+            if let Some(facing) = facing_2d {
+                match facing {
+                    1 => 4, // West
+                    2 => 2, // North
+                    3 => 5, // East
+                    _ => 3, // South (and default fallback)
+                }
+            } else {
+                3 // Default to South
+            }
+        } else if is_glow_item_frame {
+            let data = self.data.lock();
+            let facing_3d = data
+                .byte("Facing")
+                .map(i32::from)
+                .or_else(|| data.int("Facing"));
+            facing_3d.unwrap_or(3) // Default to South
+        } else {
+            0
+        }
+    }
+
     fn tick(&self) {
         // TODO: Replace raw entity ticking with full vanilla behavior for this entity type.
     }
@@ -121,5 +156,36 @@ mod tests {
             .insert("Owner", NbtTag::IntArray(owner.to_int_array().to_vec()));
 
         assert_eq!(entity.projectile_owner_uuid(), Some(owner));
+    }
+
+    #[test]
+    fn test_painting_spawn_data() {
+        let painting = RawEntity::new(1, DVec3::ZERO, Weak::new(), &vanilla_entities::PAINTING);
+
+        assert_eq!(painting.spawn_data(), 3);
+
+        {
+            let mut data = painting.data.lock();
+            data.insert("facing", NbtTag::Byte(1));
+        }
+        assert_eq!(painting.spawn_data(), 4);
+    }
+
+    #[test]
+    fn test_glow_item_frame_spawn_data() {
+        let glow_item_frame = RawEntity::new(
+            1,
+            DVec3::ZERO,
+            Weak::new(),
+            &vanilla_entities::GLOW_ITEM_FRAME,
+        );
+
+        assert_eq!(glow_item_frame.spawn_data(), 3);
+
+        {
+            let mut data = glow_item_frame.data.lock();
+            data.insert("Facing", NbtTag::Byte(2));
+        }
+        assert_eq!(glow_item_frame.spawn_data(), 2);
     }
 }

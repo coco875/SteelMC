@@ -19,9 +19,9 @@ pub struct PigSoundVariantJson {
     baby_sounds: PigAge,
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     let pig_sound_variants: Vec<(String, PigSoundVariantJson)> =
-        read_variants_from_dir("pig_sound_variant");
+        read_variants_from_dir(overlay, "pig_sound_variant");
 
     let mut stream = TokenStream::new();
 
