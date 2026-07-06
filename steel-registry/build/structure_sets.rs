@@ -1,12 +1,10 @@
-use std::fs;
-
 use rustc_hash::FxHashMap as HashMap;
 
 use crate::generator_functions::generate_owned_identifier_from_str;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
-use steel_utils::Identifier;
+use steel_utils::{Identifier, datapack_overlay::DatapackOverlay};
 
 #[derive(Deserialize, Debug)]
 struct StructureSetJson {
@@ -200,17 +198,15 @@ fn tag_value_strings(values: Vec<TagValueJson>) -> Vec<String> {
         })
         .collect()
 }
-
-/// Loads all biome tags from the worldgen/biome tags directory,
-/// then recursively resolves tag references to flat biome lists.
-fn load_biome_tags() -> HashMap<String, Vec<String>> {
-    let tag_base = "../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome";
-
-    // First pass: load raw tag definitions (may contain #tag references)
+/// Loads all biome tags from the overlay, then recursively resolves tag references.
+fn load_biome_tags(overlay: &DatapackOverlay) -> HashMap<String, Vec<String>> {
     let mut raw_tags: HashMap<String, Vec<String>> = HashMap::default();
-    load_tags_from_dir(tag_base, "", &mut raw_tags);
+    for (tag_id, content) in overlay.list_json_registry_ids_with_suffix("tags/worldgen/biome") {
+        let tag: TagJson = serde_json::from_str(&content)
+            .unwrap_or_else(|error| panic!("Failed to parse biome tag {tag_id}: {error}"));
+        raw_tags.insert(tag_id, tag_value_strings(tag.values));
+    }
 
-    // Second pass: resolve all tag references recursively
     let keys: Vec<String> = raw_tags.keys().cloned().collect();
     let mut resolved: HashMap<String, Vec<String>> = HashMap::default();
     for key in &keys {
@@ -219,35 +215,6 @@ fn load_biome_tags() -> HashMap<String, Vec<String>> {
     }
 
     resolved
-}
-
-fn load_tags_from_dir(dir: &str, prefix: &str, tags: &mut HashMap<String, Vec<String>>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("Failed to read biome tag directory {dir}: {e}"));
-    for entry in entries {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            let dir_name = path.file_name().unwrap().to_str().unwrap();
-            let new_prefix = if prefix.is_empty() {
-                dir_name.to_string()
-            } else {
-                format!("{prefix}/{dir_name}")
-            };
-            load_tags_from_dir(path.to_str().unwrap(), &new_prefix, tags);
-        } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let tag_name = path.file_stem().unwrap().to_str().unwrap();
-            let full_name = if prefix.is_empty() {
-                format!("minecraft:{tag_name}")
-            } else {
-                format!("minecraft:{prefix}/{tag_name}")
-            };
-            let content = fs::read_to_string(&path).unwrap();
-            let tag: TagJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse biome tag {full_name}: {e}"));
-            tags.insert(full_name, tag_value_strings(tag.values));
-        }
-    }
 }
 
 fn resolve_tag(
@@ -283,7 +250,6 @@ fn resolve_tag(
             let resolved = resolve_tag(&referenced_tag, raw_tags, cache, stack);
             result.extend(resolved);
         } else {
-            // Direct biome identifier
             result.push(value.clone());
         }
     }
@@ -557,24 +523,15 @@ fn parse_max_distance(value: &serde_json::Value, context: &str) -> i32 {
 
 /// Loads structure definitions and resolves biome tags for each structure.
 fn load_structure_data(
+    overlay: &DatapackOverlay,
     biome_tags: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, StructureData> {
-    let structure_dir =
-        "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure";
     let mut result = HashMap::default();
 
-    for entry in fs::read_dir(structure_dir)
-        .unwrap_or_else(|e| panic!("Failed to read structure directory {structure_dir}: {e}"))
-    {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("json") {
-            continue;
-        }
-        let name = path.file_stem().unwrap().to_str().unwrap();
-        let full_name = format!("minecraft:{name}");
-        let content = fs::read_to_string(&path).unwrap();
-        let mut structure: StructureJson = serde_json::from_str(&content)
+    for (full_name, content) in overlay.list_json_registry_ids_with_suffix("worldgen/structure") {
+        let value: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse structure JSON {full_name}: {e}"));
+        let mut structure: StructureJson = serde_json::from_value(value)
             .unwrap_or_else(|e| panic!("Failed to parse structure {full_name}: {e}"));
 
         let allowed_biomes = resolve_structure_biomes(structure.biomes, biome_tags, &full_name);
@@ -1104,16 +1061,11 @@ fn generate_structure_config(config: &StructureConfigData, context: &str) -> Tok
     }
 }
 
-pub(crate) fn build_structures() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure/"
-    );
-    println!(
-        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
-    );
-
-    let biome_tags = load_biome_tags();
-    let mut structures: Vec<_> = load_structure_data(&biome_tags).into_iter().collect();
+pub(crate) fn build_structures(overlay: &DatapackOverlay) -> TokenStream {
+    let biome_tags = load_biome_tags(overlay);
+    let mut structures: Vec<_> = load_structure_data(overlay, &biome_tags)
+        .into_iter()
+        .collect();
     structures.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut statics = Vec::new();
@@ -1173,34 +1125,19 @@ pub(crate) fn build_structures() -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    println!(
-        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure_set/"
-    );
-    println!(
-        "cargo:rerun-if-changed=../steel-utils/build_assets/builtin_datapacks/minecraft/tags/worldgen/biome/"
-    );
-
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     // Load and resolve biome tags for concentric-ring preferred biome tags.
-    let biome_tags = load_biome_tags();
+    let biome_tags = load_biome_tags(overlay);
 
-    let set_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/structure_set";
-    let mut sets = Vec::new();
-
-    for entry in fs::read_dir(set_dir)
-        .unwrap_or_else(|e| panic!("Failed to read structure set directory {set_dir}: {e}"))
-    {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let set_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
+    let mut sets: Vec<(String, StructureSetJson)> = overlay
+        .list_json_registry_ids_with_suffix("worldgen/structure_set")
+        .into_iter()
+        .map(|(set_id, content)| {
             let set: StructureSetJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse structure set {set_name}: {e}"));
-            sets.push((set_name, set));
-        }
-    }
+                .unwrap_or_else(|e| panic!("Failed to parse structure set {set_id}: {e}"));
+            (set_id, set)
+        })
+        .collect();
 
     // Sort for deterministic output
     sets.sort_by(|a, b| a.0.cmp(&b.0));

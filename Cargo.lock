@@ -2902,6 +2902,7 @@ dependencies = [
  "text_components",
  "tracing",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -2931,6 +2932,7 @@ dependencies = [
  "steel-macros",
  "text_components",
  "tokio",
+ "toml",
  "tracing",
  "uuid",
  "wincode",
@@ -2943,6 +2945,7 @@ version = "0.12.2+mc26.2"
 dependencies = [
  "criterion",
  "glam",
+ "heck",
  "proc-macro2",
  "quote",
  "rustc-hash 2.1.2",

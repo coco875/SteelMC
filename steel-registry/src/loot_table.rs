@@ -805,7 +805,10 @@ impl ToolPredicate {
                 // Check if the tool's item is in the specified tag
                 REGISTRY.items.is_in_tag(tool.item, tag)
             }
-            ToolPredicate::CustomData { tag: _tag } => false,
+            ToolPredicate::CustomData { tag: _tag } => {
+                // TODO: match custom_data via NbtPredicate when component data is readable
+                false
+            }
             ToolPredicate::Any => true,
         }
     }

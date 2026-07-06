@@ -43,10 +43,7 @@ pub(super) fn router_compute_fn_ident(name: &str) -> Ident {
 /// `"minecraft:overworld/continents"` → `"overworld__continents"`
 /// `"mymod:custom/noise"` → `"custom__noise"`
 pub(super) fn sanitize_name(id: &str) -> String {
-    // Take just the path component, stripping any namespace (e.g. "minecraft:", "mymod:")
-    let path = match id.split_once(':') {
-        Some((_, path)) => path,
-        None => id,
-    };
-    path.replace('/', "__").replace('-', "_")
+    let id = steel_utils::Identifier::parse_or_vanilla(id)
+        .unwrap_or_else(|error| panic!("invalid density function identifier {id}: {error}"));
+    id.path.replace('/', "__").replace('-', "_")
 }

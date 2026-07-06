@@ -135,6 +135,7 @@ impl FeatureDecorationRunner {
     ) -> &'a [StructureProcessorKind] {
         match processors {
             ProcessorList::Empty => &[],
+            ProcessorList::Direct(processors) => processors,
             ProcessorList::Registry(key) => {
                 let Some(processor_list) = registry.structure_processors.by_key(key) else {
                     panic!("{context} references unknown processor list {key}");

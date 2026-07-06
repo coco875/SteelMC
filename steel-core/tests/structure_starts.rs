@@ -904,6 +904,13 @@ fn processors_to_value(processors: &ProcessorList) -> Value {
     match processors {
         ProcessorList::Empty => json!({ "processors": [] }),
         ProcessorList::Registry(id) => Value::String(id.to_string()),
+        ProcessorList::Direct(list) => {
+            if list.is_empty() {
+                json!({ "processors": [] })
+            } else {
+                todo!("direct non-empty processor list serialization: {list:?}")
+            }
+        }
     }
 }
 

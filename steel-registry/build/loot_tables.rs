@@ -6,8 +6,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use std::{fs, path::Path};
 use steel_utils::Identifier;
+use steel_utils::datapack_overlay::DatapackOverlay;
 
 /// A number provider can be a constant number or an object with type.
 #[derive(Deserialize, Debug, Clone)]
@@ -2153,47 +2153,12 @@ fn parse_loot_table(registry_id: &str, content: &str) -> LootTableData {
     }
 }
 
-fn read_loot_tables(dir: &Path, base_dir: &Path, tables: &mut Vec<LootTableData>) {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        if path.is_dir() {
-            read_loot_tables(&path, base_dir, tables);
-            continue;
-        }
-
-        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-            continue;
-        }
-
-        let relative_path = path
-            .strip_prefix(base_dir)
-            .unwrap_or(&path)
-            .with_extension("");
-        let registry_id = relative_path
-            .to_str()
-            .unwrap_or("unknown")
-            .replace('\\', "/");
-        let content = fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("Failed to read loot table {registry_id}: {err}"));
-        tables.push(parse_loot_table(&registry_id, &content));
-    }
-}
-
-pub(crate) fn build() -> TokenStream {
-    let loot_table_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table";
-    println!("cargo:rerun-if-changed={loot_table_dir}");
-    let mut tables: Vec<LootTableData> = Vec::new();
-    read_loot_tables(
-        Path::new(loot_table_dir),
-        Path::new(loot_table_dir),
-        &mut tables,
-    );
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
+    let mut tables: Vec<LootTableData> = overlay
+        .list_json_registry_ids_with_suffix("loot_table")
+        .into_iter()
+        .map(|(registry_id, content)| parse_loot_table(&registry_id, &content))
+        .collect();
     tables.sort_by(|a, b| a.registry_id.cmp(&b.registry_id));
 
     let mut stream = TokenStream::new();
