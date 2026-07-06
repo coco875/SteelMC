@@ -231,11 +231,21 @@ fn gen_identifier(id: &str) -> TokenStream {
     if id.is_empty() {
         panic!("Cannot generate an empty identifier");
     }
-    if let Some((namespace, path)) = id.split_once(':') {
-        quote! { Identifier::new(#namespace, #path) }
+    let id = Identifier::parse_or_vanilla(id)
+        .unwrap_or_else(|error| panic!("invalid template pool identifier {id}: {error}"));
+    let namespace = id.namespace.as_ref();
+    let path = id.path.as_ref();
+    if namespace == Identifier::VANILLA_NAMESPACE {
+        quote! { Identifier::vanilla_static(#path) }
     } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
+        quote! { Identifier::new_static(#namespace, #path) }
     }
+}
+
+fn identifier_parts(id: &str, context: &str) -> (String, String) {
+    let id = Identifier::parse_or_vanilla(id)
+        .unwrap_or_else(|error| panic!("invalid {context} identifier {id}: {error}"));
+    (id.namespace.into_owned(), id.path.into_owned())
 }
 
 fn required<T>(value: Option<T>, context: &str, field: &str) -> T {
