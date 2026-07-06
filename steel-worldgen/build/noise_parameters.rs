@@ -36,10 +36,7 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     // Generate static amplitude arrays
     for (id, params) in &noises {
         let const_name = Ident::new(
-            &format!(
-                "{}_AMPLITUDES",
-                id.replace([':', '/'], "_").to_uppercase()
-            ),
+            &format!("{}_AMPLITUDES", id.replace([':', '/'], "_").to_uppercase()),
             Span::call_site(),
         );
         let amplitudes = &params.amplitudes;
@@ -54,10 +51,7 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
         .iter()
         .map(|(id, params)| {
             let amp_name = Ident::new(
-                &format!(
-                    "{}_AMPLITUDES",
-                    id.replace([':', '/'], "_").to_uppercase()
-                ),
+                &format!("{}_AMPLITUDES", id.replace([':', '/'], "_").to_uppercase()),
                 Span::call_site(),
             );
             let first_octave = params.first_octave;

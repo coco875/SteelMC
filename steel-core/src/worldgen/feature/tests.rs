@@ -148,10 +148,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         "village_snowy",
         "village_taiga",
     ];
-    if matches!(
-        END_BIOME_SOURCE_KIND,
-        EndBiomeSourceKind::MultiNoise
-    ) {
+    if matches!(END_BIOME_SOURCE_KIND, EndBiomeSourceKind::MultiNoise) {
         expected_surface.retain(|&s| s != "end_city");
     }
     assert_eq!(surface_paths, expected_surface);
@@ -181,10 +178,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .iter()
             .all(|structure| structure.step.decoration_ordinal() == 7)
     );
-    if matches!(
-        END_BIOME_SOURCE_KIND,
-        EndBiomeSourceKind::MultiNoise
-    ) {
+    if matches!(END_BIOME_SOURCE_KIND, EndBiomeSourceKind::MultiNoise) {
         assert_eq!(
             FeatureDecorationRunner::structures_for_decoration_step(&registry, 0)
                 .iter()

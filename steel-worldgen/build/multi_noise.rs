@@ -153,7 +153,10 @@ fn apply_datapack_parameter_lists(
 }
 
 /// Generate the Rust code for multi-noise biome parameter lists (all presets).
-#[expect(clippy::too_many_lines, reason = "build function contains generated structures and parsing code")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "build function contains generated structures and parsing code"
+)]
 pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/multi_noise_biome_source_parameters.json");
 

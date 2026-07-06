@@ -389,8 +389,14 @@ impl EndChunkBiomeSampler<'_> {
     }
 }
 
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on target dimension content")]
-#[allow(dead_code, reason = "dead_code is conditional on target dimension content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on target dimension content"
+)]
+#[allow(
+    dead_code,
+    reason = "dead_code is conditional on target dimension content"
+)]
 pub(crate) struct VanillaEndChunkBiomeSampler<'a> {
     pub(crate) source: &'a EndIslands,
     /// Cached erosion value keyed by (`chunk_x`, `chunk_z`).
@@ -401,8 +407,14 @@ pub(crate) struct VanillaEndChunkBiomeSampler<'a> {
     pub(crate) cached_erosion: Option<(i32, i32, f64)>,
 }
 
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on target dimension content")]
-#[allow(dead_code, reason = "dead_code is conditional on target dimension content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on target dimension content"
+)]
+#[allow(
+    dead_code,
+    reason = "dead_code is conditional on target dimension content"
+)]
 impl VanillaEndChunkBiomeSampler<'_> {
     pub(crate) fn sample(&mut self, quart_x: i32, _quart_y: i32, quart_z: i32) -> BiomeRef {
         let block_x = quart_x << 2;
@@ -448,13 +460,19 @@ impl VanillaEndChunkBiomeSampler<'_> {
 }
 
 /// Climate sampler for the End dimension when using multi-noise biome generation.
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on datapack content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
+)]
 #[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 pub struct EndClimateSampler {
     noises: Box<EndNoises>,
 }
 
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on datapack content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
+)]
 #[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 impl EndClimateSampler {
     /// Create a new End climate sampler with the given seed.
@@ -538,7 +556,10 @@ impl EndClimateSampler {
 }
 
 /// Per-chunk End multi-noise biome sampler with internal caches.
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on datapack content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
+)]
 #[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 pub struct EndMultiNoiseChunkBiomeSampler<'a> {
     pub(crate) source: &'a EndClimateSampler,
@@ -546,7 +567,10 @@ pub struct EndMultiNoiseChunkBiomeSampler<'a> {
     pub(crate) biome_cache: Option<usize>,
 }
 
-#[expect(clippy::allow_attributes, reason = "dead_code is conditional on datapack content")]
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
+)]
 #[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 impl EndMultiNoiseChunkBiomeSampler<'_> {
     pub(crate) fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
@@ -569,10 +593,7 @@ mod tests {
 
     #[test]
     fn end_possible_biomes_follow_vanilla_order() {
-        if matches!(
-            END_BIOME_SOURCE_KIND,
-            EndBiomeSourceKind::MultiNoise
-        ) {
+        if matches!(END_BIOME_SOURCE_KIND, EndBiomeSourceKind::MultiNoise) {
             return;
         }
         let source = BiomeSourceKind::end(0);

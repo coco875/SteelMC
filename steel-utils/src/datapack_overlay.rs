@@ -246,8 +246,14 @@ impl DatapackOverlay {
         }
     }
 
-    #[expect(clippy::allow_attributes, reason = "missing_const_for_fn is conditional on test config")]
-    #[allow(clippy::missing_const_for_fn, reason = "missing_const_for_fn is conditional on test config")]
+    #[expect(
+        clippy::allow_attributes,
+        reason = "missing_const_for_fn is conditional on test config"
+    )]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "missing_const_for_fn is conditional on test config"
+    )]
     fn finish_loading(self) -> Self {
         #[cfg(not(test))]
         self.emit_rerun_if_changed();
@@ -257,7 +263,9 @@ impl DatapackOverlay {
     /// Read a datapack file by logical path (e.g. `minecraft/worldgen/biome/plains.json`).
     #[must_use]
     pub fn read(&self, path: &str) -> Option<&[u8]> {
-        self.files.get(path).and_then(|layers| layers.last().map(|file| file.content.as_slice()))
+        self.files
+            .get(path)
+            .and_then(|layers| layers.last().map(|file| file.content.as_slice()))
     }
 
     /// # Panics

@@ -15,7 +15,6 @@ pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
     serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
-
 pub fn sort_contiguous_registry_entries<T>(
     entries: &mut [T],
     path: &str,
