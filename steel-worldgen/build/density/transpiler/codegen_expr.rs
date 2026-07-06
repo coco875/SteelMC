@@ -396,7 +396,7 @@ impl TranspileContext {
                 let cell_height = Literal::f64_unsuffixed(f64::from(fts.cell_height));
                 let lower_bound = Literal::f64_unsuffixed(f64::from(fts.lower_bound));
                 quote! {{
-                    let __upper = #upper_expr;
+                    let __upper: f64 = #upper_expr;
                     let __top_y = (__upper / #cell_height).floor() * #cell_height;
                     if __top_y <= #lower_bound {
                         #lower_bound
