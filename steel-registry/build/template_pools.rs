@@ -308,6 +308,7 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
             TemplatePoolData, PoolElement, ProcessorList, Projection, TemplateData,
             load_template_data_from_nbt_keys,
         };
+        #[allow(unused_imports)]
         use crate::structure_processor::{
             PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData,
             StructureProcessorKind, StructureRuleTestData,

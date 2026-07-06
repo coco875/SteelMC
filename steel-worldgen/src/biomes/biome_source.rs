@@ -384,6 +384,8 @@ impl EndChunkBiomeSampler<'_> {
         self.sampler.sample(quart_x, quart_y, quart_z)
     }
 
+    #[expect(clippy::allow_attributes, reason = "missing_const_for_fn is conditional on datapacks")]
+    #[allow(clippy::missing_const_for_fn, reason = "missing_const_for_fn is conditional on datapacks")]
     fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
         self.sampler.init_grid(chunk_block_x, chunk_block_z);
     }
