@@ -405,9 +405,13 @@ impl EndChunkBiomeSampler<'_> {
     }
 }
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on target dimension content"
+)]
 #[allow(
     dead_code,
-    reason = "only the generated End source kind for this build constructs one concrete End sampler"
+    reason = "dead_code is conditional on target dimension content"
 )]
 pub(crate) struct VanillaEndChunkBiomeSampler<'a> {
     pub(crate) source: &'a EndIslands,
@@ -419,9 +423,13 @@ pub(crate) struct VanillaEndChunkBiomeSampler<'a> {
     pub(crate) cached_erosion: Option<(i32, i32, f64)>,
 }
 
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on target dimension content"
+)]
 #[allow(
     dead_code,
-    reason = "only the generated End source kind for this build calls one concrete End sampler"
+    reason = "dead_code is conditional on target dimension content"
 )]
 impl VanillaEndChunkBiomeSampler<'_> {
     pub(crate) fn sample(&mut self, quart_x: i32, _quart_y: i32, quart_z: i32) -> BiomeRef {
@@ -449,7 +457,8 @@ impl VanillaEndChunkBiomeSampler<'_> {
         }
     }
 
-    pub(crate) fn init_grid(&mut self, _chunk_block_x: i32, _chunk_block_z: i32) {}
+    #[expect(clippy::unused_self, reason = "required by API contract")]
+    pub(crate) const fn init_grid(&mut self, _chunk_block_x: i32, _chunk_block_z: i32) {}
 
     fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
         if let Some((cx, cz, erosion)) = self.cached_erosion
@@ -467,18 +476,20 @@ impl VanillaEndChunkBiomeSampler<'_> {
 }
 
 /// Climate sampler for the End dimension when using multi-noise biome generation.
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
 )]
+#[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 pub struct EndClimateSampler {
     noises: Box<EndNoises>,
 }
 
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
 )]
+#[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 impl EndClimateSampler {
     /// Create a new End climate sampler with the given seed.
     #[must_use]
@@ -561,20 +572,22 @@ impl EndClimateSampler {
 }
 
 /// Per-chunk End multi-noise biome sampler with internal caches.
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
 )]
+#[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 pub struct EndMultiNoiseChunkBiomeSampler<'a> {
     pub(crate) source: &'a EndClimateSampler,
     pub(crate) column_cache: EndColumnCache,
     pub(crate) biome_cache: Option<usize>,
 }
 
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code is conditional on datapack content"
 )]
+#[allow(dead_code, reason = "dead_code is conditional on datapack content")]
 impl EndMultiNoiseChunkBiomeSampler<'_> {
     pub(crate) fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
         let target = self
@@ -592,13 +605,11 @@ impl EndMultiNoiseChunkBiomeSampler<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multi_noise::{END_BIOME_SOURCE_KIND, EndBiomeSourceKind};
 
     #[test]
     fn end_possible_biomes_follow_vanilla_order() {
-        if matches!(
-            crate::multi_noise::END_BIOME_SOURCE_KIND,
-            crate::multi_noise::EndBiomeSourceKind::MultiNoise
-        ) {
+        if matches!(END_BIOME_SOURCE_KIND, EndBiomeSourceKind::MultiNoise) {
             return;
         }
         let source = BiomeSourceKind::end(0);
