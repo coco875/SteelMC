@@ -1,6 +1,6 @@
-use std::fs;
-
-use crate::generator_functions::{generate_sound_event_ref, generate_text_component};
+use crate::generator_functions::{
+    generate_sound_event_ref, generate_text_component, read_minecraft_datapack_entries,
+};
 use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -16,25 +16,9 @@ pub struct InstrumentJson {
     description: TextComponentJson,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let instrument_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/instrument";
-    println!("cargo:rerun-if-changed={instrument_dir}");
-    let mut instruments = Vec::new();
-
-    // Read all instrument JSON files
-    for entry in fs::read_dir(instrument_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let instrument_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let instrument: InstrumentJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", instrument_name, e));
-
-            instruments.push((instrument_name, instrument));
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let instruments: Vec<(String, InstrumentJson)> =
+        read_minecraft_datapack_entries(overlay, "instrument");
 
     let mut stream = TokenStream::new();
 

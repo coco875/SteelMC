@@ -9,8 +9,6 @@
 //! program lifetime, so leaking the memory is correct. This gives us zero-cost
 //! access to recipe data after initialization.
 
-use std::{fs, path::Path};
-
 use heck::ToSnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -306,72 +304,36 @@ fn generate_ingredient_tokens(ingredient: &ParsedIngredient) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let recipe_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/recipe";
-    println!("cargo:rerun-if-changed={recipe_dir}");
-
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     let mut shaped_recipes: Vec<ShapedRecipeData> = Vec::new();
     let mut shapeless_recipes: Vec<ShapelessRecipeData> = Vec::new();
     let mut smelting_recipes: Vec<SmeltingRecipeData> = Vec::new();
 
-    // Read all recipe files
-    fn read_recipes(
-        dir: &Path,
-        shaped: &mut Vec<ShapedRecipeData>,
-        shapeless: &mut Vec<ShapelessRecipeData>,
-        smelting: &mut Vec<SmeltingRecipeData>,
-    ) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
-            let path = entry.path();
-
-            if path.is_dir() {
-                read_recipes(&path, shaped, shapeless, smelting);
-            } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let recipe_name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
-
-                let content = match fs::read_to_string(&path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-
-                let recipe: RecipeJson = match serde_json::from_str(&content) {
-                    Ok(r) => r,
-                    Err(_) => continue,
-                };
-
-                match recipe.recipe_type.as_str() {
-                    "minecraft:crafting_shaped" => {
-                        if let Some(r) = parse_shaped_recipe(recipe_name, &recipe) {
-                            shaped.push(r);
-                        }
-                    }
-                    "minecraft:crafting_shapeless" => {
-                        if let Some(r) = parse_shapeless_recipe(recipe_name, &recipe) {
-                            shapeless.push(r);
-                        }
-                    }
-                    "minecraft:smelting" => {
-                        if let Some(r) = parse_smelting_recipe(recipe_name, &recipe) {
-                            smelting.push(r);
-                        }
-                    }
-                    // Skip other recipe types for now (stonecutting, smithing, etc.)
-                    _ => {}
+    for (recipe_id, content) in overlay.list_json_relative("minecraft/recipe") {
+        let Ok(recipe) = serde_json::from_str::<RecipeJson>(&content) else {
+            continue;
+        };
+        let recipe_name = recipe_id.rsplit('/').next().unwrap_or("unknown");
+        match recipe.recipe_type.as_str() {
+            "minecraft:crafting_shaped" => {
+                if let Some(r) = parse_shaped_recipe(recipe_name, &recipe) {
+                    shaped_recipes.push(r);
                 }
             }
+            "minecraft:crafting_shapeless" => {
+                if let Some(r) = parse_shapeless_recipe(recipe_name, &recipe) {
+                    shapeless_recipes.push(r);
+                }
+            }
+            "minecraft:smelting" => {
+                if let Some(r) = parse_smelting_recipe(recipe_name, &recipe) {
+                    smelting_recipes.push(r);
+                }
+            }
+            // Skip other recipe types for now (stonecutting, smithing, etc.)
+            _ => {}
         }
     }
-
-    read_recipes(
-        Path::new(recipe_dir),
-        &mut shaped_recipes,
-        &mut shapeless_recipes,
-        &mut smelting_recipes,
-    );
 
     // Generate individual creator functions for each shaped recipe.
     // Each function creates just one recipe in its own stack frame,

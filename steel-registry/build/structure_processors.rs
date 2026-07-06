@@ -1,16 +1,13 @@
 //! Build-time codegen for vanilla structure processor-list registry entries.
 
-use std::fs;
-
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
 use crate::generator_functions::{
     generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
     registry_entry_ident,
 };
+use proc_macro2::TokenStream;
 use quote::quote;
-use steel_utils::{Identifier, value_providers::IntProvider};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_utils::datapack_overlay::DatapackOverlay;
 use steel_utils::value_providers::IntProvider;
 
 #[allow(dead_code)]
@@ -405,31 +402,30 @@ fn generate_processor_list_data(data: &StructureProcessorListData) -> TokenStrea
     quote! { StructureProcessorListData { processors: #processors } }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/processor_list";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let data = serde_json::from_str::<StructureProcessorListData>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse structure processor list {name}: {err}"));
-        entries.push((name, data));
+    for (registry_id, content) in
+        overlay.list_json_registry_ids_with_suffix("worldgen/processor_list")
+    {
+        let data =
+            serde_json::from_str::<StructureProcessorListData>(&content).unwrap_or_else(|err| {
+                panic!("failed to parse structure processor list {registry_id}: {err}")
+            });
+        entries.push((registry_id, data));
     }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut stream = TokenStream::new();
     stream.extend(quote! {
         use crate::shared_structs::BlockStateData;
         use crate::structure_processor::{
             PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
-            StructureProcessorKind, StructureProcessorList, StructureProcessorListData,
-            StructureProcessorListRegistry, StructureRuleTestData,
+            StructureProcessorHeightmap, StructureProcessorKind, StructureProcessorList,
+            StructureProcessorListData, StructureProcessorListRegistry, StructureRuleTestData,
         };
         use steel_utils::Identifier;
         use steel_utils::value_providers::IntProvider;
+        use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
         use std::sync::{LazyLock, OnceLock};
     });
 

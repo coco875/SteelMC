@@ -37,6 +37,9 @@ pub mod uuid_ext;
 /// `HeightProvider`, `FloatProvider`).
 pub mod value_providers;
 
+/// Build-time logical merge of vanilla datapack files with zip overlays.
+pub mod datapack_overlay;
+
 #[rustfmt::skip]
 #[path = "generated/vanilla_translations/ids.rs"]
 #[expect(missing_docs, warnings)]

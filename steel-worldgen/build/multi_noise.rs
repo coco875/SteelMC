@@ -53,16 +53,162 @@ struct BiomeParameters {
     offset: f64,
 }
 
+#[derive(Deserialize)]
+struct DatapackBiomeSourceParameters {
+    preset: Option<String>,
+    #[serde(default)]
+    biomes: Vec<BiomeEntry>,
+}
+
+struct GeneratedEndTokens {
+    biome_source_kind: TokenStream,
+    biome_source_type: TokenStream,
+    chunk_biome_sampler_type: TokenStream,
+    new_biome_source: TokenStream,
+    new_chunk_biome_sampler: TokenStream,
+    possible_biome_refs: TokenStream,
+}
+
+impl GeneratedEndTokens {
+    fn from_source_kind(end_uses_multi_noise: bool) -> Self {
+        if end_uses_multi_noise {
+            return Self {
+                biome_source_kind: quote! { EndBiomeSourceKind::MultiNoise },
+                biome_source_type: quote! { crate::biomes::biome_source::EndClimateSampler },
+                chunk_biome_sampler_type: quote! {
+                    crate::biomes::biome_source::EndMultiNoiseChunkBiomeSampler<'a>
+                },
+                new_biome_source: quote! {
+                    crate::biomes::biome_source::EndClimateSampler::new(seed)
+                },
+                new_chunk_biome_sampler: quote! {
+                    crate::biomes::biome_source::EndMultiNoiseChunkBiomeSampler {
+                        source,
+                        column_cache: crate::density_functions::end::EndColumnCache::new(),
+                        biome_cache: None,
+                    }
+                },
+                possible_biome_refs: quote! {
+                    THE_END_BIOME_PARAMETERS
+                        .values()
+                        .iter()
+                        .map(|(_, biome)| *biome)
+                        .collect()
+                },
+            };
+        }
+
+        Self {
+            biome_source_kind: quote! { EndBiomeSourceKind::Vanilla },
+            biome_source_type: quote! { crate::noise::EndIslands },
+            chunk_biome_sampler_type: quote! {
+                crate::biomes::biome_source::VanillaEndChunkBiomeSampler<'a>
+            },
+            new_biome_source: quote! {
+                crate::noise::EndIslands::new(seed)
+            },
+            new_chunk_biome_sampler: quote! {
+                crate::biomes::biome_source::VanillaEndChunkBiomeSampler {
+                    source,
+                    cached_erosion: None,
+                }
+            },
+            possible_biome_refs: quote! {
+                vec![
+                    &vanilla_biomes::THE_END,
+                    &vanilla_biomes::END_HIGHLANDS,
+                    &vanilla_biomes::END_MIDLANDS,
+                    &vanilla_biomes::SMALL_END_ISLANDS,
+                    &vanilla_biomes::END_BARRENS,
+                ]
+            },
+        }
+    }
+}
+
+fn apply_datapack_parameter_lists(
+    overlay: &steel_utils::datapack_overlay::DatapackOverlay,
+    presets: &mut BTreeMap<String, Vec<BiomeEntry>>,
+) {
+    for (id, json) in overlay
+        .list_json_registry_ids_with_suffix("worldgen/multi_noise_biome_source_parameter_list")
+    {
+        let params: DatapackBiomeSourceParameters =
+            serde_json::from_str(&json).unwrap_or_else(|error| {
+                panic!("Failed to parse multi-noise parameter list {id}: {error}")
+            });
+
+        if !params.biomes.is_empty() {
+            presets.insert(id.clone(), params.biomes);
+        } else if let Some(preset) = &params.preset
+            && !presets.contains_key(&id)
+            && let Some(entries) = presets.get(preset).cloned()
+        {
+            presets.insert(id.clone(), entries);
+        }
+    }
+}
+
 /// Generate the Rust code for multi-noise biome parameter lists (all presets).
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/multi_noise_biome_source_parameters.json");
 
     let content = fs::read_to_string("build_assets/multi_noise_biome_source_parameters.json")
         .expect("Failed to read multi_noise_biome_source_parameters.json");
-    let presets: BTreeMap<String, Vec<BiomeEntry>> =
+    let mut presets: BTreeMap<String, Vec<BiomeEntry>> =
         serde_json::from_str(&content).expect("Failed to parse multi-noise biome parameters JSON");
 
+    apply_datapack_parameter_lists(overlay, &mut presets);
+
+    // Load custom End dimension from the datapack if it overrides biome_source with multi_noise
+    let mut end_uses_multi_noise = false;
+    if let Some(end_json) = overlay.read_string("minecraft/dimension/the_end.json") {
+        #[derive(Deserialize)]
+        struct DatapackDimension {
+            generator: Option<DatapackGenerator>,
+        }
+        #[derive(Deserialize)]
+        struct DatapackGenerator {
+            #[serde(rename = "type")]
+            gen_type: String,
+            biome_source: Option<DatapackBiomeSource>,
+        }
+        #[derive(Deserialize)]
+        struct DatapackBiomeSource {
+            #[serde(rename = "type")]
+            source_type: String,
+            #[serde(default)]
+            biomes: Vec<BiomeEntry>,
+        }
+
+        if let Ok(dim) = serde_json::from_str::<DatapackDimension>(&end_json) {
+            if let Some(generator) = dim.generator {
+                if generator.gen_type == "minecraft:noise" {
+                    if let Some(source) = generator.biome_source {
+                        if source.source_type == "minecraft:multi_noise"
+                            && !source.biomes.is_empty()
+                        {
+                            presets.insert("minecraft:the_end".to_string(), source.biomes);
+                            end_uses_multi_noise = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !presets.contains_key("minecraft:the_end") {
+        presets.insert("minecraft:the_end".to_string(), Vec::new());
+    }
+
     let mut stream = TokenStream::new();
+    let end_tokens = GeneratedEndTokens::from_source_kind(end_uses_multi_noise);
+    let end_biome_source_kind = end_tokens.biome_source_kind;
+    let generated_end_biome_source = end_tokens.biome_source_type;
+    let generated_end_chunk_biome_sampler = end_tokens.chunk_biome_sampler_type;
+    let new_end_biome_source = end_tokens.new_biome_source;
+    let new_end_chunk_biome_sampler = end_tokens.new_chunk_biome_sampler;
+    let end_possible_biome_refs = end_tokens.possible_biome_refs;
 
     stream.extend(quote! {
         //! Generated multi-noise biome source parameters for all presets.
@@ -72,8 +218,35 @@ pub(crate) fn build() -> TokenStream {
 
         use steel_registry::biome::BiomeRef;
         use steel_registry::vanilla_biomes;
-        use steel_utils::climate::{Parameter, ParameterList, ParameterPoint};
+        use steel_utils::climate::{Parameter, ParameterList, ParameterPoint, TargetPoint};
         use std::sync::LazyLock;
+
+        /// Generated End biome source kind after datapack overlays are applied.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum EndBiomeSourceKind {
+            Vanilla,
+            MultiNoise,
+        }
+
+        pub const END_BIOME_SOURCE_KIND: EndBiomeSourceKind = #end_biome_source_kind;
+
+        pub(crate) type GeneratedEndBiomeSource = #generated_end_biome_source;
+
+        pub(crate) type GeneratedEndChunkBiomeSampler<'a> = #generated_end_chunk_biome_sampler;
+
+        pub(crate) fn new_end_biome_source(seed: u64) -> GeneratedEndBiomeSource {
+            #new_end_biome_source
+        }
+
+        pub(crate) fn new_end_chunk_biome_sampler(
+            source: &GeneratedEndBiomeSource,
+        ) -> GeneratedEndChunkBiomeSampler<'_> {
+            #new_end_chunk_biome_sampler
+        }
+
+        pub fn end_possible_biome_refs() -> Vec<BiomeRef> {
+            #end_possible_biome_refs
+        }
     });
 
     // Generate each preset
@@ -154,8 +327,7 @@ fn quantize(v: f64) -> i64 {
 /// Convert a biome name like `"minecraft:plains"` to the `vanilla_biomes` constant
 /// identifier `PLAINS`.
 fn biome_ident(name: &str) -> Ident {
-    let path = name.strip_prefix("minecraft:").unwrap_or(name);
-    Ident::new(&path.to_uppercase(), Span::call_site())
+    Ident::new(&super::biome_ident_str(name), Span::call_site())
 }
 
 fn capitalize(s: &str) -> String {

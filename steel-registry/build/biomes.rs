@@ -1,5 +1,4 @@
 use rustc_hash::FxHashMap;
-use std::fs;
 
 use crate::generator_functions::{
     generate_identifier, generate_option, generate_sound_event_ref, generate_vec,
@@ -11,6 +10,7 @@ use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use steel_utils::Identifier;
+use steel_utils::datapack_overlay::DatapackOverlay;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -583,27 +583,16 @@ fn generate_biome_effects(effects: &BiomeEffects) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let biome_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/biome";
-    println!("cargo:rerun-if-changed={biome_dir}");
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     let mut biomes = Vec::new();
 
-    // Read all biome JSON files
-    for entry in fs::read_dir(biome_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
+    for (biome_name, content) in overlay.list_json_registry_ids_with_suffix("worldgen/biome") {
+        let mut biome: BiomeJson = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", biome_name, e));
 
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let biome_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let mut biome: BiomeJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", biome_name, e));
+        extract_attributes_to_effects(&mut biome.effects, &biome.attributes);
 
-            // Extract attributes and populate effects
-            extract_attributes_to_effects(&mut biome.effects, &biome.attributes);
-
-            biomes.push((biome_name, biome));
-        }
+        biomes.push((biome_name, biome));
     }
 
     let mut stream = TokenStream::new();

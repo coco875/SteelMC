@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::generator_functions::generate_identifier;
+use crate::generator_functions::{generate_identifier, read_minecraft_datapack_entries};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -13,26 +11,9 @@ pub struct BannerPatternJson {
     translation_key: String,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let banner_pattern_dir =
-        "../steel-utils/build_assets/builtin_datapacks/minecraft/banner_pattern";
-    println!("cargo:rerun-if-changed={banner_pattern_dir}");
-    let mut banner_patterns = Vec::new();
-
-    // Read all banner pattern JSON files
-    for entry in fs::read_dir(banner_pattern_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let banner_pattern_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let banner_pattern: BannerPatternJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", banner_pattern_name, e));
-
-            banner_patterns.push((banner_pattern_name, banner_pattern));
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let banner_patterns: Vec<(String, BannerPatternJson)> =
+        read_minecraft_datapack_entries(overlay, "banner_pattern");
 
     let mut stream = TokenStream::new();
 

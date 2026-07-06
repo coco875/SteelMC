@@ -1,5 +1,4 @@
-use std::fs;
-
+use crate::generator_functions::read_minecraft_datapack_entries;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -9,25 +8,12 @@ use serde::Deserialize;
 #[allow(dead_code)]
 pub struct WorldClockJson {}
 
-pub(crate) fn build() -> TokenStream {
-    let world_clock_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/world_clock";
-    println!("cargo:rerun-if-changed={world_clock_dir}");
-    let mut world_clocks = Vec::new();
-
-    // Read all world_clock JSON files
-    for entry in fs::read_dir(world_clock_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let world_clock_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let _world_clock: WorldClockJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", world_clock_name, e));
-
-            world_clocks.push(world_clock_name);
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let world_clocks: Vec<String> =
+        read_minecraft_datapack_entries::<WorldClockJson>(overlay, "world_clock")
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
 
     let mut stream = TokenStream::new();
 

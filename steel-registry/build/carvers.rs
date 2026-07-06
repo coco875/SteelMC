@@ -4,14 +4,14 @@
 //! deserialises each via `steel_utils::value_providers` types, and emits
 //! Rust source with a `pub static` per carver plus a `register_carvers` fn.
 
-use std::fs;
-
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
 use steel_utils::Identifier;
+use steel_utils::datapack_overlay::DatapackOverlay;
 use steel_utils::value_providers::{FloatProvider, HeightProvider, VerticalAnchor};
 
 // ── JSON-facing structs ─────────────────────────────────────────────────────
@@ -64,12 +64,6 @@ struct CanyonConfigJson {
 }
 
 // ── Codegen helpers ─────────────────────────────────────────────────────────
-
-fn generate_identifier(resource: &Identifier) -> TokenStream {
-    let namespace = resource.namespace.as_ref();
-    let path = resource.path.as_ref();
-    quote! { Identifier { namespace: Cow::Borrowed(#namespace), path: Cow::Borrowed(#path) } }
-}
 
 fn generate_vertical_anchor(v: VerticalAnchor) -> TokenStream {
     match v {
@@ -255,29 +249,11 @@ fn generate_canyon_kind(cfg: &CanyonConfigJson) -> TokenStream {
 
 // ── Build entry point ───────────────────────────────────────────────────────
 
-pub(crate) fn build() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_carver";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries: Vec<(String, TokenStream)> = Vec::new();
 
-    let mut files: Vec<_> = fs::read_dir(dir)
-        .expect("configured_carver dir missing")
-        .filter_map(Result::ok)
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("json"))
-        .collect();
-    // Sort for deterministic output
-    files.sort_by_key(|e| e.file_name());
-
-    for entry in files {
-        let path = entry.path();
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("invalid carver file name")
-            .to_string();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read {name}.json: {e}"));
+    for (name, content) in overlay.list_json_registry_ids_with_suffix("worldgen/configured_carver")
+    {
         let raw: CarverJson = serde_json::from_str(&content)
             .unwrap_or_else(|e| panic!("failed to parse {name}.json: {e}"));
 

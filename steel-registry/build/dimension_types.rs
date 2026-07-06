@@ -1,11 +1,10 @@
-use std::fs;
-
 use crate::generator_functions::{generate_option, generate_sound_event_ref};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use steel_utils::Identifier;
+use steel_utils::datapack_overlay::DatapackOverlay;
 
 #[derive(Deserialize, Debug)]
 pub struct DimensionTypeJson {
@@ -292,34 +291,25 @@ fn generate_background_music(bg: &BackgroundMusicJson) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let dimension_type_dir =
-        "../steel-utils/build_assets/builtin_datapacks/minecraft/dimension_type";
-    println!("cargo:rerun-if-changed={dimension_type_dir}");
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
+    const DIMENSION_TYPE_DIR: &str = "minecraft/dimension_type";
+
     let mut dimension_types = Vec::new();
 
-    // Read all dimension type JSON files
-    for entry in fs::read_dir(dimension_type_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
+    for (dimension_type_name, content) in overlay.list_json_relative(DIMENSION_TYPE_DIR) {
+        let mut dimension_type: DimensionTypeJson = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", dimension_type_name, e));
 
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let dimension_type_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let mut dimension_type: DimensionTypeJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", dimension_type_name, e));
-
-            // Extract fixed_time from attributes if has_fixed_time is true but fixed_time is None
-            if dimension_type.has_fixed_time && dimension_type.fixed_time.is_none() {
-                dimension_type.fixed_time = match dimension_type_name.as_str() {
-                    "the_end" => Some(6000),
-                    "the_nether" => Some(18000),
-                    _ => None,
-                };
-            }
-
-            dimension_types.push((dimension_type_name, dimension_type));
+        // Extract fixed_time from attributes if has_fixed_time is true but fixed_time is None
+        if dimension_type.has_fixed_time && dimension_type.fixed_time.is_none() {
+            dimension_type.fixed_time = match dimension_type_name.as_str() {
+                "the_end" => Some(6000),
+                "the_nether" => Some(18000),
+                _ => None,
+            };
         }
+
+        dimension_types.push((dimension_type_name, dimension_type));
     }
 
     // Sort dimension types by name for consistent generation
