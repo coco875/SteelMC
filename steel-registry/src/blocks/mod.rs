@@ -522,13 +522,10 @@ impl BlockRegistry {
             };
 
             let prop = block.properties[prop_idx];
-            let Some(value_idx) = prop
+            let value_idx = prop
                 .get_possible_values()
                 .iter()
-                .position(|v| *v == prop_value)
-            else {
-                return None;
-            };
+                .position(|v| *v == prop_value)?;
 
             property_indices[prop_idx] = value_idx;
         }
