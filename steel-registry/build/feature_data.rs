@@ -68,9 +68,7 @@ fn normalize_datapack_type_fields(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                if TYPE_KEYS.contains(&key.as_str()) {
-                    normalize_loose_identifier_value(child);
-                } else if key == "Name" {
+                if TYPE_KEYS.contains(&key.as_str()) || key == "Name" {
                     normalize_loose_identifier_value(child);
                 } else if matches!(key.as_str(), "blocks" | "block") {
                     normalize_block_reference(child);
@@ -1189,6 +1187,10 @@ pub struct OreTarget {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "predicate_type")]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "variant names mirror vanilla rule test names"
+)]
 pub enum RuleTest {
     #[serde(rename = "minecraft:block_match")]
     BlockMatch { block: Identifier },
