@@ -705,20 +705,6 @@ fn generate_spread_type(spread: &Option<String>) -> TokenStream {
     }
 }
 
-fn generate_identifier(id: &str) -> TokenStream {
-    if id.is_empty() {
-        panic!("Cannot generate an empty identifier");
-    }
-    if let Some((namespace, path)) = id.split_once(':') {
-        if namespace.is_empty() || path.is_empty() {
-            panic!("Invalid identifier {id}");
-        }
-        quote! { Identifier::new(#namespace, #path) }
-    } else {
-        quote! { Identifier::vanilla(#id.to_string()) }
-    }
-}
-
 fn structure_static_ident(key: &str) -> proc_macro2::Ident {
     let name = key
         .strip_prefix("minecraft:")
