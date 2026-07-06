@@ -5,6 +5,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
+use steel_utils::Identifier;
 
 // ── JSON structures ──
 
@@ -35,9 +36,9 @@ struct ElementJson {
     elements: Option<Vec<ElementJson>>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
-enum ProcessorsJson {
+pub(crate) enum ProcessorsJson {
     Registry(String),
     Direct { processors: Vec<Value> },
 }
@@ -261,7 +262,7 @@ fn gen_projection(proj: &Option<String>, context: &str) -> TokenStream {
     }
 }
 
-fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
+pub(crate) fn gen_processors(processors: Option<&ProcessorsJson>, context: &str) -> TokenStream {
     match processors {
         Some(ProcessorsJson::Registry(id)) => {
             let id = gen_identifier(id);
@@ -413,7 +414,7 @@ pub(crate) fn build() -> TokenStream {
                 let target = gen_identifier(&j.target);
                 let pool = gen_identifier(&j.pool);
                 let joint = gen_joint(&j.joint);
-                let final_state = gen_identifier(&j.final_state);
+                let final_state = &j.final_state;
                 let sel_pri = j.selection_priority;
                 let plc_pri = j.placement_priority;
 
@@ -425,7 +426,7 @@ pub(crate) fn build() -> TokenStream {
                         target: #target,
                         pool: #pool,
                         joint: #joint,
-                        final_state: #final_state,
+                        final_state: #final_state.to_string(),
                         selection_priority: #sel_pri,
                         placement_priority: #plc_pri,
                     }
