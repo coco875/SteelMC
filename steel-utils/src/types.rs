@@ -1376,23 +1376,11 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() != 2 {
+        let Some((namespace, path)) = s.split_once(':') else {
             return Err("Invalid resource location");
-        }
+        };
 
-        if !Identifier::validate_namespace(parts[0]) {
-            return Err("Invalid namespace");
-        }
-
-        if !Identifier::validate_path(parts[1]) {
-            return Err("Invalid path");
-        }
-
-        Ok(Identifier {
-            namespace: Cow::Owned(parts[0].to_string()),
-            path: Cow::Owned(parts[1].to_string()),
-        })
+        Identifier::new_validated(namespace, path)
     }
 }
 impl Serialize for Identifier {
