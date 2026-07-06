@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    super::tag_utils::build_simple_tags(overlay, "timeline", "timeline", "TimelineRegistry")
+pub(crate) fn build() -> TokenStream {
+    super::tag_utils::build_simple_tags("timeline", "timeline", "TimelineRegistry")
 }

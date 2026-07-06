@@ -24,9 +24,8 @@ fn generate_pig_model_type(model: &str) -> TokenStream {
     }
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let pig_variants: Vec<(String, PigVariantJson)> =
-        read_variants_from_dir(overlay, "pig_variant");
+pub(crate) fn build() -> TokenStream {
+    let pig_variants: Vec<(String, PigVariantJson)> = read_variants_from_dir("pig_variant");
 
     let mut stream = TokenStream::new();
 

@@ -2,10 +2,10 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::string::String;
 use std::sync::Arc;
-
-use steel_utils::{Identifier, datapack_overlay::DatapackOverlay};
+use std::{fs, path::PathBuf};
 
 use crate::surface_rules::{SurfaceRuleJson, generate_surface_rule_function};
 
@@ -276,16 +276,54 @@ struct NoiseSettingsJson {
 
 // ── Datapack file reading ───────────────────────────────────────────────────
 
-const NOISE_SETTINGS_DIR: &str = "minecraft/worldgen/noise_settings";
+const DATAPACK_BASE: &str = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen";
+
+/// Recursively collect all .json files under a directory.
+fn collect_json_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(collect_json_files(&path));
+            } else if path.extension().is_some_and(|ext| ext == "json") {
+                files.push(path);
+            }
+        }
+    }
+    files
+}
+
+/// Convert a `density_function` file path to a registry ID.
+///
+/// e.g. `.../density_function/overworld/continents.json` -> `minecraft:overworld/continents`
+fn path_to_id(path: &Path, base_dir: &Path) -> String {
+    let relative = path
+        .strip_prefix(base_dir)
+        .expect("density function path should be under the density function directory");
+    let without_ext = relative.with_extension("");
+    // Convert OS path separators to forward slashes
+    let id_path = without_ext
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("minecraft:{id_path}")
+}
 
 /// Read all density function files from the datapack into a registry.
-fn read_density_function_registry(
-    overlay: &DatapackOverlay,
-) -> BTreeMap<String, DensityFunctionJson> {
+fn read_density_function_registry() -> BTreeMap<String, DensityFunctionJson> {
+    let df_dir = format!("{DATAPACK_BASE}/density_function");
+    let df_path = Path::new(&df_dir);
     let mut registry = BTreeMap::new();
-    for (id, content) in overlay.list_json_registry_ids_with_suffix("worldgen/density_function") {
+
+    for file in collect_json_files(df_path) {
+        println!("cargo:rerun-if-changed={}", file.display());
+        let content = fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", file.display()));
         let df: DensityFunctionJson = serde_json::from_str(&content)
-            .unwrap_or_else(|error| panic!("Failed to parse density function {id}: {error}"));
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", file.display()));
+        let id = path_to_id(&file, df_path);
         registry.insert(id, df);
     }
 
@@ -293,10 +331,12 @@ fn read_density_function_registry(
 }
 
 /// Read noise settings for a dimension from the datapack.
-fn read_noise_settings(overlay: &DatapackOverlay, dimension: &str) -> NoiseSettingsJson {
-    let path = format!("{NOISE_SETTINGS_DIR}/{dimension}.json");
-    let content = overlay.read_string_required(&path);
-    serde_json::from_str(&content).unwrap_or_else(|error| panic!("Failed to parse {path}: {error}"))
+fn read_noise_settings(dimension: &str) -> NoiseSettingsJson {
+    let path = format!("{DATAPACK_BASE}/noise_settings/{dimension}.json");
+    println!("cargo:rerun-if-changed={path}");
+    let content =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
 // ── JSON → DensityFunction conversion ───────────────────────────────────────
@@ -312,21 +352,13 @@ use crate::density::{
 ///
 /// Noises are left as `None` (baked at runtime from seed).
 /// References are left unresolved (the transpiler handles them via the registry).
-fn normalize_ref_id(id: &str) -> String {
-    Identifier::parse_or_vanilla(id)
-        .unwrap_or_else(|error| {
-            panic!("invalid density function reference identifier {id}: {error}")
-        })
-        .to_string()
-}
-
 fn json_to_df(json: &DensityFunctionJson) -> DensityFunction {
     match json {
         DensityFunctionJson::Constant(value) => {
             DensityFunction::Constant(Constant { value: *value })
         }
         DensityFunctionJson::Reference(id) => DensityFunction::Reference(Reference {
-            id: normalize_ref_id(id),
+            id: id.clone(),
             resolved: None,
         }),
         DensityFunctionJson::Data(data) => json_data_to_df(data),
@@ -590,7 +622,10 @@ fn json_spline_to_cubic(spline: &SplineJson) -> CubicSpline {
             }],
         ),
         SplineJson::Multipoint { coordinate, points } => CubicSpline::new(
-            Arc::new(json_to_df(coordinate)),
+            Arc::new(DensityFunction::Reference(Reference {
+                id: coordinate.clone(),
+                resolved: None,
+            })),
             points.iter().map(json_spline_point).collect(),
         ),
     }
@@ -611,7 +646,7 @@ fn json_spline_point(p: &SplinePointJson) -> SplinePoint {
 
 // ── Build entry point ───────────────────────────────────────────────────────
 
-use crate::density::{TranspilerInput, dimension_uses_blended_noise, transpile};
+use crate::density::{TranspilerInput, transpile};
 
 /// Convert a noise router JSON into a `BTreeMap` of router entries.
 fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFunction> {
@@ -648,34 +683,24 @@ fn router_to_entries(router: &NoiseRouterJson) -> BTreeMap<String, DensityFuncti
     entries
 }
 
-/// Build transpiler input for a dimension from its noise settings and registry.
-fn make_transpiler_input(
-    overlay: &DatapackOverlay,
+/// Transpile density functions for a single dimension.
+fn transpile_dimension(
     dimension: &str,
     prefix: &str,
     registry: &BTreeMap<String, DensityFunction>,
-) -> TranspilerInput {
-    let settings = read_noise_settings(overlay, dimension);
+) -> TokenStream {
+    let settings = read_noise_settings(dimension);
     let router_entries = router_to_entries(&settings.noise_router);
-    let cell_width = settings.noise.size_horizontal * 4;
 
-    TranspilerInput {
+    let cell_width = settings.noise.size_horizontal * 4;
+    let input = TranspilerInput {
         registry: registry.clone(),
         router_entries,
         prefix: prefix.to_string(),
         cell_width,
         legacy_random_source: settings.legacy_random_source,
-    }
-}
+    };
 
-/// Transpile density functions for a single dimension.
-fn transpile_dimension(
-    overlay: &DatapackOverlay,
-    dimension: &str,
-    prefix: &str,
-    registry: &BTreeMap<String, DensityFunction>,
-) -> TokenStream {
-    let input = make_transpiler_input(overlay, dimension, prefix, registry);
     transpile(&input)
 }
 
@@ -684,15 +709,8 @@ fn transpile_dimension(
     clippy::too_many_lines,
     reason = "generated noise settings include all trait glue in one quoted block"
 )]
-fn generate_noise_settings(
-    overlay: &DatapackOverlay,
-    dimension: &str,
-    prefix: &str,
-    registry: &BTreeMap<String, DensityFunction>,
-) -> TokenStream {
-    let uses_blended_noise =
-        dimension_uses_blended_noise(&make_transpiler_input(overlay, dimension, prefix, registry));
-    let mut settings = read_noise_settings(overlay, dimension);
+fn generate_noise_settings(dimension: &str, prefix: &str) -> TokenStream {
+    let mut settings = read_noise_settings(dimension);
 
     let settings_struct = Ident::new(&format!("{prefix}NoiseSettings"), Span::call_site());
     let noises_struct = Ident::new(&format!("{prefix}Noises"), Span::call_site());
@@ -800,17 +818,6 @@ fn generate_noise_settings(
 
     let default_block_ident = Ident::new(&default_block_upper, Span::call_site());
     let default_fluid_ident = Ident::new(&default_fluid_upper, Span::call_site());
-
-    let compute_noise_column = if uses_blended_noise {
-        quote! {
-            #[inline]
-            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
-                self.blended_noise.compute_column(x, block_ys, z, out);
-            }
-        }
-    } else {
-        TokenStream::new()
-    };
 
     quote! {
         /// Noise settings for this dimension, parsed from the datapack.
@@ -984,7 +991,10 @@ fn generate_noise_settings(
                 VEIN_INTERP_ENABLED
             }
 
-            #compute_noise_column
+            #[inline]
+            fn compute_noise_column(&self, x: i32, block_ys: &[i32], z: i32, out: &mut [f64]) {
+                self.blended_noise.compute_column(x, block_ys, z, out);
+            }
 
             #[inline]
             fn fill_cell_corner_densities(&self, cache: &mut Self::ColumnCache, x: i32, y: i32, z: i32, blended_noise_value: f64, out: &mut [f64]) {
@@ -1076,8 +1086,8 @@ pub(crate) struct DensityFunctionFiles {
 }
 
 /// Generate density function code for all dimensions, split into one file per dimension.
-pub(crate) fn build(overlay: &DatapackOverlay) -> DensityFunctionFiles {
-    let registry_json = read_density_function_registry(overlay);
+pub(crate) fn build() -> DensityFunctionFiles {
+    let registry_json = read_density_function_registry();
 
     // Convert JSON registry to DensityFunction values (shared across dimensions)
     let registry: BTreeMap<String, DensityFunction> = registry_json
@@ -1085,12 +1095,12 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> DensityFunctionFiles {
         .map(|(id, json)| (id.clone(), json_to_df(json)))
         .collect();
 
-    let overworld_df = transpile_dimension(overlay, "overworld", "Overworld", &registry);
-    let overworld_settings = generate_noise_settings(overlay, "overworld", "Overworld", &registry);
-    let nether_df = transpile_dimension(overlay, "nether", "Nether", &registry);
-    let nether_settings = generate_noise_settings(overlay, "nether", "Nether", &registry);
-    let end_df = transpile_dimension(overlay, "end", "End", &registry);
-    let end_settings = generate_noise_settings(overlay, "end", "End", &registry);
+    let overworld_df = transpile_dimension("overworld", "Overworld", &registry);
+    let overworld_settings = generate_noise_settings("overworld", "Overworld");
+    let nether_df = transpile_dimension("nether", "Nether", &registry);
+    let nether_settings = generate_noise_settings("nether", "Nether");
+    let end_df = transpile_dimension("end", "End", &registry);
+    let end_settings = generate_noise_settings("end", "End");
 
     // Note: the transpiler already emits `use` imports in #overworld_df / #nether_df / #end_df.
     let overworld = quote! {

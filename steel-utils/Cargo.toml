@@ -42,8 +42,6 @@ enum_dispatch.workspace = true
 num-traits.workspace = true
 rand.workspace = true
 text_components.workspace = true
-zip = { version = "1.1.4", default-features = false, features = ["deflate"] }
-toml.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

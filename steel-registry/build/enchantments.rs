@@ -1,4 +1,6 @@
-use crate::generator_functions::{generate_sound_event_ref, read_minecraft_datapack_entries};
+use std::fs;
+
+use crate::generator_functions::generate_sound_event_ref;
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
@@ -2112,12 +2114,29 @@ fn generate_enchantment_effects(
     }
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+pub(crate) fn build() -> TokenStream {
+    let enchantment_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/enchantment";
+    println!("cargo:rerun-if-changed={enchantment_dir}");
     let mut enchantments = Vec::new();
 
-    for (name, raw_enchantment) in
-        read_minecraft_datapack_entries::<serde_json::Value>(overlay, "enchantment")
-    {
+    for entry in fs::read_dir(enchantment_dir).expect("Failed to read enchantment directory") {
+        let entry = entry.expect("Failed to read directory entry");
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+
+        let name = path
+            .file_stem()
+            .expect("No file stem")
+            .to_str()
+            .expect("Invalid UTF-8")
+            .to_string();
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+        let raw_enchantment: serde_json::Value = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse raw enchantment {name}: {e}"));
         let effects_nbt = raw_enchantment
             .get("effects")
             .cloned()

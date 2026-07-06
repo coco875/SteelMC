@@ -13,9 +13,9 @@ pub struct CowSoundVariantJson {
     step_sound: Identifier,
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+pub(crate) fn build() -> TokenStream {
     let cow_sound_variants: Vec<(String, CowSoundVariantJson)> =
-        read_variants_from_dir(overlay, "cow_sound_variant");
+        read_variants_from_dir("cow_sound_variant");
 
     let mut stream = TokenStream::new();
 

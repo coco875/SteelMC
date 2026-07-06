@@ -1,4 +1,4 @@
-pub(crate) mod biome_source;
+mod biome_source;
 mod climate_sampler;
 mod nether_climate_sampler;
 

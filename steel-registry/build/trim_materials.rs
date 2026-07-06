@@ -1,8 +1,7 @@
 use rustc_hash::FxHashMap;
+use std::fs;
 
-use crate::generator_functions::{
-    generate_identifier, generate_option, read_minecraft_datapack_entries,
-};
+use crate::generator_functions::{generate_identifier, generate_option};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -38,9 +37,25 @@ fn generate_hashmap_resource_string(map: &FxHashMap<Identifier, String>) -> Toke
     quote! { FxHashMap::from_iter([#(#entries),*]) }
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let trim_materials: Vec<(String, TrimMaterialJson)> =
-        read_minecraft_datapack_entries(overlay, "trim_material");
+pub(crate) fn build() -> TokenStream {
+    let trim_material_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material";
+    println!("cargo:rerun-if-changed={trim_material_dir}");
+    let mut trim_materials = Vec::new();
+
+    // Read all trim material JSON files
+    for entry in fs::read_dir(trim_material_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let trim_material_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            let content = fs::read_to_string(&path).unwrap();
+            let trim_material: TrimMaterialJson = serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", trim_material_name, e));
+
+            trim_materials.push((trim_material_name, trim_material));
+        }
+    }
 
     let mut stream = TokenStream::new();
 

@@ -1,4 +1,6 @@
-use crate::generator_functions::{generate_identifier, read_minecraft_datapack_entries};
+use std::fs;
+
+use crate::generator_functions::generate_identifier;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -18,9 +20,25 @@ pub struct TextComponent {
     translate: String,
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let trim_patterns: Vec<(String, TrimPatternJson)> =
-        read_minecraft_datapack_entries(overlay, "trim_pattern");
+pub(crate) fn build() -> TokenStream {
+    let trim_pattern_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern";
+    println!("cargo:rerun-if-changed={trim_pattern_dir}");
+    let mut trim_patterns = Vec::new();
+
+    // Read all trim pattern JSON files
+    for entry in fs::read_dir(trim_pattern_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let trim_pattern_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            let content = fs::read_to_string(&path).unwrap();
+            let trim_pattern: TrimPatternJson = serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", trim_pattern_name, e));
+
+            trim_patterns.push((trim_pattern_name, trim_pattern));
+        }
+    }
 
     let mut stream = TokenStream::new();
 

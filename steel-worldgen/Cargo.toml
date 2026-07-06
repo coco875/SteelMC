@@ -20,7 +20,6 @@ glam.workspace = true
 
 [build-dependencies]
 steel-utils.workspace = true
-heck.workspace = true
 
 # Serialization
 serde.workspace = true

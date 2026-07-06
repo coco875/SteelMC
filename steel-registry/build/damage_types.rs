@@ -1,4 +1,5 @@
-use crate::generator_functions::read_minecraft_datapack_entries;
+use std::fs;
+
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -75,9 +76,25 @@ fn generate_death_message_type(death_message_type: DeathMessageTypeJson) -> Toke
     }
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let damage_types: Vec<(String, DamageTypeJson)> =
-        read_minecraft_datapack_entries(overlay, "damage_type");
+pub(crate) fn build() -> TokenStream {
+    let damage_type_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/damage_type";
+    println!("cargo:rerun-if-changed={damage_type_dir}");
+    let mut damage_types = Vec::new();
+
+    // Read all damage type JSON files
+    for entry in fs::read_dir(damage_type_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let damage_type_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            let content = fs::read_to_string(&path).unwrap();
+            let damage_type: DamageTypeJson = serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", damage_type_name, e));
+
+            damage_types.push((damage_type_name, damage_type));
+        }
+    }
 
     let mut stream = TokenStream::new();
 

@@ -1,7 +1,0 @@
-# Build-time datapack overlay order (bottom -> top).
-# Later entries override earlier ones for the same logical path within a namespace.
-#
-# Zips not listed here are appended after these, in lexicographic filename order.
-# Set STEEL_DATAPACKS_DIR= to disable all zip overlays.
-
-order = ["Stellarity-5.5.3-nbt-fixed.zip"]

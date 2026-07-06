@@ -69,10 +69,6 @@ pub enum NumberProvider {
         min: f32,
         max: f32,
     },
-    UniformProvider {
-        min: &'static NumberProvider,
-        max: &'static NumberProvider,
-    },
     Binomial {
         n: i32,
         p: f32,
@@ -115,11 +111,6 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::UniformProvider { min, max } => {
-                let min = min.get(rng, ctx);
-                let max = max.get(rng, ctx);
-                rng.random_range(min..=max)
-            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {
@@ -151,11 +142,6 @@ impl NumberProvider {
         match self {
             Self::Constant(v) => *v,
             Self::Uniform { min, max } => rng.random_range(*min..=*max),
-            Self::UniformProvider { min, max } => {
-                let min = min.get_simple(rng);
-                let max = max.get_simple(rng);
-                rng.random_range(min..=max)
-            }
             Self::Binomial { n, p } => {
                 let mut count = 0;
                 for _ in 0..*n {
@@ -596,8 +582,6 @@ pub enum ToolPredicate {
     },
     /// Match items in a tag.
     Tag(Identifier),
-    /// Match items whose custom_data component contains the expected NBT subset.
-    CustomData { tag: &'static str },
     /// Always matches (no predicate specified).
     Any,
 }
@@ -804,10 +788,6 @@ impl ToolPredicate {
             ToolPredicate::Tag(tag) => {
                 // Check if the tool's item is in the specified tag
                 REGISTRY.items.is_in_tag(tool.item, tag)
-            }
-            ToolPredicate::CustomData { tag: _tag } => {
-                // TODO: match custom_data via NbtPredicate when component data is readable
-                false
             }
             ToolPredicate::Any => true,
         }
@@ -1020,10 +1000,7 @@ pub enum LootFunction {
     /// Set the damage of the item (0.0 = broken, 1.0 = full durability).
     SetDamage { damage: NumberProvider, add: bool },
     /// Enchant the item randomly with enchantments from options.
-    EnchantRandomly {
-        options: EnchantmentOptions,
-        only_compatible: bool,
-    },
+    EnchantRandomly { options: EnchantmentOptions },
     /// Enchant the item as if using an enchanting table at the specified level.
     EnchantWithLevels {
         levels: NumberProvider,
@@ -1051,7 +1028,6 @@ pub enum LootFunction {
         decoration: Identifier,
         zoom: i32,
         skip_existing_chunks: bool,
-        search_radius: i32,
     },
     /// Set the custom name of the item.
     SetName {
@@ -1289,7 +1265,6 @@ pub enum LootEntry {
     /// Inline loot table (embedded pools directly in entry).
     InlineLootTable {
         pools: &'static [LootPool],
-        table_functions: &'static [ConditionalLootFunction],
         weight: i32,
         quality: i32,
         conditions: &'static [LootCondition],
@@ -1430,7 +1405,7 @@ impl LootEntry {
 #[derive(Debug, Clone)]
 pub struct LootPool {
     pub rolls: NumberProvider,
-    pub bonus_rolls: NumberProvider,
+    pub bonus_rolls: f32,
     pub entries: &'static [LootEntry],
     pub conditions: &'static [LootCondition],
     pub functions: &'static [ConditionalLootFunction],
@@ -1500,9 +1475,7 @@ impl LootPool {
         let start_index = result.len();
 
         // Calculate number of rolls
-        let ctx_ref = LootContextRef { tool: ctx.tool };
-        let bonus = self.bonus_rolls.get(ctx.rng, Some(&ctx_ref));
-        let roll_count = self.rolls.get_int(ctx.rng) + (bonus * ctx.luck).floor() as i32;
+        let roll_count = self.rolls.get_int(ctx.rng) + (self.bonus_rolls * ctx.luck).floor() as i32;
 
         for _ in 0..roll_count {
             self.add_random_item(ctx, result);
@@ -1616,25 +1589,14 @@ impl LootEntry {
                 }
             }
             LootEntry::InlineLootTable {
-                pools,
-                table_functions,
-                functions,
-                ..
+                pools, functions, ..
             } => {
                 // Process inline loot table pools directly
                 let mut items = Vec::new();
                 for pool in *pools {
                     pool.add_random_items(ctx, &mut items);
                 }
-                // Apply inline table-level functions
-                for item in &mut items {
-                    for cond_func in *table_functions {
-                        if cond_func.conditions.iter().all(|c| c.test(ctx)) {
-                            cond_func.function.apply(item, ctx);
-                        }
-                    }
-                }
-                // Apply entry-level functions to all items from the inline table
+                // Apply functions to all items from the inline table
                 for item in &mut items {
                     for cond_func in *functions {
                         if cond_func.conditions.iter().all(|c| c.test(ctx)) {
@@ -1817,10 +1779,7 @@ impl LootFunction {
             LootFunction::SetDamage { damage, add } => {
                 item.set_damage_fraction(damage.get_simple(ctx.rng), *add);
             }
-            LootFunction::EnchantRandomly {
-                options,
-                only_compatible: _,
-            } => {
+            LootFunction::EnchantRandomly { options } => {
                 // TODO: Implement when enchantment system is ready
                 item.enchant_randomly(options, ctx.rng);
             }
@@ -1852,16 +1811,9 @@ impl LootFunction {
                 decoration,
                 zoom,
                 skip_existing_chunks,
-                search_radius,
             } => {
                 // TODO: Implement exploration map creation
-                item.create_exploration_map(
-                    destination,
-                    decoration,
-                    *zoom,
-                    *skip_existing_chunks,
-                    *search_radius,
-                );
+                item.create_exploration_map(destination, decoration, *zoom, *skip_existing_chunks);
             }
             LootFunction::SetName { name, target } => {
                 // TODO: Implement name setting

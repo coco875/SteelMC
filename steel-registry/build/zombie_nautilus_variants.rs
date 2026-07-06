@@ -16,9 +16,9 @@ pub struct ZombieNautilusVariantJson {
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+pub(crate) fn build() -> TokenStream {
     let zombie_nautilus_variants: Vec<(String, ZombieNautilusVariantJson)> =
-        read_variants_from_dir(overlay, "zombie_nautilus_variant");
+        read_variants_from_dir("zombie_nautilus_variant");
 
     let mut stream = TokenStream::new();
 

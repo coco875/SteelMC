@@ -7,7 +7,6 @@ use proc_macro2::{Ident, Span};
 use quote::quote;
 use std::fs;
 use steel_utils::Identifier;
-use steel_utils::datapack_overlay::DatapackOverlay;
 
 pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
     println!("cargo:rerun-if-changed={path}");
@@ -150,27 +149,28 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
     }
 }
 
-pub fn read_minecraft_datapack_entries<T: serde::de::DeserializeOwned>(
-    overlay: &DatapackOverlay,
-    subdir: &str,
-) -> Vec<(String, T)> {
-    let dir = format!("minecraft/{subdir}");
-    overlay
-        .list_json_relative(&dir)
-        .into_iter()
-        .map(|(name, content)| {
-            let value: T = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {dir}/{name}.json: {e}"));
-            (name, value)
-        })
-        .collect()
-}
-
-pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(
-    overlay: &DatapackOverlay,
-    subdir: &str,
-) -> Vec<(String, T)> {
-    let mut out = read_minecraft_datapack_entries(overlay, subdir);
+pub fn read_variants_from_dir<T: serde::de::DeserializeOwned>(subdir: &str) -> Vec<(String, T)> {
+    let dir = format!("../steel-utils/build_assets/builtin_datapacks/minecraft/{subdir}");
+    println!("cargo:rerun-if-changed={dir}/");
+    let mut out = Vec::new();
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("Failed to read {dir}: {e}")) {
+        let path = entry
+            .unwrap_or_else(|e| panic!("Failed to read entry in {dir}: {e}"))
+            .path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_else(|| panic!("Invalid variant file name in {dir}: {}", path.display()))
+            .to_string();
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", path.display()));
+        let value: T = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to parse {}: {}", name, e));
+        out.push((name, value));
+    }
     let order = vanilla_variant_order(subdir);
     out.sort_by_key(|(name, _)| {
         order

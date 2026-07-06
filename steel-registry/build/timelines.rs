@@ -1,10 +1,10 @@
-use crate::generator_functions::read_minecraft_datapack_entries;
+use std::fs;
+
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
 use serde_json::Value;
-use steel_utils::Identifier;
 
 #[derive(Deserialize, Debug)]
 pub struct TimelineJson {
@@ -30,15 +30,13 @@ struct KeyframeJson {
 }
 
 fn quote_opt_identifier(s: &str) -> TokenStream {
-    let id = Identifier::parse_or_vanilla(s)
-        .unwrap_or_else(|error| panic!("invalid timeline identifier {s}: {error}"));
-    let namespace = id.namespace.as_ref();
-    let path = id.path.as_ref();
-    if namespace == Identifier::VANILLA_NAMESPACE {
-        quote! { Some(Identifier::vanilla_static(#path)) }
-    } else {
-        quote! { Some(Identifier::new_static(#namespace, #path)) }
-    }
+    let (namespace, path) = s.split_once(':').expect("Identifier missing ':'");
+    assert_eq!(
+        namespace, "minecraft",
+        "Expected minecraft namespace in: {}",
+        s
+    );
+    quote! { Some(Identifier::vanilla_static(#path)) }
 }
 
 fn quote_ease(v: &Value) -> TokenStream {
@@ -129,9 +127,25 @@ fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
     }
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let timelines: Vec<(String, TimelineJson)> =
-        read_minecraft_datapack_entries(overlay, "timeline");
+pub(crate) fn build() -> TokenStream {
+    let timeline_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/timeline";
+    println!("cargo:rerun-if-changed={timeline_dir}");
+    let mut timelines: Vec<(String, TimelineJson)> = Vec::new();
+
+    // Read all timeline JSON files
+    for entry in fs::read_dir(timeline_dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let timeline_name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            let content = fs::read_to_string(&path).unwrap();
+            let timeline_data: TimelineJson = serde_json::from_str(&content)
+                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", timeline_name, e));
+
+            timelines.push((timeline_name, timeline_data));
+        }
+    }
 
     let mut stream = TokenStream::new();
 

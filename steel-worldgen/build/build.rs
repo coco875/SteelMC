@@ -6,8 +6,6 @@
 
 use std::{env, fs, io, path::Path, process::Command};
 
-use steel_utils::datapack_overlay::DatapackOverlay;
-
 mod density;
 mod density_functions;
 mod multi_noise;
@@ -26,11 +24,9 @@ pub fn main() {
     let out_dir = Path::new(&manifest_dir).join("src/generated");
     fs::create_dir_all(&out_dir).expect("failed to create worldgen generated directory");
 
-    let datapack_overlay = DatapackOverlay::load_minecraft_with_zip_namespaces();
-
     let generated_files = [
-        (multi_noise::build(&datapack_overlay), MULTI_NOISE),
-        (noise_parameters::build(&datapack_overlay), NOISE_PARAMETERS),
+        (multi_noise::build(), MULTI_NOISE),
+        (noise_parameters::build(), NOISE_PARAMETERS),
     ];
 
     for (content, file_name) in generated_files {
@@ -46,7 +42,7 @@ pub fn main() {
         panic!("failed to rustfmt generated worldgen files: {err}");
     }
 
-    let df = density_functions::build(&datapack_overlay);
+    let df = density_functions::build();
     let df_dir = out_dir.join("vanilla_density_functions");
     fs::create_dir_all(&df_dir).expect("failed to create generated density function directory");
 
@@ -92,16 +88,4 @@ fn format_generated_rust_files(dir: &Path) -> io::Result<()> {
     }
 
     Ok(())
-}
-
-pub(crate) fn biome_ident_str(name: &str) -> String {
-    use heck::ToShoutySnakeCase;
-    let parsed = steel_utils::Identifier::parse_or_vanilla(name)
-        .unwrap_or_else(|error| panic!("invalid biome identifier {name}: {error}"));
-
-    if parsed.namespace == "minecraft" {
-        parsed.path.to_shouty_snake_case()
-    } else {
-        format!("{}_{}", parsed.namespace, parsed.path).to_shouty_snake_case()
-    }
 }

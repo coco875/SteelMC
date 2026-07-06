@@ -45,7 +45,6 @@ use crate::{
     sound_event::SoundEventRegistry,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
-    template_pool::ProcessorList,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -892,10 +891,19 @@ impl Registry {
                 self.validate_placed_feature_ref(&config.feature);
             }
             ConfiguredFeatureKind::Fossil(config) => {
-                self.validate_processor_list(&config.fossil_processors, "fossil processors");
-                self.validate_processor_list(
-                    &config.overlay_processors,
-                    "fossil overlay processors",
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.fossil_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.fossil_processors
+                );
+                assert!(
+                    self.structure_processors
+                        .by_key(&config.overlay_processors)
+                        .is_some(),
+                    "fossil configured feature references unknown processor list {}",
+                    config.overlay_processors
                 );
             }
             ConfiguredFeatureKind::SimpleRandomSelector(config) => {
@@ -988,15 +996,6 @@ impl Registry {
             placed_features: PlacedFeatureRegistry::new(),
             structures: StructureRegistry::new(),
             structure_processors: StructureProcessorListRegistry::new(),
-        }
-    }
-
-    fn validate_processor_list(&self, processors: &ProcessorList, context: &str) {
-        if let ProcessorList::Registry(key) = processors {
-            assert!(
-                self.structure_processors.by_key(key).is_some(),
-                "{context} references unknown processor list {key}"
-            );
         }
     }
 }

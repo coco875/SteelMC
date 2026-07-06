@@ -358,19 +358,12 @@ use super::{
     PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
     PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
-    PersistentPoolElement, PersistentPosRuleTestData, PersistentProceduralPieceData,
-    PersistentProcessorBlockStateData, PersistentProcessorList, PersistentProcessorRuleData,
-    PersistentRuleBlockEntityModifierData, PersistentSection, PersistentStrongholdPieceData,
-    PersistentStrongholdSmallDoorType, PersistentStructurePiece, PersistentStructurePiecePayload,
-    PersistentStructureProcessorKind, PersistentStructureReference,
-    PersistentStructureRuleTestData, PersistentStructureStart, PersistentSwampHutPieceData,
-    PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
-    PersistentTemplateProcessorList, PersistentTick, PreparedChunkSave,
-};
-use steel_registry::shared_structs::BlockStateData as ProcessorBlockStateData;
-use steel_registry::structure_processor::{
-    PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
-    StructureProcessorKind, StructureRuleTestData,
+    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
+    PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
+    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
+    PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
+    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
+    PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.
@@ -2566,12 +2559,6 @@ impl ChunkStorage {
     fn processors_to_persistent(processors: &ProcessorList) -> PersistentProcessorList {
         match processors {
             ProcessorList::Empty => PersistentProcessorList::Empty,
-            ProcessorList::Direct(processors) => PersistentProcessorList::Direct(
-                processors
-                    .iter()
-                    .map(Self::structure_processor_to_persistent)
-                    .collect(),
-            ),
             ProcessorList::Registry(id) => PersistentProcessorList::Registry(id.clone()),
         }
     }
@@ -2579,234 +2566,7 @@ impl ChunkStorage {
     fn persistent_to_processors(processors: &PersistentProcessorList) -> ProcessorList {
         match processors {
             PersistentProcessorList::Empty => ProcessorList::Empty,
-            PersistentProcessorList::Direct(processors) => ProcessorList::Direct(
-                processors
-                    .iter()
-                    .map(Self::persistent_to_structure_processor)
-                    .collect(),
-            ),
             PersistentProcessorList::Registry(id) => ProcessorList::Registry(id.clone()),
-        }
-    }
-
-    fn structure_processor_to_persistent(
-        processor: &StructureProcessorKind,
-    ) -> PersistentStructureProcessorKind {
-        match processor {
-            StructureProcessorKind::Rule { rules } => PersistentStructureProcessorKind::Rule {
-                rules: rules
-                    .iter()
-                    .map(Self::processor_rule_to_persistent)
-                    .collect(),
-            },
-            other => panic!("cannot persist direct structure processor kind {other:?}"),
-        }
-    }
-
-    fn persistent_to_structure_processor(
-        processor: &PersistentStructureProcessorKind,
-    ) -> StructureProcessorKind {
-        match processor {
-            PersistentStructureProcessorKind::Rule { rules } => StructureProcessorKind::Rule {
-                rules: rules
-                    .iter()
-                    .map(Self::persistent_to_processor_rule)
-                    .collect(),
-            },
-        }
-    }
-
-    fn processor_rule_to_persistent(rule: &ProcessorRuleData) -> PersistentProcessorRuleData {
-        PersistentProcessorRuleData {
-            input_predicate: Self::structure_rule_test_to_persistent(&rule.input_predicate),
-            location_predicate: Self::structure_rule_test_to_persistent(&rule.location_predicate),
-            position_predicate: Self::pos_rule_test_to_persistent(&rule.position_predicate),
-            output_state: Self::processor_block_state_to_persistent(&rule.output_state),
-            block_entity_modifier: Self::rule_block_entity_modifier_to_persistent(
-                &rule.block_entity_modifier,
-            ),
-        }
-    }
-
-    fn persistent_to_processor_rule(rule: &PersistentProcessorRuleData) -> ProcessorRuleData {
-        ProcessorRuleData {
-            input_predicate: Self::persistent_to_structure_rule_test(&rule.input_predicate),
-            location_predicate: Self::persistent_to_structure_rule_test(&rule.location_predicate),
-            position_predicate: Self::persistent_to_pos_rule_test(&rule.position_predicate),
-            output_state: Self::persistent_to_processor_block_state(&rule.output_state),
-            block_entity_modifier: Self::persistent_to_rule_block_entity_modifier(
-                &rule.block_entity_modifier,
-            ),
-        }
-    }
-
-    fn structure_rule_test_to_persistent(
-        test: &StructureRuleTestData,
-    ) -> PersistentStructureRuleTestData {
-        match test {
-            StructureRuleTestData::AlwaysTrue => PersistentStructureRuleTestData::AlwaysTrue,
-            StructureRuleTestData::BlockMatch { block } => {
-                PersistentStructureRuleTestData::BlockMatch {
-                    block: block.clone(),
-                }
-            }
-            StructureRuleTestData::RandomBlockMatch { block, probability } => {
-                PersistentStructureRuleTestData::RandomBlockMatch {
-                    block: block.clone(),
-                    probability: *probability,
-                }
-            }
-            StructureRuleTestData::TagMatch { tag } => {
-                PersistentStructureRuleTestData::TagMatch { tag: tag.clone() }
-            }
-            StructureRuleTestData::BlockStateMatch { block_state } => {
-                PersistentStructureRuleTestData::BlockStateMatch {
-                    block_state: Self::processor_block_state_to_persistent(block_state),
-                }
-            }
-            StructureRuleTestData::RandomBlockStateMatch {
-                block_state,
-                probability,
-            } => PersistentStructureRuleTestData::RandomBlockStateMatch {
-                block_state: Self::processor_block_state_to_persistent(block_state),
-                probability: *probability,
-            },
-        }
-    }
-
-    fn persistent_to_structure_rule_test(
-        test: &PersistentStructureRuleTestData,
-    ) -> StructureRuleTestData {
-        match test {
-            PersistentStructureRuleTestData::AlwaysTrue => StructureRuleTestData::AlwaysTrue,
-            PersistentStructureRuleTestData::BlockMatch { block } => {
-                StructureRuleTestData::BlockMatch {
-                    block: block.clone(),
-                }
-            }
-            PersistentStructureRuleTestData::RandomBlockMatch { block, probability } => {
-                StructureRuleTestData::RandomBlockMatch {
-                    block: block.clone(),
-                    probability: *probability,
-                }
-            }
-            PersistentStructureRuleTestData::TagMatch { tag } => {
-                StructureRuleTestData::TagMatch { tag: tag.clone() }
-            }
-            PersistentStructureRuleTestData::BlockStateMatch { block_state } => {
-                StructureRuleTestData::BlockStateMatch {
-                    block_state: Self::persistent_to_processor_block_state(block_state),
-                }
-            }
-            PersistentStructureRuleTestData::RandomBlockStateMatch {
-                block_state,
-                probability,
-            } => StructureRuleTestData::RandomBlockStateMatch {
-                block_state: Self::persistent_to_processor_block_state(block_state),
-                probability: *probability,
-            },
-        }
-    }
-
-    fn pos_rule_test_to_persistent(test: &PosRuleTestData) -> PersistentPosRuleTestData {
-        match test {
-            PosRuleTestData::AlwaysTrue => PersistentPosRuleTestData::AlwaysTrue,
-            PosRuleTestData::AxisAlignedLinearPos {
-                axis,
-                min_chance,
-                max_chance,
-                min_dist,
-                max_dist,
-            } => PersistentPosRuleTestData::AxisAlignedLinearPos {
-                axis: match axis {
-                    StructureProcessorAxis::X => 0,
-                    StructureProcessorAxis::Y => 1,
-                    StructureProcessorAxis::Z => 2,
-                },
-                min_chance: *min_chance,
-                max_chance: *max_chance,
-                min_dist: *min_dist,
-                max_dist: *max_dist,
-            },
-        }
-    }
-
-    fn persistent_to_pos_rule_test(test: &PersistentPosRuleTestData) -> PosRuleTestData {
-        match test {
-            PersistentPosRuleTestData::AlwaysTrue => PosRuleTestData::AlwaysTrue,
-            PersistentPosRuleTestData::AxisAlignedLinearPos {
-                axis,
-                min_chance,
-                max_chance,
-                min_dist,
-                max_dist,
-            } => PosRuleTestData::AxisAlignedLinearPos {
-                axis: match axis {
-                    0 => StructureProcessorAxis::X,
-                    1 => StructureProcessorAxis::Y,
-                    2 => StructureProcessorAxis::Z,
-                    _ => StructureProcessorAxis::Y,
-                },
-                min_chance: *min_chance,
-                max_chance: *max_chance,
-                min_dist: *min_dist,
-                max_dist: *max_dist,
-            },
-        }
-    }
-
-    fn rule_block_entity_modifier_to_persistent(
-        modifier: &RuleBlockEntityModifierData,
-    ) -> PersistentRuleBlockEntityModifierData {
-        match modifier {
-            RuleBlockEntityModifierData::Passthrough => {
-                PersistentRuleBlockEntityModifierData::Passthrough
-            }
-            RuleBlockEntityModifierData::AppendLoot { loot_table } => {
-                PersistentRuleBlockEntityModifierData::AppendLoot {
-                    loot_table: loot_table.clone(),
-                }
-            }
-            RuleBlockEntityModifierData::AppendStatic { .. } => {
-                panic!("cannot persist direct append_static structure processor")
-            }
-        }
-    }
-
-    fn persistent_to_rule_block_entity_modifier(
-        modifier: &PersistentRuleBlockEntityModifierData,
-    ) -> RuleBlockEntityModifierData {
-        match modifier {
-            PersistentRuleBlockEntityModifierData::Passthrough => {
-                RuleBlockEntityModifierData::Passthrough
-            }
-            PersistentRuleBlockEntityModifierData::AppendLoot { loot_table } => {
-                RuleBlockEntityModifierData::AppendLoot {
-                    loot_table: loot_table.clone(),
-                }
-            }
-        }
-    }
-
-    fn processor_block_state_to_persistent(
-        state: &ProcessorBlockStateData,
-    ) -> PersistentProcessorBlockStateData {
-        PersistentProcessorBlockStateData {
-            name: state.name.clone(),
-            properties: state
-                .properties
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        }
-    }
-
-    fn persistent_to_processor_block_state(
-        state: &PersistentProcessorBlockStateData,
-    ) -> ProcessorBlockStateData {
-        ProcessorBlockStateData {
-            name: state.name.clone(),
-            properties: state.properties.iter().cloned().collect(),
         }
     }
 

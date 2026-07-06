@@ -14,9 +14,8 @@ pub struct FrogVariantJson {
     spawn_conditions: Vec<SpawnConditionEntry>,
 }
 
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
-    let frog_variants: Vec<(String, FrogVariantJson)> =
-        read_variants_from_dir(overlay, "frog_variant");
+pub(crate) fn build() -> TokenStream {
+    let frog_variants: Vec<(String, FrogVariantJson)> = read_variants_from_dir("frog_variant");
 
     let mut stream = TokenStream::new();
 

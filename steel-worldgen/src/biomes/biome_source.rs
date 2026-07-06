@@ -16,26 +16,21 @@
 //! generation order, and better L1 locality since the cache lives on the sampler struct
 //! alongside the column cache. The only cost is one cold start per chunk (1/1536 lookups).
 
-use crate::density::DimensionNoises as _;
-use crate::density_functions::end::{EndColumnCache, EndNoises};
-use crate::density_functions::nether::NetherColumnCache;
-use crate::density_functions::overworld::OverworldColumnCache;
-use crate::multi_noise::{
-    self, NETHER_BIOME_PARAMETERS, OVERWORLD_BIOME_PARAMETERS, get_nether_biome_cached,
-    get_overworld_biome_cached,
-};
-use crate::noise_parameters::get_noise_parameters;
 use rustc_hash::FxHashSet;
 use steel_registry::biome::BiomeRef;
 use steel_registry::vanilla_biomes;
-use steel_utils::climate::{TargetPoint, quantize_coord};
 use steel_utils::random::Random as _;
 use steel_utils::random::legacy_random::LegacyRandom;
-use steel_utils::random::xoroshiro::Xoroshiro;
 use steel_utils::{BlockPos, Identifier};
+use steel_worldgen::density_functions::nether::NetherColumnCache;
+use steel_worldgen::density_functions::overworld::OverworldColumnCache;
+use steel_worldgen::multi_noise::{
+    NETHER_BIOME_PARAMETERS, OVERWORLD_BIOME_PARAMETERS, get_nether_biome_cached,
+    get_overworld_biome_cached,
+};
 
 use super::{NetherClimateSampler, OverworldClimateSampler};
-use crate::noise::EndIslands;
+use steel_worldgen::noise::EndIslands;
 
 /// Dimension-specific biome source.
 ///
@@ -92,7 +87,13 @@ impl BiomeSourceKind {
                 .iter()
                 .map(|(_, biome)| *biome)
                 .collect(),
-            Self::End(_) => multi_noise::end_possible_biome_refs(),
+            Self::End(_) => vec![
+                &vanilla_biomes::THE_END,
+                &vanilla_biomes::END_HIGHLANDS,
+                &vanilla_biomes::END_MIDLANDS,
+                &vanilla_biomes::SMALL_END_ISLANDS,
+                &vanilla_biomes::END_BARRENS,
+            ],
         };
 
         distinct_biome_refs(biomes)
@@ -219,7 +220,7 @@ impl ChunkBiomeSampler<'_> {
         match self {
             Self::Overworld(s) => s.init_grid(chunk_block_x, chunk_block_z),
             Self::Nether(s) => s.init_grid(chunk_block_x, chunk_block_z),
-            Self::End(s) => s.init_grid(chunk_block_x, chunk_block_z),
+            Self::End(_) => {}
         }
     }
 }
@@ -352,7 +353,7 @@ impl NetherChunkBiomeSampler<'_> {
 ///
 /// Matches vanilla's `TheEndBiomeSource`.
 pub struct EndBiomeSource {
-    source: multi_noise::GeneratedEndBiomeSource,
+    end_islands: EndIslands,
 }
 
 impl EndBiomeSource {
@@ -364,51 +365,47 @@ impl EndBiomeSource {
     #[must_use]
     pub fn new(seed: u64) -> Self {
         Self {
-            source: multi_noise::new_end_biome_source(seed),
+            end_islands: EndIslands::new(seed),
         }
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {
         ChunkBiomeSampler::End(Box::new(EndChunkBiomeSampler {
-            sampler: multi_noise::new_end_chunk_biome_sampler(&self.source),
+            source: self,
+            cached_erosion: None,
         }))
     }
 }
 
 pub struct EndChunkBiomeSampler<'a> {
-    sampler: multi_noise::GeneratedEndChunkBiomeSampler<'a>,
-}
-
-impl EndChunkBiomeSampler<'_> {
-    fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
-        self.sampler.sample(quart_x, quart_y, quart_z)
-    }
-
-    fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
-        self.sampler.init_grid(chunk_block_x, chunk_block_z);
-    }
-}
-
-#[allow(
-    dead_code,
-    reason = "only the generated End source kind for this build constructs one concrete End sampler"
-)]
-pub(crate) struct VanillaEndChunkBiomeSampler<'a> {
-    pub(crate) source: &'a EndIslands,
+    source: &'a EndBiomeSource,
     /// Cached erosion value keyed by (`chunk_x`, `chunk_z`).
     ///
     /// All quart positions within a chunk produce the same chunk coordinates,
     /// and `EndIslands::sample` ignores `block_y`, so the erosion is constant
     /// per chunk. This avoids redundant 25×25 simplex neighborhood scans.
-    pub(crate) cached_erosion: Option<(i32, i32, f64)>,
+    cached_erosion: Option<(i32, i32, f64)>,
 }
 
-#[allow(
-    dead_code,
-    reason = "only the generated End source kind for this build calls one concrete End sampler"
-)]
-impl VanillaEndChunkBiomeSampler<'_> {
-    pub(crate) fn sample(&mut self, quart_x: i32, _quart_y: i32, quart_z: i32) -> BiomeRef {
+impl EndChunkBiomeSampler<'_> {
+    fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
+        if let Some((cx, cz, erosion)) = self.cached_erosion
+            && cx == chunk_x
+            && cz == chunk_z
+        {
+            return erosion;
+        }
+        let weird_block_x = f64::from((chunk_x * 2 + 1) * 8);
+        let weird_block_z = f64::from((chunk_z * 2 + 1) * 8);
+        let erosion = self
+            .source
+            .end_islands
+            .sample(weird_block_x, 0.0, weird_block_z);
+        self.cached_erosion = Some((chunk_x, chunk_z, erosion));
+        erosion
+    }
+
+    fn sample(&mut self, quart_x: i32, _quart_y: i32, quart_z: i32) -> BiomeRef {
         let block_x = quart_x << 2;
         let block_z = quart_z << 2;
         let chunk_x = block_x >> 4;
@@ -432,145 +429,6 @@ impl VanillaEndChunkBiomeSampler<'_> {
             &vanilla_biomes::END_BARRENS
         }
     }
-
-    pub(crate) fn init_grid(&mut self, _chunk_block_x: i32, _chunk_block_z: i32) {}
-
-    fn get_erosion(&mut self, chunk_x: i32, chunk_z: i32) -> f64 {
-        if let Some((cx, cz, erosion)) = self.cached_erosion
-            && cx == chunk_x
-            && cz == chunk_z
-        {
-            return erosion;
-        }
-        let weird_block_x = f64::from((chunk_x * 2 + 1) * 8);
-        let weird_block_z = f64::from((chunk_z * 2 + 1) * 8);
-        let erosion = self.source.sample(weird_block_x, 0.0, weird_block_z);
-        self.cached_erosion = Some((chunk_x, chunk_z, erosion));
-        erosion
-    }
-}
-
-/// Climate sampler for the End dimension when using multi-noise biome generation.
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
-)]
-pub struct EndClimateSampler {
-    noises: Box<EndNoises>,
-}
-
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
-)]
-impl EndClimateSampler {
-    /// Create a new End climate sampler with the given seed.
-    #[must_use]
-    pub fn new(seed: u64) -> Self {
-        let mut rng = Xoroshiro::from_seed(seed);
-        let splitter = rng.next_positional();
-        let noise_params = get_noise_parameters();
-        let noises = EndNoises::create(seed, &splitter, &noise_params);
-
-        Self {
-            noises: Box::new(noises),
-        }
-    }
-
-    /// Sample climate at a quart position.
-    #[must_use]
-    pub fn sample(
-        &self,
-        quart_x: i32,
-        quart_y: i32,
-        quart_z: i32,
-        cache: &mut EndColumnCache,
-    ) -> TargetPoint {
-        let block_x = quart_x << 2;
-        let block_y = quart_y << 2;
-        let block_z = quart_z << 2;
-
-        cache.ensure(block_x, block_z, &self.noises);
-
-        let block_x = f64::from(block_x);
-        let block_y = f64::from(block_y);
-        let block_z = f64::from(block_z);
-
-        let temp =
-            self.noises
-                .router_temperature(cache, block_x as i32, block_y as i32, block_z as i32)
-                as f32;
-        let humidity =
-            self.noises
-                .router_vegetation(cache, block_x as i32, block_y as i32, block_z as i32)
-                as f32;
-        let cont = self.noises.router_continentalness(
-            cache,
-            block_x as i32,
-            block_y as i32,
-            block_z as i32,
-        ) as f32;
-        let erosion =
-            self.noises
-                .router_erosion(cache, block_x as i32, block_y as i32, block_z as i32)
-                as f32;
-        let depth = self
-            .noises
-            .router_depth(cache, block_x as i32, block_y as i32, block_z as i32)
-            as f32;
-        let weirdness =
-            self.noises
-                .router_ridges(cache, block_x as i32, block_y as i32, block_z as i32)
-                as f32;
-
-        TargetPoint::new(
-            quantize_coord(f64::from(temp)),
-            quantize_coord(f64::from(humidity)),
-            quantize_coord(f64::from(cont)),
-            quantize_coord(f64::from(erosion)),
-            quantize_coord(f64::from(depth)),
-            quantize_coord(f64::from(weirdness)),
-        )
-    }
-
-    /// Pre-populate the column grid.
-    pub fn init_column_grid(
-        &self,
-        cache: &mut EndColumnCache,
-        chunk_block_x: i32,
-        chunk_block_z: i32,
-    ) {
-        cache.init_grid(chunk_block_x, chunk_block_z, &self.noises);
-    }
-}
-
-/// Per-chunk End multi-noise biome sampler with internal caches.
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
-)]
-pub struct EndMultiNoiseChunkBiomeSampler<'a> {
-    pub(crate) source: &'a EndClimateSampler,
-    pub(crate) column_cache: EndColumnCache,
-    pub(crate) biome_cache: Option<usize>,
-}
-
-#[allow(
-    dead_code,
-    reason = "only used when generated datapack overlays select a multi-noise End biome source"
-)]
-impl EndMultiNoiseChunkBiomeSampler<'_> {
-    pub(crate) fn sample(&mut self, quart_x: i32, quart_y: i32, quart_z: i32) -> BiomeRef {
-        let target = self
-            .source
-            .sample(quart_x, quart_y, quart_z, &mut self.column_cache);
-        multi_noise::get_the_end_biome_cached(&target, &mut self.biome_cache)
-    }
-
-    pub(crate) fn init_grid(&mut self, chunk_block_x: i32, chunk_block_z: i32) {
-        self.source
-            .init_column_grid(&mut self.column_cache, chunk_block_x, chunk_block_z);
-    }
 }
 
 #[cfg(test)]
@@ -579,12 +437,6 @@ mod tests {
 
     #[test]
     fn end_possible_biomes_follow_vanilla_order() {
-        if matches!(
-            crate::multi_noise::END_BIOME_SOURCE_KIND,
-            crate::multi_noise::EndBiomeSourceKind::MultiNoise
-        ) {
-            return;
-        }
         let source = BiomeSourceKind::end(0);
         let keys = source
             .possible_biome_refs()

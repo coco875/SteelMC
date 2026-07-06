@@ -1,13 +1,13 @@
 //! Build script for generating vanilla loot table definitions.
 
-use crate::generator_functions::{generate_option, generate_static_identifier_from_str};
+use std::{fs, path::Path};
+
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use steel_utils::Identifier;
-use steel_utils::datapack_overlay::DatapackOverlay;
 
 /// A number provider can be a constant number or an object with type.
 #[derive(Deserialize, Debug, Clone)]
@@ -2063,11 +2063,21 @@ struct LootTableData {
     random_sequence: Option<String>,
 }
 
+pub(crate) fn build() -> TokenStream {
+    let loot_table_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table";
+    println!("cargo:rerun-if-changed={loot_table_dir}");
+    let mut tables: Vec<LootTableData> = Vec::new();
 fn parsed_loot_table_id(registry_id: &str) -> Identifier {
     Identifier::parse_or_vanilla(registry_id)
         .unwrap_or_else(|error| panic!("invalid loot table identifier {registry_id}: {error}"))
 }
 
+    // Recursively read all loot table JSON files
+    fn read_loot_tables(dir: &Path, base_dir: &Path, tables: &mut Vec<LootTableData>) {
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
 fn generate_loot_table_key(registry_id: &str) -> TokenStream {
     let id = parsed_loot_table_id(registry_id);
     let namespace = id.namespace.as_ref();
@@ -2079,6 +2089,58 @@ fn generate_loot_table_key(registry_id: &str) -> TokenStream {
     }
 }
 
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            if path.is_dir() {
+                read_loot_tables(&path, base_dir, tables);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let relative_path = path
+                    .strip_prefix(base_dir)
+                    .unwrap_or(&path)
+                    .with_extension("");
+                let key = relative_path
+                    .to_str()
+                    .unwrap_or("unknown")
+                    .replace('\\', "/");
+
+                let content = match fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let loot_table: LootTableJson = match serde_json::from_str(&content) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        panic!("Failed to parse loot table {}: {}", key, e);
+                    }
+                };
+
+                // Generate const identifier from the key
+                let const_name = key.replace('/', "_").to_shouty_snake_case();
+                let const_ident = Ident::new(&const_name, Span::call_site());
+
+                let pools: Vec<TokenStream> = loot_table.pools.iter().map(generate_pool).collect();
+                let functions: Vec<TokenStream> =
+                    loot_table.functions.iter().map(generate_function).collect();
+
+                let random_sequence = loot_table
+                    .random_sequence
+                    .as_ref()
+                    .map(|s| s.strip_prefix("minecraft:").unwrap_or(s).to_string());
+
+                tables.push(LootTableData {
+                    key,
+                    const_ident,
+                    loot_type: generate_loot_type(
+                        loot_table.loot_type.as_deref().unwrap_or("minecraft:empty"),
+                    ),
+                    pools,
+                    functions,
+                    random_sequence,
+                });
+            }
+        }
 fn loot_table_category_key(registry_id: &str) -> String {
     let id = parsed_loot_table_id(registry_id);
     let namespace = id.namespace.as_ref();
@@ -2091,6 +2153,11 @@ fn loot_table_category_key(registry_id: &str) -> String {
     }
 }
 
+    read_loot_tables(
+        Path::new(loot_table_dir),
+        Path::new(loot_table_dir),
+        &mut tables,
+    );
 fn loot_table_field_name(registry_id: &str) -> String {
     let id = parsed_loot_table_id(registry_id);
     let namespace = id.namespace.as_ref();
@@ -2149,13 +2216,6 @@ fn parse_loot_table(registry_id: &str, content: &str) -> LootTableData {
     }
 }
 
-pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
-    let mut tables: Vec<LootTableData> = overlay
-        .list_json_registry_ids_with_suffix("loot_table")
-        .into_iter()
-        .map(|(registry_id, content)| parse_loot_table(&registry_id, &content))
-        .collect();
-    tables.sort_by(|a, b| a.registry_id.cmp(&b.registry_id));
 
     let mut stream = TokenStream::new();
 

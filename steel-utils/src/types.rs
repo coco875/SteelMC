@@ -1308,34 +1308,6 @@ impl Identifier {
         }
     }
 
-    /// Parses an identifier, using the vanilla namespace when no namespace is present.
-    ///
-    /// Minecraft datapack JSON frequently omits `minecraft:` for vanilla ids.
-    pub fn parse_or_vanilla(s: &str) -> Result<Self, &'static str> {
-        let (namespace, path) = s
-            .split_once(':')
-            .map_or((Self::VANILLA_NAMESPACE, s), |(namespace, path)| {
-                (namespace, path)
-            });
-
-        Self::new_validated(namespace, path)
-    }
-
-    fn new_validated(namespace: &str, path: &str) -> Result<Self, &'static str> {
-        if !Self::validate_namespace(namespace) {
-            return Err("Invalid namespace");
-        }
-
-        if !Self::validate_path(path) {
-            return Err("Invalid path");
-        }
-
-        Ok(Identifier {
-            namespace: Cow::Owned(namespace.to_string()),
-            path: Cow::Owned(path.to_string()),
-        })
-    }
-
     /// Returns whether the character is a valid namespace character.
     #[must_use]
     pub const fn valid_namespace_char(char: char) -> bool {
@@ -1379,11 +1351,23 @@ impl FromStr for Identifier {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((namespace, path)) = s.split_once(':') else {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 2 {
             return Err("Invalid resource location");
-        };
+        }
 
-        Identifier::new_validated(namespace, path)
+        if !Identifier::validate_namespace(parts[0]) {
+            return Err("Invalid namespace");
+        }
+
+        if !Identifier::validate_path(parts[1]) {
+            return Err("Invalid path");
+        }
+
+        Ok(Identifier {
+            namespace: Cow::Owned(parts[0].to_string()),
+            path: Cow::Owned(parts[1].to_string()),
+        })
     }
 }
 impl Serialize for Identifier {
