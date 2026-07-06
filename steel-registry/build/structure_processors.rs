@@ -2,14 +2,12 @@
 
 use std::fs;
 
-use heck::ToShoutySnakeCase;
-use proc_macro2::{Ident, Span, TokenStream};
 use crate::generator_functions::{
     generate_static_identifier as generate_identifier, generate_static_identifier_from_str,
-    registry_entry_ident,
+    registry_entry_ident, resource_name, sorted_json_files,
 };
+use proc_macro2::TokenStream;
 use quote::quote;
-use steel_utils::{Identifier, value_providers::IntProvider};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::value_providers::IntProvider;
 
@@ -412,7 +410,7 @@ pub(crate) fn build() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<StructureProcessorListData>(&content)

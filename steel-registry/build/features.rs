@@ -3,7 +3,8 @@
 use std::fs;
 
 use crate::generator_functions::{
-    generate_static_identifier as generate_identifier, registry_entry_ident,
+    generate_static_identifier as generate_identifier, registry_entry_ident, resource_name,
+    sorted_json_files,
 };
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -19,13 +20,15 @@ mod feature_data;
 
 use feature_data::*;
 
-fn sorted_json_registry_entries(
-    overlay: &DatapackOverlay,
-    path_suffix: &str,
-) -> Vec<(String, String)> {
-    overlay
-        .list_json_registry_ids_with_suffix(path_suffix)
+fn sorted_json_registry_entries(dir: &str) -> Vec<(String, String)> {
+    sorted_json_files(dir)
         .into_iter()
+        .map(|path| {
+            let name = resource_name(&path);
+            let content = fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+            (name, content)
+        })
         .collect()
 }
 
@@ -47,15 +50,22 @@ fn generate_fluid_ref(identifier: &Identifier) -> TokenStream {
     quote! { &vanilla_fluids::#ident }
 }
 
+fn feature_entry_ident(identifier: &Identifier) -> Ident {
+    let registry_id = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
+        identifier.path.as_ref().to_string()
+    } else {
+        format!("{}:{}", identifier.namespace, identifier.path)
+    };
+    registry_entry_ident(&registry_id)
+}
+
 fn generate_configured_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
-    let ident = registry_entry_ident(&registry_id);
+    let ident = feature_entry_ident(identifier);
     quote! { &crate::vanilla_configured_features::#ident }
 }
 
 fn generate_placed_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
-    let ident = registry_entry_ident(&registry_id);
+    let ident = feature_entry_ident(identifier);
     quote! { &crate::vanilla_placed_features::#ident }
 }
 
@@ -1966,11 +1976,12 @@ fn generate_vegetation_patch_kind(
     }
 }
 
-pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
+pub(crate) fn build_configured() -> TokenStream {
+    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
+    println!("cargo:rerun-if-changed={dir}");
+
     let mut entries = Vec::new();
-    for (registry_id, content) in
-        sorted_json_registry_entries(overlay, "worldgen/configured_feature")
-    {
+    for (registry_id, content) in sorted_json_registry_entries(dir) {
         let kind = parse_configured_feature_json(&registry_id, &content);
         entries.push((registry_id, generate_configured_feature_kind(&kind)));
     }
@@ -1996,7 +2007,7 @@ pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, kind) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid configured feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);
@@ -2030,7 +2041,7 @@ pub(crate) fn build_placed() -> TokenStream {
     let mut entries = Vec::new();
     for entry in sorted_json_files(dir) {
         let name = resource_name(&entry);
-        let path = entry.path();
+        let path = entry.as_path();
         let content =
             fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
         let data = serde_json::from_str::<PlacedFeatureData>(&content)
@@ -2053,7 +2064,7 @@ pub(crate) fn build_placed() -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, data) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid placed feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);

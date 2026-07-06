@@ -45,6 +45,7 @@ use crate::{
     sound_event::SoundEventRegistry,
     structure::StructureRegistry,
     structure_processor::StructureProcessorListRegistry,
+    template_pool::ProcessorList,
     timeline::TimelineRegistry,
     trim_material::TrimMaterialRegistry,
     trim_pattern::TrimPatternRegistry,
@@ -891,20 +892,8 @@ impl Registry {
                 self.validate_placed_feature_ref(&config.feature);
             }
             ConfiguredFeatureKind::Fossil(config) => {
-                assert!(
-                    self.structure_processors
-                        .by_key(&config.fossil_processors)
-                        .is_some(),
-                    "fossil configured feature references unknown processor list {}",
-                    config.fossil_processors
-                );
-                assert!(
-                    self.structure_processors
-                        .by_key(&config.overlay_processors)
-                        .is_some(),
-                    "fossil configured feature references unknown processor list {}",
-                    config.overlay_processors
-                );
+                self.validate_processor_list(&config.fossil_processors);
+                self.validate_processor_list(&config.overlay_processors);
             }
             ConfiguredFeatureKind::SimpleRandomSelector(config) => {
                 for feature in &config.features {
@@ -921,6 +910,15 @@ impl Registry {
                 self.validate_placed_feature_ref(&config.vegetation_feature);
             }
             _ => {}
+        }
+    }
+
+    fn validate_processor_list(&self, processors: &ProcessorList) {
+        if let ProcessorList::Registry(id) = processors {
+            assert!(
+                self.structure_processors.by_key(id).is_some(),
+                "configured feature references unknown processor list {id}"
+            );
         }
     }
 
