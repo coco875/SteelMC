@@ -3,8 +3,7 @@
     reason = "build script must fail immediately on invalid extracted timeline data"
 )]
 
-use std::fs;
-
+use crate::generator_functions::read_minecraft_datapack_entries;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::quote;
@@ -142,25 +141,9 @@ fn quote_time_marker(name: &str, v: &Value) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let timeline_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/timeline";
-    println!("cargo:rerun-if-changed={timeline_dir}");
-    let mut timelines: Vec<(String, TimelineJson)> = Vec::new();
-
-    // Read all timeline JSON files
-    for entry in fs::read_dir(timeline_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let timeline_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let timeline_data: TimelineJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {timeline_name}: {e}"));
-
-            timelines.push((timeline_name, timeline_data));
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let timelines: Vec<(String, TimelineJson)> =
+        read_minecraft_datapack_entries(overlay, "timeline");
 
     let mut stream = TokenStream::new();
 

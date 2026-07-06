@@ -30,6 +30,10 @@ use std::{
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
+use steel_registry::structure_processor::{
+    PosRuleTestData, ProcessorBlockStateData, ProcessorRuleData, RuleBlockEntityModifierData,
+    StructureProcessorAxis, StructureProcessorKind, StructureRuleTestData,
+};
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{
     REGISTRY, Registry, RegistryExt,
@@ -375,12 +379,14 @@ use super::{
     PersistentMineshaftPieceKind, PersistentNetherFortressPieceData,
     PersistentOceanMonumentChildPiece, PersistentOceanMonumentChildPieceKind,
     PersistentOceanMonumentPieceData, PersistentOceanMonumentRoomData, PersistentPoi,
-    PersistentPoolElement, PersistentProceduralPieceData, PersistentProcessorList,
-    PersistentSection, PersistentStrongholdPieceData, PersistentStrongholdSmallDoorType,
-    PersistentStructurePiece, PersistentStructurePiecePayload, PersistentStructureReference,
-    PersistentStructureStart, PersistentSwampHutPieceData, PersistentTemplatePieceData,
-    PersistentTemplatePlacementAdjustment, PersistentTemplateProcessorList, PersistentTick,
-    PreparedChunkSave,
+    PersistentPoolElement, PersistentPosRuleTestData, PersistentProceduralPieceData,
+    PersistentProcessorBlockStateData, PersistentProcessorList, PersistentProcessorRuleData,
+    PersistentRuleBlockEntityModifierData, PersistentSection, PersistentStrongholdPieceData,
+    PersistentStrongholdSmallDoorType, PersistentStructurePiece, PersistentStructurePiecePayload,
+    PersistentStructureProcessorKind, PersistentStructureReference,
+    PersistentStructureRuleTestData, PersistentStructureStart, PersistentSwampHutPieceData,
+    PersistentTemplatePieceData, PersistentTemplatePlacementAdjustment,
+    PersistentTemplateProcessorList, PersistentTick, PreparedChunkSave,
 };
 
 /// Builder for creating a persistent chunk with its own palettes.

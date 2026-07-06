@@ -18,9 +18,9 @@ pub struct ChickenSoundVariantJson {
     baby_sounds: Age,
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     let chicken_sound_variants: Vec<(String, ChickenSoundVariantJson)> =
-        read_variants_from_dir("chicken_sound_variant");
+        read_variants_from_dir(overlay, "chicken_sound_variant");
 
     let mut stream = TokenStream::new();
 

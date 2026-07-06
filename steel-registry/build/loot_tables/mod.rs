@@ -1,6 +1,6 @@
 //! Build script for generating vanilla loot table definitions.
 
-use std::{fs, path::Path, str::FromStr};
+use std::str::FromStr;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::{Ident, Span, TokenStream};
@@ -8,6 +8,7 @@ use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use steel_utils::Identifier;
+use steel_utils::datapack_overlay::DatapackOverlay;
 
 mod conditions;
 mod entries;
@@ -472,91 +473,92 @@ struct BonusParametersJson {
 }
 
 struct LootTableData {
-    /// Full key path like "`blocks/acacia_button`"
-    key: String,
-    /// Rust identifier like "`BLOCKS_ACACIA_BUTTON`"
+    /// Full registry id like `minecraft:blocks/acacia_button`.
+    registry_id: String,
+    /// Category bucket for generated convenience structs.
+    category_key: String,
+    /// Field name within the category struct.
+    field_name: String,
+    /// Rust identifier like `BLOCKS_ACACIA_BUTTON`.
     const_ident: Ident,
-    /// The loot type as a `TokenStream`
+    /// The loot type as a `TokenStream`.
     loot_type: TokenStream,
-    /// Generated pools
+    /// Generated pools.
     pools: Vec<TokenStream>,
-    /// Table-level functions
+    /// Table-level functions.
     functions: Vec<TokenStream>,
-    /// Random sequence identifier
+    /// Random sequence identifier.
     random_sequence: Option<String>,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let loot_table_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/loot_table";
-    println!("cargo:rerun-if-changed={loot_table_dir}");
-    let mut tables: Vec<LootTableData> = Vec::new();
+fn parsed_loot_table_id(registry_id: &str) -> Identifier {
+    Identifier::parse_or_vanilla(registry_id)
+        .unwrap_or_else(|error| panic!("invalid loot table identifier {registry_id}: {error}"))
+}
 
-    // Recursively read all loot table JSON files
-    fn read_loot_tables(dir: &Path, base_dir: &Path, tables: &mut Vec<LootTableData>) {
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-
-            if path.is_dir() {
-                read_loot_tables(&path, base_dir, tables);
-            } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let relative_path = path
-                    .strip_prefix(base_dir)
-                    .unwrap_or(&path)
-                    .with_extension("");
-                let key = relative_path
-                    .to_str()
-                    .unwrap_or("unknown")
-                    .replace('\\', "/");
-
-                let content = match fs::read_to_string(&path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-
-                let loot_table: LootTableJson = match serde_json::from_str(&content) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        panic!("Failed to parse loot table {key}: {e}");
-                    }
-                };
-
-                // Generate const identifier from the key
-                let const_name = key.replace('/', "_").to_shouty_snake_case();
-                let const_ident = Ident::new(&const_name, Span::call_site());
-
-                let pools: Vec<TokenStream> = loot_table.pools.iter().map(generate_pool).collect();
-                let functions: Vec<TokenStream> =
-                    loot_table.functions.iter().map(generate_function).collect();
-
-                let random_sequence = loot_table
-                    .random_sequence
-                    .as_ref()
-                    .map(|s| s.strip_prefix("minecraft:").unwrap_or(s).to_string());
-
-                tables.push(LootTableData {
-                    key,
-                    const_ident,
-                    loot_type: generate_loot_type(
-                        loot_table.loot_type.as_deref().unwrap_or("minecraft:empty"),
-                    ),
-                    pools,
-                    functions,
-                    random_sequence,
-                });
-            }
-        }
+fn loot_table_category_key(registry_id: &str) -> String {
+    let id = parsed_loot_table_id(registry_id);
+    let top = id.path.split('/').next().unwrap_or("other");
+    if id.namespace == Identifier::VANILLA_NAMESPACE {
+        top.to_string()
+    } else {
+        format!("{}_{}", id.namespace.to_snake_case(), top.to_snake_case())
     }
+}
 
-    read_loot_tables(
-        Path::new(loot_table_dir),
-        Path::new(loot_table_dir),
-        &mut tables,
-    );
+fn loot_table_field_name(registry_id: &str) -> String {
+    let id = parsed_loot_table_id(registry_id);
+    let suffix = id
+        .path
+        .split('/')
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("_")
+        .to_snake_case();
+    let base = if suffix.is_empty() {
+        id.path.to_snake_case()
+    } else {
+        suffix
+    };
+    if id.namespace == Identifier::VANILLA_NAMESPACE {
+        base
+    } else {
+        format!("{}_{}", id.namespace.to_snake_case(), base)
+    }
+}
+
+fn loot_table_const_ident(registry_id: &str) -> Ident {
+    let id = parsed_loot_table_id(registry_id);
+    let name = if id.namespace == Identifier::VANILLA_NAMESPACE {
+        id.path.into_owned()
+    } else {
+        registry_id.replace([':', '/'], "_")
+    };
+    Ident::new(&name.to_shouty_snake_case(), Span::call_site())
+}
+
+fn parse_loot_table(registry_id: &str, content: &str) -> LootTableData {
+    let loot_table: LootTableJson = serde_json::from_str(content)
+        .unwrap_or_else(|error| panic!("Failed to parse loot table {registry_id}: {error}"));
+
+    LootTableData {
+        registry_id: registry_id.to_string(),
+        category_key: loot_table_category_key(registry_id),
+        field_name: loot_table_field_name(registry_id),
+        const_ident: loot_table_const_ident(registry_id),
+        loot_type: generate_loot_type(loot_table.loot_type.as_deref().unwrap_or("minecraft:empty")),
+        pools: loot_table.pools.iter().map(generate_pool).collect(),
+        functions: loot_table.functions.iter().map(generate_function).collect(),
+        random_sequence: loot_table.random_sequence,
+    }
+}
+
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
+    let tables: Vec<LootTableData> = overlay
+        .list_json_registry_ids_with_suffix("loot_table")
+        .into_iter()
+        .map(|(registry_id, content)| parse_loot_table(&registry_id, &content))
+        .collect();
 
     let mut stream = TokenStream::new();
 
@@ -576,20 +578,28 @@ pub(crate) fn build() -> TokenStream {
     // Generate static constants for each loot table
     for table in &tables {
         let const_ident = &table.const_ident;
-        let key = &table.key;
+        let key = crate::generator_functions::generate_static_identifier_from_str(
+            &table.registry_id,
+            "loot table",
+        );
         let loot_type = &table.loot_type;
         let pools = &table.pools;
         let functions = &table.functions;
 
-        let random_sequence = if let Some(seq) = &table.random_sequence {
-            quote! { Some(Identifier::vanilla_static(#seq)) }
-        } else {
-            quote! { None }
-        };
+        let random_sequence = table.random_sequence.as_ref().map_or_else(
+            || quote! { None },
+            |sequence| {
+                let sequence = crate::generator_functions::generate_static_identifier_from_str(
+                    sequence,
+                    "loot table random sequence",
+                );
+                quote! { Some(#sequence) }
+            },
+        );
 
         stream.extend(quote! {
             pub static #const_ident: LootTable = LootTable {
-                key: Identifier::vanilla_static(#key),
+                key: #key,
                 loot_type: #loot_type,
                 pools: &[#(#pools),*],
                 functions: &[#(#functions),*],
@@ -619,22 +629,9 @@ pub(crate) fn build() -> TokenStream {
         std::collections::BTreeMap::new();
 
     for table in &tables {
-        let category = table.key.split('/').next().unwrap_or("other").to_string();
-        let field_name = table
-            .key
-            .split('/')
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("_")
-            .to_snake_case();
-        let field_name = if field_name.is_empty() {
-            table.key.to_snake_case()
-        } else {
-            field_name
-        };
-        let field_ident = Ident::new(&field_name, Span::call_site());
+        let field_ident = Ident::new(&table.field_name, Span::call_site());
         categories
-            .entry(category)
+            .entry(table.category_key.clone())
             .or_default()
             .push((table, field_ident));
     }

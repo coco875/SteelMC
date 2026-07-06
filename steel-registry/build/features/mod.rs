@@ -1,11 +1,10 @@
 //! Build-time codegen for configured and placed feature registries.
 
-use std::fs;
-
-use crate::generator_functions::{registry_entry_ident, resource_name, sorted_json_files};
+use crate::generator_functions::registry_entry_ident;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use steel_utils::datapack_overlay::DatapackOverlay;
 use steel_utils::value_providers::{
     FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
     WeightedIntProvider,
@@ -55,24 +54,21 @@ use data::{
 };
 use data::{parse_configured_feature_json, parse_placed_feature_json};
 
-fn sorted_json_registry_entries(dir: &str) -> Vec<(String, String)> {
-    sorted_json_files(dir)
+fn sorted_json_registry_entries(
+    overlay: &DatapackOverlay,
+    path_suffix: &str,
+) -> Vec<(String, String)> {
+    overlay
+        .list_json_registry_ids_with_suffix(path_suffix)
         .into_iter()
-        .map(|path| {
-            let name = resource_name(&path);
-            let content = fs::read_to_string(&path)
-                .unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-            (name, content)
-        })
         .collect()
 }
 
-pub(crate) fn build_configured() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/configured_feature";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries = Vec::new();
-    for (registry_id, content) in sorted_json_registry_entries(dir) {
+    for (registry_id, content) in
+        sorted_json_registry_entries(overlay, "worldgen/configured_feature")
+    {
         let kind = parse_configured_feature_json(&registry_id, &content);
         entries.push((registry_id, generate_configured_feature_kind(&kind)));
     }
@@ -125,16 +121,9 @@ pub(crate) fn build_configured() -> TokenStream {
     stream
 }
 
-pub(crate) fn build_placed() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/placed_feature";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build_placed(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.as_path();
-        let content =
-            fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
+    for (name, content) in sorted_json_registry_entries(overlay, "worldgen/placed_feature") {
         let data = parse_placed_feature_json(&name, &content);
         entries.push((name, generate_placed_feature_data(&data)));
     }

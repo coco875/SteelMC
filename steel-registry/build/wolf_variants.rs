@@ -22,8 +22,9 @@ pub struct WolfAssetInfo {
     angry: Identifier,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let wolf_variants: Vec<(String, WolfVariantJson)> = read_variants_from_dir("wolf_variant");
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let wolf_variants: Vec<(String, WolfVariantJson)> =
+        read_variants_from_dir(overlay, "wolf_variant");
 
     let mut stream = TokenStream::new();
 
