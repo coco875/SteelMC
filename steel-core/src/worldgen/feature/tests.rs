@@ -10,6 +10,7 @@ use steel_utils::random::{Random as _, worldgen_random::WorldgenRandom};
 use steel_utils::{BlockPos, BoundingBox, ChunkPos, Identifier};
 
 use steel_worldgen::biomes::BiomeSourceKind;
+use steel_worldgen::multi_noise::{END_BIOME_SOURCE_KIND, EndBiomeSourceKind};
 use steel_worldgen::structure::{
     StructurePiece, StructureReferenceMap, StructureReferenceSet, StructureStart,
 };
@@ -148,8 +149,8 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         "village_taiga",
     ];
     if matches!(
-        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
-        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
+        END_BIOME_SOURCE_KIND,
+        EndBiomeSourceKind::MultiNoise
     ) {
         expected_surface.retain(|&s| s != "end_city");
     }
@@ -181,8 +182,8 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             .all(|structure| structure.step.decoration_ordinal() == 7)
     );
     if matches!(
-        steel_worldgen::multi_noise::END_BIOME_SOURCE_KIND,
-        steel_worldgen::multi_noise::EndBiomeSourceKind::MultiNoise
+        END_BIOME_SOURCE_KIND,
+        EndBiomeSourceKind::MultiNoise
     ) {
         assert_eq!(
             FeatureDecorationRunner::structures_for_decoration_step(&registry, 0)

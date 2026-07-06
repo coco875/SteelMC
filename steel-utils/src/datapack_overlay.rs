@@ -99,7 +99,7 @@ impl<'de> Deserialize<'de> for PackFormat {
 
 /// Logical view over vanilla plus optional zip datapack overlays.
 pub struct DatapackOverlay {
-    files: BTreeMap<String, DatapackFile>,
+    files: BTreeMap<String, Vec<DatapackFile>>,
     rerun_paths: Vec<PathBuf>,
 }
 
@@ -133,6 +133,10 @@ pub struct StructureTemplateNbt {
 }
 
 impl DatapackOverlay {
+    fn insert_file(&mut self, logical_path: String, file: DatapackFile) {
+        self.files.entry(logical_path).or_default().push(file);
+    }
+
     /// Load vanilla `minecraft` namespace with optional zip overlays.
     ///
     /// Emits `cargo:rerun-if-changed` for overlay inputs when not compiled for unit tests.
@@ -179,20 +183,21 @@ impl DatapackOverlay {
         overlay.finish_loading()
     }
 
-    /// Resolve the zip overlay directory from env or [`DEFAULT_DATAPACKS_DIR`].
+    /// # Panics
+    ///
+    /// Panics if [`DATAPACKS_DIR_ENV`] points to a missing directory, or is not valid UTF-8.
     #[must_use]
     pub fn resolve_datapacks_dir() -> Option<PathBuf> {
         match env::var(DATAPACKS_DIR_ENV) {
             Ok(value) if value.is_empty() => None,
             Ok(value) => {
                 let path = PathBuf::from(value);
-                if !path.is_dir() {
-                    panic!(
-                        "{} points at missing directory: {}",
-                        DATAPACKS_DIR_ENV,
-                        path.display()
-                    );
-                }
+                assert!(
+                    path.is_dir(),
+                    "{} points at missing directory: {}",
+                    DATAPACKS_DIR_ENV,
+                    path.display()
+                );
                 Some(path)
             }
             Err(env::VarError::NotPresent) => {
@@ -204,7 +209,7 @@ impl DatapackOverlay {
                 }
             }
             Err(env::VarError::NotUnicode(_)) => {
-                panic!("{} is not valid UTF-8", DATAPACKS_DIR_ENV);
+                panic!("{DATAPACKS_DIR_ENV} is not valid UTF-8");
             }
         }
     }
@@ -241,6 +246,8 @@ impl DatapackOverlay {
         }
     }
 
+    #[expect(clippy::allow_attributes, reason = "missing_const_for_fn is conditional on test config")]
+    #[allow(clippy::missing_const_for_fn, reason = "missing_const_for_fn is conditional on test config")]
     fn finish_loading(self) -> Self {
         #[cfg(not(test))]
         self.emit_rerun_if_changed();
@@ -250,10 +257,12 @@ impl DatapackOverlay {
     /// Read a datapack file by logical path (e.g. `minecraft/worldgen/biome/plains.json`).
     #[must_use]
     pub fn read(&self, path: &str) -> Option<&[u8]> {
-        self.files.get(path).map(|file| file.content.as_slice())
+        self.files.get(path).and_then(|layers| layers.last().map(|file| file.content.as_slice()))
     }
 
-    /// Read UTF-8 text for a logical datapack path.
+    /// # Panics
+    ///
+    /// Panics if the read bytes are not valid UTF-8.
     #[must_use]
     pub fn read_string(&self, path: &str) -> Option<String> {
         self.read(path).map(|bytes| {
@@ -262,7 +271,9 @@ impl DatapackOverlay {
         })
     }
 
-    /// Read UTF-8 text or panic if the logical path is missing.
+    /// # Panics
+    ///
+    /// Panics if the path is missing, or contains invalid UTF-8.
     #[must_use]
     pub fn read_string_required(&self, path: &str) -> String {
         self.read_string(path)
@@ -285,7 +296,9 @@ impl DatapackOverlay {
             .collect()
     }
 
-    /// List structure template NBT files with the final overlay source for each entry.
+    /// # Panics
+    ///
+    /// Panics if internal prefix matching layouts are violated.
     #[must_use]
     pub fn list_structure_template_nbt_with_sources(
         &self,
@@ -293,8 +306,15 @@ impl DatapackOverlay {
         const STRUCTURE_PREFIX: &str = "structure/";
         let mut entries = BTreeMap::new();
 
-        for (path, file) in &self.files {
-            if !path.ends_with(".nbt") {
+        for (path, layers) in &self.files {
+            let Some(file) = layers.last() else {
+                continue;
+            };
+            let ext_ok = Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("nbt"));
+            if !ext_ok {
                 continue;
             }
 
@@ -327,14 +347,24 @@ impl DatapackOverlay {
     /// List `.json` files under `dir_prefix`, keyed by path relative to that directory without extension.
     ///
     /// Example: prefix `minecraft/worldgen/biome` -> key `plains` for `.../plains.json`.
+    /// # Panics
+    ///
+    /// Panics if a file contains invalid UTF-8.
     #[must_use]
     pub fn list_json_relative(&self, dir_prefix: &str) -> BTreeMap<String, String> {
         let prefix = dir_prefix.trim_end_matches('/');
         let search_prefix = format!("{prefix}/");
         let mut entries = BTreeMap::new();
 
-        for (path, file) in &self.files {
-            if !path.starts_with(&search_prefix) || !path.ends_with(".json") {
+        for (path, layers) in &self.files {
+            let Some(file) = layers.last() else {
+                continue;
+            };
+            let ext_ok = Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            if !path.starts_with(&search_prefix) || !ext_ok {
                 continue;
             }
 
@@ -360,6 +390,9 @@ impl DatapackOverlay {
     /// List `.json` files under any loaded namespace whose path ends with `path_suffix`.
     ///
     /// Keys are registry ids (`namespace:relative/path` without `.json`).
+    /// # Panics
+    ///
+    /// Panics if any file does not match internal prefix layout.
     #[must_use]
     pub fn list_json_registry_ids_with_suffix(
         &self,
@@ -369,8 +402,15 @@ impl DatapackOverlay {
         let prefix = format!("{suffix}/");
         let mut entries = BTreeMap::new();
 
-        for (path, file) in &self.files {
-            if !path.ends_with(".json") {
+        for (path, layers) in &self.files {
+            let Some(file) = layers.last() else {
+                continue;
+            };
+            let ext_ok = Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            if !ext_ok {
                 continue;
             }
 
@@ -398,6 +438,64 @@ impl DatapackOverlay {
                     panic!("datapack file {path} is not valid UTF-8: {error}")
                 }),
             );
+        }
+
+        entries
+    }
+
+    /// List `.json` files under any loaded namespace whose path ends with `path_suffix`,
+    /// returning the UTF-8 content of all layers in priority order (bottom to top).
+    ///
+    /// Keys are registry ids (`namespace:relative/path` without `.json`).
+    /// # Panics
+    ///
+    /// Panics if any file is not valid UTF-8.
+    #[must_use]
+    pub fn list_json_registry_ids_with_suffix_all_layers(
+        &self,
+        path_suffix: &str,
+    ) -> BTreeMap<String, Vec<String>> {
+        let suffix = path_suffix.trim_matches('/');
+        let prefix = format!("{suffix}/");
+        let mut entries = BTreeMap::new();
+
+        for (path, layers) in &self.files {
+            let ext_ok = Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"));
+            if !ext_ok {
+                continue;
+            }
+
+            let Some((namespace, rest)) = path.split_once('/') else {
+                continue;
+            };
+            if !rest.starts_with(&prefix) {
+                continue;
+            }
+
+            let relative = rest
+                .strip_prefix(&prefix)
+                .unwrap_or_else(|| panic!("internal datapack path prefix mismatch: {path}"));
+            let id = format!(
+                "{namespace}:{}",
+                relative
+                    .strip_suffix(".json")
+                    .unwrap_or(relative)
+                    .replace('\\', "/")
+            );
+
+            let contents: Vec<String> = layers
+                .iter()
+                .map(|file| {
+                    String::from_utf8(file.content.clone()).unwrap_or_else(|error| {
+                        panic!("datapack file {path} is not valid UTF-8: {error}")
+                    })
+                })
+                .collect();
+
+            entries.insert(id, contents);
         }
 
         entries
@@ -458,7 +556,7 @@ impl DatapackOverlay {
             let content = fs::read(&path).unwrap_or_else(|error| {
                 panic!("failed to read datapack file {}: {error}", path.display())
             });
-            self.files.insert(
+            self.insert_file(
                 logical_path,
                 DatapackFile {
                     content,
@@ -494,7 +592,7 @@ impl DatapackOverlay {
                     datapacks_dir.display()
                 )
             })
-            .filter_map(|entry| entry.ok())
+            .filter_map(Result::ok)
         {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "zip") {
@@ -531,30 +629,28 @@ impl DatapackOverlay {
         });
 
         let mut ordered = Vec::new();
-        let mut seen = BTreeMap::new();
+        let mut seen = rustc_hash::FxHashSet::default();
 
         for entry in config.order {
-            if seen.insert(entry.clone(), ()).is_some() {
-                panic!(
-                    "duplicate datapack entry in {}: {entry}",
-                    config_path.display()
-                );
-            }
+            assert!(
+                seen.insert(entry.clone()),
+                "duplicate datapack entry in {}: {entry}",
+                config_path.display()
+            );
 
             let zip_path = Self::resolve_config_zip_path(datapacks_dir, config_path, &entry);
-            if !zip_path.is_file() {
-                panic!(
-                    "datapack listed in {} does not exist: {}",
-                    config_path.display(),
-                    zip_path.display()
-                );
-            }
+            assert!(
+                zip_path.is_file(),
+                "datapack listed in {} does not exist: {}",
+                config_path.display(),
+                zip_path.display()
+            );
             ordered.push(zip_path);
         }
 
         let mut remaining: Vec<_> = available
             .iter()
-            .filter(|(name, _)| !seen.contains_key(name.as_str()))
+            .filter(|(name, _)| !seen.contains(name.as_str()))
             .map(|(_, path)| path.clone())
             .collect();
         remaining.sort();
@@ -634,7 +730,9 @@ impl DatapackOverlay {
         }
 
         for layer in layers {
-            self.files.extend(layer);
+            for (path, file) in layer {
+                self.insert_file(path, file);
+            }
         }
     }
 
@@ -712,7 +810,11 @@ impl DatapackOverlay {
             if !include_namespace(entry_namespace) {
                 continue;
             }
-            if !relative.ends_with(".json") && !relative.ends_with(".nbt") {
+            let ext_ok = Path::new(relative)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(Self::is_datapack_extension);
+            if !ext_ok {
                 continue;
             }
 
@@ -735,7 +837,7 @@ impl DatapackOverlay {
         layer
     }
 
-    fn is_datapack_extension(ext: &str) -> bool {
+    const fn is_datapack_extension(ext: &str) -> bool {
         ext.eq_ignore_ascii_case("json") || ext.eq_ignore_ascii_case("nbt")
     }
 }

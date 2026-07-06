@@ -43,23 +43,18 @@ pub fn load_and_merge_tags(
 ) -> FxHashMap<String, Vec<String>> {
     let suffix = format!("tags/{tag_subpath}");
     let mut all_tags: FxHashMap<String, Vec<String>> = FxHashMap::default();
-    for (tag_id, content) in overlay.list_json_registry_ids_with_suffix(&suffix) {
-        let tag: TagJson = serde_json::from_str(&content)
-            .unwrap_or_else(|error| panic!("Failed to parse tag {tag_id}: {error}"));
-        let mut values = tag_value_strings(tag.values);
-        if !tag.replace {
-            if let Some(vanilla_name) = tag_id.strip_prefix("minecraft:") {
-                let vanilla_path = format!("minecraft/tags/{}/{}.json", tag_subpath, vanilla_name);
-                if let Some(vanilla_content) = DatapackOverlay::read_vanilla_string(&vanilla_path) {
-                    if let Ok(vanilla_tag) = serde_json::from_str::<TagJson>(&vanilla_content) {
-                        let mut vanilla_values = tag_value_strings(vanilla_tag.values);
-                        for val in values {
-                            if !vanilla_values.contains(&val) {
-                                vanilla_values.push(val);
-                            }
-                        }
-                        values = vanilla_values;
-                    }
+    for (tag_id, contents) in overlay.list_json_registry_ids_with_suffix_all_layers(&suffix) {
+        let mut values = Vec::new();
+        for content in contents {
+            let tag: TagJson = serde_json::from_str(&content)
+                .unwrap_or_else(|error| panic!("Failed to parse tag {tag_id}: {error}"));
+            if tag.replace {
+                values.clear();
+            }
+            let layer_values = tag_value_strings(tag.values);
+            for val in layer_values {
+                if !values.contains(&val) {
+                    values.push(val);
                 }
             }
         }

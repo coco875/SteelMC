@@ -2708,7 +2708,7 @@ impl ChunkStorage {
         }
     }
 
-    fn pos_rule_test_to_persistent(test: &PosRuleTestData) -> PersistentPosRuleTestData {
+    const fn pos_rule_test_to_persistent(test: &PosRuleTestData) -> PersistentPosRuleTestData {
         match test {
             PosRuleTestData::AlwaysTrue => PersistentPosRuleTestData::AlwaysTrue,
             PosRuleTestData::AxisAlignedLinearPos {
@@ -2731,7 +2731,7 @@ impl ChunkStorage {
         }
     }
 
-    fn persistent_to_pos_rule_test(test: &PersistentPosRuleTestData) -> PosRuleTestData {
+    const fn persistent_to_pos_rule_test(test: &PersistentPosRuleTestData) -> PosRuleTestData {
         match test {
             PersistentPosRuleTestData::AlwaysTrue => PosRuleTestData::AlwaysTrue,
             PersistentPosRuleTestData::AxisAlignedLinearPos {
@@ -2743,7 +2743,6 @@ impl ChunkStorage {
             } => PosRuleTestData::AxisAlignedLinearPos {
                 axis: match axis {
                     0 => StructureProcessorAxis::X,
-                    1 => StructureProcessorAxis::Y,
                     2 => StructureProcessorAxis::Z,
                     _ => StructureProcessorAxis::Y,
                 },

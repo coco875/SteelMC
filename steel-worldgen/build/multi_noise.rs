@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::ops::Deref;
 
+use steel_utils::datapack_overlay::DatapackOverlay;
+
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use serde::Deserialize;
@@ -128,7 +130,7 @@ impl GeneratedEndTokens {
 }
 
 fn apply_datapack_parameter_lists(
-    overlay: &steel_utils::datapack_overlay::DatapackOverlay,
+    overlay: &DatapackOverlay,
     presets: &mut BTreeMap<String, Vec<BiomeEntry>>,
 ) {
     for (id, json) in overlay
@@ -151,7 +153,8 @@ fn apply_datapack_parameter_lists(
 }
 
 /// Generate the Rust code for multi-noise biome parameter lists (all presets).
-pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+#[expect(clippy::too_many_lines, reason = "build function contains generated structures and parsing code")]
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/multi_noise_biome_source_parameters.json");
 
     let content = fs::read_to_string("build_assets/multi_noise_biome_source_parameters.json")
@@ -182,19 +185,16 @@ pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) ->
             biomes: Vec<BiomeEntry>,
         }
 
-        if let Ok(dim) = serde_json::from_str::<DatapackDimension>(&end_json) {
-            if let Some(generator) = dim.generator {
-                if generator.gen_type == "minecraft:noise" {
-                    if let Some(source) = generator.biome_source {
-                        if source.source_type == "minecraft:multi_noise"
-                            && !source.biomes.is_empty()
-                        {
-                            presets.insert("minecraft:the_end".to_string(), source.biomes);
-                            end_uses_multi_noise = true;
-                        }
-                    }
-                }
-            }
+        let source = serde_json::from_str::<DatapackDimension>(&end_json)
+            .ok()
+            .and_then(|dim| dim.generator)
+            .filter(|g| g.gen_type == "minecraft:noise")
+            .and_then(|g| g.biome_source)
+            .filter(|s| s.source_type == "minecraft:multi_noise" && !s.biomes.is_empty());
+
+        if let Some(source) = source {
+            presets.insert("minecraft:the_end".to_string(), source.biomes);
+            end_uses_multi_noise = true;
         }
     }
 

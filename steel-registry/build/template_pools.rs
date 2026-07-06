@@ -266,15 +266,15 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
     } else {
         (
             quote! {
-                use std::collections::HashMap;
+                use rustc_hash::FxHashMap;
                 use std::io::{Cursor, Read};
                 use std::sync::LazyLock;
 
-                static ZIP_STRUCTURE_NBT: LazyLock<HashMap<(&'static str, &'static str), &'static [u8]>> = LazyLock::new(|| {
-                    let mut entries = HashMap::new();
+                static ZIP_STRUCTURE_NBT: LazyLock<FxHashMap<(&'static str, &'static str), &'static [u8]>> = LazyLock::new(|| {
+                    let mut entries = FxHashMap::default();
 
                     fn load_zip(
-                        entries: &mut HashMap<(&'static str, &'static str), &'static [u8]>,
+                        entries: &mut FxHashMap<(&'static str, &'static str), &'static [u8]>,
                         zip_bytes: &'static [u8],
                         mappings: &[((&'static str, &'static str), &'static str)],
                     ) {

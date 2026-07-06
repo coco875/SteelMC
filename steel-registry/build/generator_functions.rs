@@ -5,10 +5,7 @@ use heck::ToShoutySnakeCase;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::quote;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
 use steel_utils::Identifier;
 use steel_utils::datapack_overlay::DatapackOverlay;
 
@@ -18,45 +15,6 @@ pub fn read_json_asset<T: serde::de::DeserializeOwned>(path: &str) -> T {
     serde_json::from_str(&content).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
-pub fn sorted_json_files(dir: &str) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_json_files(Path::new(dir), &mut files);
-    files.sort();
-    files
-}
-
-fn collect_json_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("Failed to read {}: {error}", dir.display()));
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_json_files(&path, files);
-        } else if path.extension().and_then(|extension| extension.to_str()) == Some("json") {
-            files.push(path);
-        }
-    }
-}
-
-pub fn resource_name(path: &Path) -> String {
-    let path_without_extension = path.with_extension("");
-    let components: Vec<_> = path_without_extension
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect();
-    if let Some(index) = components
-        .iter()
-        .position(|component| *component == "worldgen")
-        && index + 2 < components.len()
-    {
-        return components[index + 2..].join("/");
-    }
-    path_without_extension
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_else(|| panic!("invalid resource file name {}", path.display()))
-        .to_string()
-}
 
 pub fn sort_contiguous_registry_entries<T>(
     entries: &mut [T],

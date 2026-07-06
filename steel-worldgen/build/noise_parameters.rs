@@ -38,7 +38,7 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
         let const_name = Ident::new(
             &format!(
                 "{}_AMPLITUDES",
-                id.replace(':', "_").replace('/', "_").to_uppercase()
+                id.replace([':', '/'], "_").to_uppercase()
             ),
             Span::call_site(),
         );
@@ -56,7 +56,7 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
             let amp_name = Ident::new(
                 &format!(
                     "{}_AMPLITUDES",
-                    id.replace(':', "_").replace('/', "_").to_uppercase()
+                    id.replace([':', '/'], "_").to_uppercase()
                 ),
                 Span::call_site(),
             );
