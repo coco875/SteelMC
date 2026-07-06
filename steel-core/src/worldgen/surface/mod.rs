@@ -468,7 +468,8 @@ impl SurfaceSystem {
                 pillar_buffer * pillar_buffer * 2.5,
                 (pillar_floor * 50.0).ceil() + 24.0,
             );
-        let start_y = extension_top.floor() as i32;
+        let max_y = min_y + (chunk.sections().sections.len() * 16) as i32 - 1;
+        let start_y = (extension_top.floor() as i32).clamp(min_y, max_y);
 
         if height > start_y {
             return height;
@@ -570,12 +571,14 @@ impl SurfaceSystem {
 
         let snow_block = vanilla_blocks::SNOW_BLOCK.default_state();
         let packed_ice = vanilla_blocks::PACKED_ICE.default_state();
-        let air = vanilla_blocks::AIR.default_state();
 
         let start_y = i32::max(height, top as i32 + 1);
-        for y in (min_surface_level..=start_y).rev() {
+        for y in (min_surface_level.max(min_y)..=start_y).rev() {
             let rel_y = (y - min_y) as usize;
-            let state = column.get(rel_y).copied().unwrap_or(air);
+            if rel_y >= column.len() {
+                continue;
+            }
+            let state = column[rel_y];
 
             let is_air = state.is_air();
             let is_water = state.get_block() == &vanilla_blocks::WATER;

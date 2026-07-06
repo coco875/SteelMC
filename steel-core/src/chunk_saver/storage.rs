@@ -1272,11 +1272,17 @@ impl ChunkStorage {
         height: i32,
         level: Weak<World>,
     ) -> LoadedChunk {
-        let sections: Vec<ChunkSection> = persistent
+        let mut sections: Vec<ChunkSection> = persistent
             .sections
             .iter()
             .map(|section| Self::persistent_to_section(section, persistent))
             .collect();
+
+        let expected_sections = (height / 16) as usize;
+        while sections.len() < expected_sections {
+            sections.push(ChunkSection::new_empty());
+        }
+        sections.truncate(expected_sections);
 
         // Reconstruct structure data
         let structure_starts = Self::persistent_to_structure_starts(&persistent.structure_starts);
