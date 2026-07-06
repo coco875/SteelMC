@@ -1,7 +1,5 @@
 //! Build-time codegen for configured and placed feature registries.
 
-use std::str::FromStr;
-
 use crate::generator_functions::{
     generate_static_identifier as generate_identifier, registry_entry_ident,
 };
@@ -48,15 +46,17 @@ fn generate_fluid_ref(identifier: &Identifier) -> TokenStream {
     quote! { &vanilla_fluids::#ident }
 }
 
+fn feature_entry_ident(identifier: &Identifier) -> Ident {
+    registry_entry_ident(&identifier.to_string())
+}
+
 fn generate_configured_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
-    let ident = registry_entry_ident(&registry_id);
+    let ident = feature_entry_ident(identifier);
     quote! { &crate::vanilla_configured_features::#ident }
 }
 
 fn generate_placed_feature_entry_ref(identifier: &Identifier) -> TokenStream {
-    let registry_id = format!("{}:{}", identifier.namespace, identifier.path);
-    let ident = registry_entry_ident(&registry_id);
+    let ident = feature_entry_ident(identifier);
     quote! { &crate::vanilla_placed_features::#ident }
 }
 
@@ -1997,7 +1997,7 @@ pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, kind) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid configured feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);
@@ -2046,7 +2046,7 @@ pub(crate) fn build_placed(overlay: &DatapackOverlay) -> TokenStream {
     let mut register = TokenStream::new();
     for (registry_id, data) in &entries {
         let ident = registry_entry_ident(registry_id);
-        let identifier = Identifier::from_str(registry_id).unwrap_or_else(|err| {
+        let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid placed feature registry id {registry_id}: {err}")
         });
         let key = generate_identifier(&identifier);

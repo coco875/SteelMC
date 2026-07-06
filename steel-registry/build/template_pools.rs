@@ -103,13 +103,12 @@ pub(crate) fn gen_processors(processors: Option<&ProcessorsJson>, context: &str)
 }
 
 fn gen_element(elem: &ElementJson, context: &str) -> TokenStream {
-    let element_type = crate::generator_functions::parse_loose_identifier(&elem.element_type)
-        .unwrap_or_else(|error| {
-            panic!(
-                "invalid template pool element type {} in {context}: {error}",
-                elem.element_type
-            )
-        });
+    let element_type = Identifier::parse_or_vanilla(&elem.element_type).unwrap_or_else(|error| {
+        panic!(
+            "invalid template pool element type {} in {context}: {error}",
+            elem.element_type
+        )
+    });
     match element_type.to_string().as_str() {
         "minecraft:single_pool_element" => {
             let location = gen_identifier(required(elem.location.as_deref(), context, "location"));

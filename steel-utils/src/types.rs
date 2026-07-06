@@ -1330,10 +1330,7 @@ impl Identifier {
             return Err("Invalid path");
         }
 
-        Ok(Identifier {
-            namespace: Cow::Owned(namespace.to_string()),
-            path: Cow::Owned(path.to_string()),
-        })
+        Ok(Self::new(namespace.to_string(), path.to_string()))
     }
 
     /// Returns whether the character is a valid namespace character.

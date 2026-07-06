@@ -4,7 +4,7 @@ use crate::generator_functions::generate_owned_identifier_from_str;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Deserialize;
-use steel_utils::datapack_overlay::DatapackOverlay;
+use steel_utils::{Identifier, datapack_overlay::DatapackOverlay};
 
 #[derive(Deserialize, Debug)]
 struct StructureSetJson {
@@ -123,7 +123,11 @@ fn resolve_structure_biomes(
         BiomeSelectorJson::List(list) => list,
         BiomeSelectorJson::Tag(tag) => {
             if let Some(tag_name) = tag.strip_prefix('#') {
-                let tag_name = normalize_tag_key(tag_name);
+                let tag_name = Identifier::parse_or_vanilla(tag_name)
+                    .unwrap_or_else(|error| {
+                        panic!("invalid biome tag {tag_name} in structure {full_name}: {error}")
+                    })
+                    .to_string();
                 biome_tags
                     .get(&tag_name)
                     .unwrap_or_else(|| {
@@ -194,13 +198,6 @@ fn tag_value_strings(values: Vec<TagValueJson>) -> Vec<String> {
         })
         .collect()
 }
-
-fn normalize_tag_key(tag: &str) -> String {
-    crate::generator_functions::parse_loose_identifier(tag)
-        .unwrap_or_else(|error| panic!("invalid tag key {tag}: {error}"))
-        .to_string()
-}
-
 /// Loads all biome tags from the overlay, then recursively resolves tag references.
 fn load_biome_tags(overlay: &DatapackOverlay) -> HashMap<String, Vec<String>> {
     let mut raw_tags: HashMap<String, Vec<String>> = HashMap::default();
@@ -244,7 +241,12 @@ fn resolve_tag(
     let mut result = Vec::new();
     for value in values {
         if let Some(referenced_tag) = value.strip_prefix('#') {
-            let referenced_tag = normalize_tag_key(referenced_tag);
+            // Recursive tag reference
+            let referenced_tag = Identifier::parse_or_vanilla(referenced_tag)
+                .unwrap_or_else(|error| {
+                    panic!("invalid nested biome tag {referenced_tag}: {error}")
+                })
+                .to_string();
             let resolved = resolve_tag(&referenced_tag, raw_tags, cache, stack);
             result.extend(resolved);
         } else {
@@ -392,7 +394,7 @@ fn parse_start_height_full(value: &serde_json::Value, context: &str) -> StartHei
     }
 
     let provider_type = value.get("type").and_then(|v| v.as_str()).map(|raw| {
-        crate::generator_functions::parse_loose_identifier(raw)
+        Identifier::parse_or_vanilla(raw)
             .unwrap_or_else(|error| {
                 panic!("invalid jigsaw start_height provider {raw} in {context}: {error}")
             })
@@ -450,7 +452,7 @@ fn parse_vertical_anchor(value: &serde_json::Value, context: &str) -> VerticalAn
 
 fn parse_height_provider(value: &serde_json::Value, context: &str) -> HeightProviderData {
     let provider_type = value.get("type").and_then(|v| v.as_str()).map(|raw| {
-        crate::generator_functions::parse_loose_identifier(raw)
+        Identifier::parse_or_vanilla(raw)
             .unwrap_or_else(|error| panic!("invalid height provider {raw} in {context}: {error}"))
             .to_string()
     });
@@ -544,14 +546,13 @@ fn load_structure_data(
             })
             .collect();
 
-        let structure_type =
-            crate::generator_functions::parse_loose_identifier(&structure.structure_type)
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "invalid structure type {} in {full_name}: {error}",
-                        structure.structure_type
-                    )
-                });
+        let structure_type = Identifier::parse_or_vanilla(&structure.structure_type)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "invalid structure type {} in {full_name}: {error}",
+                    structure.structure_type
+                )
+            });
         let structure_type = structure_type.to_string();
         structure.structure_type = structure_type.clone();
 
@@ -1247,10 +1248,17 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
                     set_id,
                     "placement.preferred_biomes",
                 );
-                let preferred_biomes: Vec<String> =
-                    if let Some(tag_name) = tag_ref.strip_prefix('#') {
-                        let tag_name = normalize_tag_key(tag_name);
-                        biome_tags
+                let preferred_biomes: Vec<String> = if let Some(tag_name) =
+                    tag_ref.strip_prefix('#')
+                {
+                    let tag_name = Identifier::parse_or_vanilla(tag_name)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "invalid preferred biome tag {tag_name} in structure set {set_id}: {error}"
+                                )
+                            })
+                            .to_string();
+                    biome_tags
                         .get(&tag_name)
                         .unwrap_or_else(|| {
                             panic!(
@@ -1258,10 +1266,10 @@ pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
                             )
                         })
                         .clone()
-                    } else {
-                        // Direct biome identifier
-                        vec![tag_ref.clone()]
-                    };
+                } else {
+                    // Direct biome identifier
+                    vec![tag_ref.clone()]
+                };
                 let biome_tokens: Vec<TokenStream> = preferred_biomes
                     .iter()
                     .map(|b| generate_owned_identifier_from_str(b, "structure"))
