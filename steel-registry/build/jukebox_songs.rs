@@ -1,6 +1,6 @@
-use std::fs;
-
-use crate::generator_functions::{generate_sound_event_ref, generate_text_component};
+use crate::generator_functions::{
+    generate_sound_event_ref, generate_text_component, read_minecraft_datapack_entries,
+};
 use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -16,25 +16,9 @@ pub struct JukeboxSongJson {
     comparator_output: i32,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let jukebox_song_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/jukebox_song";
-    println!("cargo:rerun-if-changed={jukebox_song_dir}");
-    let mut jukebox_songs = Vec::new();
-
-    // Read all jukebox song JSON files
-    for entry in fs::read_dir(jukebox_song_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let jukebox_song_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let jukebox_song: JukeboxSongJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", jukebox_song_name, e));
-
-            jukebox_songs.push((jukebox_song_name, jukebox_song));
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let jukebox_songs: Vec<(String, JukeboxSongJson)> =
+        read_minecraft_datapack_entries(overlay, "jukebox_song");
 
     let mut stream = TokenStream::new();
 

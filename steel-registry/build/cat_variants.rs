@@ -86,8 +86,9 @@ fn generate_spawn_condition_entry(entry: &SpawnConditionEntry) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let cat_variants: Vec<(String, CatVariantJson)> = read_variants_from_dir("cat_variant");
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let cat_variants: Vec<(String, CatVariantJson)> =
+        read_variants_from_dir(overlay, "cat_variant");
 
     let mut stream = TokenStream::new();
 

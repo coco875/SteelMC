@@ -1,6 +1,6 @@
 //! Build-time codegen for configured and placed feature registries.
 
-use std::fs;
+use std::str::FromStr;
 
 use crate::generator_functions::{
     generate_static_identifier as generate_identifier, registry_entry_ident,
@@ -8,6 +8,7 @@ use crate::generator_functions::{
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
+use steel_utils::datapack_overlay::DatapackOverlay;
 use steel_utils::value_providers::{
     FloatProvider, HeightProvider, IntProvider, UniformIntProvider, VerticalAnchor,
     WeightedIntProvider,
@@ -2023,19 +2024,11 @@ pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
     stream
 }
 
-pub(crate) fn build_placed() -> TokenStream {
-    let dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/worldgen/placed_feature";
-    println!("cargo:rerun-if-changed={dir}");
-
+pub(crate) fn build_placed(overlay: &DatapackOverlay) -> TokenStream {
     let mut entries = Vec::new();
-    for entry in sorted_json_files(dir) {
-        let name = resource_name(&entry);
-        let path = entry.path();
-        let content =
-            fs::read_to_string(&path).unwrap_or_else(|err| panic!("failed to read {name}: {err}"));
-        let data = serde_json::from_str::<PlacedFeatureData>(&content)
-            .unwrap_or_else(|err| panic!("failed to parse placed feature {name}: {err}"));
-        entries.push((name, generate_placed_feature_data(&data)));
+    for (registry_id, content) in sorted_json_registry_entries(overlay, "worldgen/placed_feature") {
+        let data = parse_placed_feature_json(&registry_id, &content);
+        entries.push((registry_id, generate_placed_feature_data(&data)));
     }
 
     let mut stream = TokenStream::new();

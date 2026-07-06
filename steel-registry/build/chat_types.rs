@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::generator_functions::generate_option;
+use crate::generator_functions::{generate_option, read_minecraft_datapack_entries};
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -78,25 +76,9 @@ fn generate_chat_type_decoration(decoration: &ChatTypeDecoration) -> TokenStream
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let chat_type_dir = "../steel-utils/build_assets/builtin_datapacks/minecraft/chat_type";
-    println!("cargo:rerun-if-changed={chat_type_dir}");
-    let mut chat_types = Vec::new();
-
-    // Read all chat type JSON files
-    for entry in fs::read_dir(chat_type_dir).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            let chat_type_name = path.file_stem().unwrap().to_str().unwrap().to_string();
-            let content = fs::read_to_string(&path).unwrap();
-            let chat_type: ChatTypeJson = serde_json::from_str(&content)
-                .unwrap_or_else(|e| panic!("Failed to parse {}: {}", chat_type_name, e));
-
-            chat_types.push((chat_type_name, chat_type));
-        }
-    }
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let chat_types: Vec<(String, ChatTypeJson)> =
+        read_minecraft_datapack_entries(overlay, "chat_type");
 
     let mut stream = TokenStream::new();
 
