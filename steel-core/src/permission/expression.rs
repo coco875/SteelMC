@@ -14,6 +14,8 @@ pub enum PermissionExpr {
         /// Specific child permission being checked.
         key: PermissionKey,
     },
+    /// Allows when at least one configured descendant of this key allows.
+    AnyDescendant(PermissionKey),
     /// Requires every nested expression to allow.
     All(Vec<Self>),
     /// Requires at least one nested expression to allow.
@@ -31,6 +33,12 @@ impl PermissionExpr {
     #[must_use]
     pub const fn scoped_key(parent: PermissionKey, key: PermissionKey) -> Self {
         Self::ScopedKey { parent, key }
+    }
+
+    /// Creates a dynamic check for any allowed child below `parent`.
+    #[must_use]
+    pub const fn any_descendant(parent: PermissionKey) -> Self {
+        Self::AnyDescendant(parent)
     }
 }
 

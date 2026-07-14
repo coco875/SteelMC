@@ -17,9 +17,7 @@ use super::super::{
 };
 use crate::command::sender::CommandSender;
 use crate::entity::Entity;
-use crate::permission::{
-    PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError, PermissionSegment,
-};
+use crate::permission::{PermissionContext, PermissionExpr, PermissionKey, PermissionKeyError};
 use crate::player::Player;
 use crate::server::Server;
 use crate::world::World;
@@ -216,8 +214,7 @@ fn visible_permission() -> Result<PermissionExpr, PermissionKeyError> {
 
 fn game_mode_permission(game_mode: GameType) -> Result<PermissionExpr, PermissionKeyError> {
     let root = PermissionKey::parse("minecraft.command.gamemode")?;
-    let segment = PermissionSegment::parse(game_mode.name())?;
-    let mode = root.child(&segment)?;
+    let mode = root.child(game_mode.name())?;
     Ok(PermissionExpr::scoped_key(root, mode))
 }
 

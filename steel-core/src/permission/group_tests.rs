@@ -283,6 +283,22 @@ fn default_groups_apply_and_unknown_assignments_are_ignored() {
 }
 
 #[test]
+fn effective_group_names_include_defaults_assignments_and_inheritance() {
+    let mut config = PermissionGroupsConfig::default();
+    let mut moderator = PermissionGroupConfig::default();
+    moderator.inherits.push("default".to_owned());
+    config.groups.insert("moderator".to_owned(), moderator);
+
+    let groups = groups(config);
+    assert_eq!(
+        groups.effective_group_names(&["moderator".to_owned()]),
+        ["default".to_owned(), "moderator".to_owned()]
+            .into_iter()
+            .collect()
+    );
+}
+
+#[test]
 fn groups_config_round_trips_through_toml() {
     let config = PermissionGroupsConfig::default();
     let serialized = match toml::to_string(&config) {

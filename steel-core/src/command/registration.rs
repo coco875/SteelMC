@@ -433,14 +433,7 @@ fn derived_subcommand_permission(
 ) -> Result<PermissionKey, CommandRegistrationError> {
     let mut permission = root.clone();
     for segment in path {
-        let segment = PermissionSegment::parse(segment.to_string()).map_err(|source| {
-            CommandRegistrationError::InvalidSubcommandPermissionPath {
-                id: id.clone(),
-                path: display_permission_path(path),
-                source,
-            }
-        })?;
-        permission = permission.child(&segment).map_err(|source| {
+        permission = permission.child(segment).map_err(|source| {
             CommandRegistrationError::InvalidSubcommandPermissionPath {
                 id: id.clone(),
                 path: display_permission_path(path),
@@ -515,6 +508,9 @@ fn collect_permission_keys(expression: &PermissionExpr, keys: &mut BTreeSet<Perm
         PermissionExpr::ScopedKey { parent, key } => {
             keys.insert(parent.clone());
             keys.insert(key.clone());
+        }
+        PermissionExpr::AnyDescendant(parent) => {
+            keys.insert(parent.clone());
         }
         PermissionExpr::All(expressions) | PermissionExpr::Any(expressions) => {
             for expression in expressions {

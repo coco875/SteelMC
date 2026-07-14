@@ -135,6 +135,32 @@ impl PermissionGroups {
         self.groups.contains_key(group)
     }
 
+    /// Returns default, assigned, and inherited groups that contribute to a subject.
+    #[must_use]
+    pub fn effective_group_names(&self, assigned_groups: &[String]) -> BTreeSet<String> {
+        let mut effective = BTreeSet::new();
+        for group in &self.default_groups {
+            self.append_group_name(group, &mut effective);
+        }
+        for group in assigned_groups {
+            self.append_group_name(group, &mut effective);
+        }
+        effective
+    }
+
+    fn append_group_name(&self, group_name: &str, effective: &mut BTreeSet<String>) {
+        if !effective.insert(group_name.to_owned()) {
+            return;
+        }
+        let Some(group) = self.groups.get(group_name) else {
+            effective.remove(group_name);
+            return;
+        };
+        for parent in &group.inherits {
+            self.append_group_name(parent, effective);
+        }
+    }
+
     /// Builds effective permissions from defaults, assigned groups, and subject overrides.
     ///
     /// Unknown assigned groups have no effect. Each inherited group contributes at most once.

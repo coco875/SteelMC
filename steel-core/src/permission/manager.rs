@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{collections::BTreeSet, error::Error, fmt, sync::Arc};
 
 use futures::future::BoxFuture;
 use steel_utils::locks::{AsyncMutex, SyncRwLock};
@@ -108,6 +108,15 @@ impl PermissionGroupManager {
     #[must_use]
     pub fn group_names(&self) -> Vec<String> {
         self.state.read().groups.groups().keys().cloned().collect()
+    }
+
+    /// Returns every configured group that contributes to a subject.
+    #[must_use]
+    pub fn effective_group_names(&self, assigned_groups: &[String]) -> BTreeSet<String> {
+        self.state
+            .read()
+            .groups
+            .effective_group_names(assigned_groups)
     }
 
     /// Builds an effective permission set from the current group snapshot.

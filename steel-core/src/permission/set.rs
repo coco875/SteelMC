@@ -308,8 +308,37 @@ impl PermissionSet {
             PermissionExpr::ScopedKey { parent, key } => {
                 self.resolve_scoped_key_in(parent, key, context)
             }
+            PermissionExpr::AnyDescendant(parent) => {
+                self.resolve_any_descendant_in(parent, context)
+            }
             PermissionExpr::All(children) => resolve_all(children, self, context),
             PermissionExpr::Any(children) => resolve_any(children, self, context),
+        }
+    }
+
+    fn resolve_any_descendant_in(
+        &self,
+        parent: &PermissionKey,
+        context: &PermissionContext,
+    ) -> Option<PermissionState> {
+        let mut saw_deny = false;
+        let mut saw_unset = false;
+        for entry in &self.entries {
+            if entry.key() == parent || !parent.scopes(entry.key()) {
+                continue;
+            }
+            match self.resolve_key_in(entry.key(), context) {
+                Some(PermissionState::Allow) => return Some(PermissionState::Allow),
+                Some(PermissionState::Deny) => saw_deny = true,
+                None => saw_unset = true,
+            }
+        }
+        if saw_unset {
+            None
+        } else if saw_deny {
+            Some(PermissionState::Deny)
+        } else {
+            None
         }
     }
 

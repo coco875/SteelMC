@@ -378,6 +378,31 @@ fn expression_all_and_any_preserve_unset_state() {
 }
 
 #[test]
+fn any_descendant_discovers_dynamic_child_permissions() {
+    let root = key("minecraft.command.clear");
+    let expression = PermissionExpr::any_descendant(root.clone());
+
+    let self_only =
+        PermissionSet::from_entries([PermissionEntry::allow(key("minecraft.command.clear.self"))]);
+    assert_eq!(self_only.resolve(&expression), Some(PermissionState::Allow));
+
+    let denied_group = PermissionSet::from_entries([PermissionEntry::deny(key(
+        "minecraft.command.clear.group.op",
+    ))]);
+    assert_eq!(
+        denied_group.resolve(&expression),
+        Some(PermissionState::Deny)
+    );
+
+    let root_only = PermissionSet::from_entries([PermissionEntry::allow(root)]);
+    assert_eq!(root_only.resolve(&expression), None);
+
+    let unrelated =
+        PermissionSet::from_entries([PermissionEntry::allow(key("minecraft.command.kill.self"))]);
+    assert_eq!(unrelated.resolve(&expression), None);
+}
+
+#[test]
 fn deny_wins_a_complete_tie() {
     let give = key("minecraft.command.give");
     let permissions = PermissionSet::from_entries([
