@@ -55,7 +55,12 @@ pub(crate) fn create_registered_dispatcher(
     builder.declare_permission(perms::MANAGE_ALL_PERMISSION)?;
     builder.declare_permission(perms::GROUP_ALL_PERMISSION)?;
     builder.declare_permission(perms::METADATA_PERMISSION)?;
-    builder.register(clear::registration())?;
+    builder.register(clear::registration().map_err(|source| {
+        CommandRegistrationError::InvalidExplicitPermission {
+            id: steel_utils::Identifier::vanilla_static("clear"),
+            source,
+        }
+    })?)?;
     builder.register(operator::deop_registration())?;
     builder.register(difficulty::registration())?;
     builder.register(domain::registration())?;

@@ -13,11 +13,18 @@ use super::super::{
         literal,
     },
     registration::CommandRegistration,
+    target_permission::{can_target_player, player_target_access},
 };
+use crate::permission::PermissionKey;
 use crate::{entity::Entity as _, player::Player};
 
-pub(super) fn registration() -> CommandRegistration<CommandSource> {
-    CommandRegistration::new(Identifier::vanilla_static("clear"), |_| command())
+pub(super) fn registration()
+-> Result<CommandRegistration<CommandSource>, crate::permission::PermissionKeyError> {
+    let root = PermissionKey::parse("minecraft.command.clear")?;
+    Ok(
+        CommandRegistration::new(Identifier::vanilla_static("clear"), |_| command())
+            .permission(player_target_access(&root)),
+    )
 }
 
 fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
@@ -84,6 +91,16 @@ fn clear_players(
     predicate: &dyn Fn(&ItemStack) -> bool,
     max_count: i32,
 ) -> Result<i32, CommandSyntaxError> {
+    let root = PermissionKey::parse("minecraft.command.clear").map_err(invalid_permission)?;
+    for target in targets {
+        if !can_target_player(context.source(), &root, target).map_err(invalid_permission)? {
+            return Err(CommandSyntaxError::dynamic(format!(
+                "You do not have permission to clear {}",
+                target.plain_text_name()
+            )));
+        }
+    }
+
     let mut count = 0;
     for target in targets {
         count += target.clear_or_count_matching_items(predicate, max_count);
@@ -138,6 +155,10 @@ fn clear_players(
     Ok(count)
 }
 
+fn invalid_permission(error: crate::permission::PermissionKeyError) -> CommandSyntaxError {
+    CommandSyntaxError::dynamic(format!("Invalid clear target permission: {error}"))
+}
+
 const fn matches_any_item(_stack: &ItemStack) -> bool {
     true
 }
@@ -150,6 +171,8 @@ fn missing_argument(name: &str) -> CommandSyntaxError {
 
 #[cfg(test)]
 mod tests {
+    use crate::command::target_permission::{group_permission, self_permission};
+    use crate::permission::{PermissionEntry, PermissionSet};
     use steel_registry::test_support::init_test_registry;
 
     use super::super::create_dispatcher;
@@ -218,5 +241,25 @@ mod tests {
             dispatcher.node(max_count),
             Some(node) if node.is_executable()
         ));
+    }
+
+    #[test]
+    fn clear_target_permissions_are_scoped_under_the_command_root() {
+        let root = PermissionKey::parse("minecraft.command.clear")
+            .expect("built-in permission should parse");
+        let self_permission = self_permission(&root).expect("self target permission should build");
+        let user_permission =
+            group_permission(&root, "user").expect("group target permission should build");
+
+        let self_only = PermissionSet::from_entries([PermissionEntry::allow(
+            PermissionKey::parse("minecraft.command.clear.self")
+                .expect("test permission should parse"),
+        )]);
+        assert!(self_only.allows(&self_permission));
+        assert!(!self_only.allows(&user_permission));
+
+        let all_clear = PermissionSet::from_entries([PermissionEntry::allow(root)]);
+        assert!(all_clear.allows(&self_permission));
+        assert!(all_clear.allows(&user_permission));
     }
 }

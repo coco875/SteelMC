@@ -10,6 +10,7 @@ mod registration;
 mod request_queue;
 pub mod sender;
 pub(crate) mod storage;
+mod target_permission;
 
 pub use api::{
     CommandArgument, CommandArgumentParser, CommandContext, CommandError, CommandNode,
