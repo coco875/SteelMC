@@ -68,7 +68,8 @@ impl PermissionKey {
     /// # Errors
     ///
     /// Returns an error when this key ends in a wildcard.
-    pub fn child(&self, segment: &PermissionSegment) -> Result<Self, PermissionKeyError> {
+    pub fn child(&self, segment: impl AsRef<str>) -> Result<Self, PermissionKeyError> {
+        let segment = PermissionSegment::parse(segment.as_ref())?;
         Self::parse(format!("{}.{}", self.0, segment.as_str()))
     }
 
@@ -135,6 +136,12 @@ impl PermissionSegment {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl AsRef<str> for PermissionSegment {
+    fn as_ref(&self) -> &str {
+        self.as_str()
     }
 }
 
