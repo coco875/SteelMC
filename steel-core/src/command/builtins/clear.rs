@@ -15,11 +15,10 @@ use super::super::{
     registration::CommandRegistration,
     target_permission::{can_target_player, player_target_access},
 };
-use crate::permission::PermissionKey;
+use crate::permission::{PermissionKey, PermissionKeyError};
 use crate::{entity::Entity as _, player::Player};
 
-pub(super) fn registration()
--> Result<CommandRegistration<CommandSource>, crate::permission::PermissionKeyError> {
+pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, PermissionKeyError> {
     let root = PermissionKey::parse("minecraft.command.clear")?;
     Ok(
         CommandRegistration::new(Identifier::vanilla_static("clear"), |_| command())
@@ -155,7 +154,7 @@ fn clear_players(
     Ok(count)
 }
 
-fn invalid_permission(error: crate::permission::PermissionKeyError) -> CommandSyntaxError {
+fn invalid_permission(error: PermissionKeyError) -> CommandSyntaxError {
     CommandSyntaxError::dynamic(format!("Invalid clear target permission: {error}"))
 }
 
