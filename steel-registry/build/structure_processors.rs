@@ -11,7 +11,6 @@ use quote::quote;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::value_providers::IntProvider;
 
-#[allow(dead_code)]
 #[path = "../src/structure_processor/data.rs"]
 mod structure_processor_data;
 
