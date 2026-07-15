@@ -51,7 +51,7 @@ pub(crate) fn build() -> TokenStream {
         );
         let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
 
-        let item_strs = items.iter().map(|s| s.as_str());
+        let item_strs = items.iter().map(std::string::String::as_str);
 
         static_array.extend(quote! {
             static #tag_ident_array: &[&str] = &[#(#item_strs),*];

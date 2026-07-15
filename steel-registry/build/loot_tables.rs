@@ -903,6 +903,40 @@ fn generate_enchantment_options(options: &Option<EnchantmentOptionsJson>) -> Tok
     }
 }
 
+fn generate_instrument_ref(value: &str) -> TokenStream {
+    let id = Identifier::parse_or_vanilla(value)
+        .unwrap_or_else(|error| panic!("invalid instrument id {value:?}: {error}"));
+    assert_eq!(
+        id.namespace.as_ref(),
+        Identifier::VANILLA_NAMESPACE,
+        "vanilla loot table references a non-vanilla instrument: {id}"
+    );
+    let ident = Ident::new(&id.path.to_shouty_snake_case(), Span::call_site());
+    quote! { &crate::vanilla_instruments::#ident }
+}
+
+fn generate_instrument_options(options: &Option<EnchantmentOptionsJson>) -> TokenStream {
+    match options {
+        Some(EnchantmentOptionsJson::Tag(value)) if value.starts_with('#') => {
+            let tag = value.trim_start_matches('#');
+            let id = Identifier::parse_or_vanilla(tag)
+                .unwrap_or_else(|error| panic!("invalid instrument tag {value:?}: {error}"));
+            let namespace = id.namespace.as_ref();
+            let path = id.path.as_ref();
+            quote! { InstrumentOptions::Tag(Identifier::new_static(#namespace, #path)) }
+        }
+        Some(EnchantmentOptionsJson::Tag(value)) => {
+            let instrument = generate_instrument_ref(value);
+            quote! { InstrumentOptions::Direct(&[#instrument]) }
+        }
+        Some(EnchantmentOptionsJson::List(values)) => {
+            let instruments = values.iter().map(|value| generate_instrument_ref(value));
+            quote! { InstrumentOptions::Direct(&[#(#instruments),*]) }
+        }
+        None => panic!("set_instrument function is missing its options holder set"),
+    }
+}
+
 fn generate_entity_flags(flags: &Option<EntityFlagsJson>) -> TokenStream {
     match flags {
         Some(f) => {
@@ -1773,15 +1807,7 @@ fn generate_function_body(function: &LootFunctionJson) -> TokenStream {
             quote! { LootFunction::SetStewEffect { effects: &[#(#effects),*] } }
         }
         "minecraft:set_instrument" => {
-            let options = match &function.options {
-                Some(EnchantmentOptionsJson::Tag(s)) => {
-                    let s = s
-                        .strip_prefix("#minecraft:")
-                        .unwrap_or(s.strip_prefix("minecraft:").unwrap_or(s));
-                    quote! { Identifier::vanilla_static(#s) }
-                }
-                _ => quote! { Identifier::vanilla_static("regular_goat_horns") },
-            };
+            let options = generate_instrument_options(&function.options);
             quote! { LootFunction::SetInstrument { options: #options } }
         }
         "minecraft:set_enchantments" => {
@@ -2204,7 +2230,7 @@ pub(crate) fn build() -> TokenStream {
             AttributeModifier, AttributeOperation, BannerPattern, BlockPredicate, BonusFormula,
             ConditionalLootFunction, CopySource, DamageSourcePredicate, DamageTagPredicate,
             DyeColor, EnchantedChance, EnchantmentOptions, EntityEquipment, EntityFlags,
-            EntityPredicate, EquipmentSlotGroup, FireworkExplosion, FireworkShape,
+            EntityPredicate, EquipmentSlotGroup, FireworkExplosion, FireworkShape, InstrumentOptions,
             LocationPredicate, LootCondition, LootContextEntity, LootEntry, LootFunction,
             LootPool, LootTable, LootTableRef, LootTableRegistry, LootType, ListOperation,
             NameTarget, NumberProvider, NumberProviderRange, PropertyCheck, ScoreboardTarget,

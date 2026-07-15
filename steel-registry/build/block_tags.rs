@@ -50,7 +50,7 @@ pub(crate) fn build() -> TokenStream {
             Span::call_site(),
         );
 
-        let block_strs = blocks.iter().map(|s| s.as_str());
+        let block_strs = blocks.iter().map(std::string::String::as_str);
 
         static_array.extend(quote! {
             static #tag_ident_array: &[&str] = &[#(#block_strs),*];
