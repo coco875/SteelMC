@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_DISTANCE_BUFFER"],"fn":["calculate_redstone_signal_from_container","clear_or_count_matching_stack","matching_item_count","with_indices"],"trait":["Container"]};

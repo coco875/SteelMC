@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ContainerRefSource","LockedContainer"],"struct":["ContainerId","ContainerLockGuard","ContainerRef"],"type":["SharedContainer","SyncPlayerInv"]};

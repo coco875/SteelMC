@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LevelChunkBlockSetResult"],"fn":["empty_postprocessing"],"struct":["LevelChunk","LevelChunkPromotion"]};

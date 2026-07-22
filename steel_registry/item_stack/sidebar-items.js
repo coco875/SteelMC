@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["decode_persistent_count","validate_contained_item_sizes"],"struct":["ItemStack"]};

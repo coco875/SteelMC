@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GameProfileAction"],"fn":["is_valid_player_name","offline_uuid"],"struct":["GameProfile"]};

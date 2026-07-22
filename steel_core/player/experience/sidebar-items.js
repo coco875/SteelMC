@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["level_for_total_points"],"struct":["Experience"]};
