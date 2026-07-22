@@ -250,6 +250,10 @@ const fn default_log_file() -> bool {
 
 pub(crate) const DEFAULT_MAX_HISTORY: usize = 50;
 
+const MAX_VANILLA_VIEW_DISTANCE: u8 = 32;
+const MIN_COMPRESSION_THRESHOLD: u32 = 256;
+const MAX_COMPRESSION_LEVEL: i32 = 9;
+
 const fn default_max_history() -> usize {
     DEFAULT_MAX_HISTORY
 }
@@ -525,10 +529,6 @@ fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> 
     })?;
     Ok(config)
 }
-
-const MAX_VANILLA_VIEW_DISTANCE: u8 = 32;
-const MIN_COMPRESSION_THRESHOLD: u32 = 256;
-const MAX_COMPRESSION_LEVEL: i32 = 9;
 
 /// Validates the server configuration.
 ///

@@ -30,6 +30,12 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 #[cfg(feature = "jaeger")]
 use tracing_subscriber::{Layer, registry::LookupSpan};
 
+#[cfg(all(windows, debug_assertions))]
+const DEBUG_MAIN_THREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
+
+#[cfg(feature = "deadlock_detection")]
+const DEADLOCK_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+
 #[cfg(feature = "jaeger")]
 fn init_jaeger<S>() -> Result<impl Layer<S> + Send + Sync, String>
 where
@@ -113,12 +119,6 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 #[cfg(all(feature = "mimalloc", not(feature = "dhat-heap")))]
 #[global_allocator]
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
-#[cfg(all(windows, debug_assertions))]
-const DEBUG_MAIN_THREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
-
-#[cfg(feature = "deadlock_detection")]
-const DEADLOCK_CHECK_INTERVAL: Duration = Duration::from_secs(10);
 
 // Windows defaults to a 1 MB main thread stack, which overflows in debug
 // builds due to deeply nested generated density functions.
