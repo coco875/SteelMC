@@ -183,7 +183,7 @@ impl LogState {
         Ok(())
     }
 
-    fn decorations(
+    const fn decorations(
         &self,
         input_width: usize,
         length: usize,
@@ -202,7 +202,7 @@ impl LogState {
         (input_color, left_arrow, right_arrow)
     }
 
-    fn viewport_start(start: usize, pos: usize, input_width: usize) -> usize {
+    const fn viewport_start(start: usize, pos: usize, input_width: usize) -> usize {
         if start > pos {
             return (pos + 1).saturating_sub(input_width);
         }

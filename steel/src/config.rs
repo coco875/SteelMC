@@ -594,7 +594,7 @@ fn validate_compression(compression: Option<CompressionInfo>) -> Result<(), &'st
     Ok(())
 }
 
-fn validate_secure_chat(config: &ServerConfig) -> Result<(), &'static str> {
+const fn validate_secure_chat(config: &ServerConfig) -> Result<(), &'static str> {
     if config.enforce_secure_chat {
         if !config.online_mode {
             return Err("online_mode must be true when enforce_secure_chat is enabled");

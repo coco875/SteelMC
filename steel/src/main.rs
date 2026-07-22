@@ -5,6 +5,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::num::NonZero;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
+use std::process::exit;
 use std::sync::Arc;
 #[cfg(feature = "deadlock_detection")]
 use std::time::Duration;
@@ -125,7 +126,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() {
     if let Err(error) = run_main() {
         eprintln!("{error}");
-        std::process::exit(1);
+        exit(1);
     }
 }
 

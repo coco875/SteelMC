@@ -180,7 +180,7 @@ impl Completer {
         out.flush()
     }
 
-    fn move_selection(&mut self, dir: Move, len: usize) {
+    const fn move_selection(&mut self, dir: Move, len: usize) {
         match dir {
             Move::Up => self.selected = (self.selected + len - 1) % len,
             Move::Down => self.selected = (self.selected + 1) % len,
