@@ -98,6 +98,7 @@ use steel_utils::{
     BlockPos, ChunkPos, Identifier,
     locks::{AsyncMutex, SyncMutex, SyncRwLock},
     text::DisplayResolutor,
+    threading::worker_threads_for_available,
     translations,
 };
 use text_components::{Modifier, TextComponent, format::Color};
@@ -234,7 +235,7 @@ fn configured_chunk_encoding_threads(configured_threads: Option<usize>) -> Optio
 }
 
 fn configured_packet_workers(configured_workers: Option<usize>) -> usize {
-    packet_workers_for_available(configured_workers, available_worker_threads())
+    worker_threads_for_available(configured_workers, available_worker_threads())
 }
 
 fn available_worker_threads() -> usize {
@@ -247,18 +248,6 @@ fn cap_positive_thread_count(
 ) -> Option<usize> {
     let configured_threads = configured_threads.filter(|&threads| threads > 0)?;
     Some(configured_threads.min(available_threads.max(1)))
-}
-
-fn packet_workers_for_available(
-    configured_workers: Option<usize>,
-    available_threads: usize,
-) -> usize {
-    let available_threads = available_threads.max(1);
-    if let Some(configured_workers) = configured_workers.filter(|&workers| workers > 0) {
-        return configured_workers.min(available_threads);
-    }
-
-    ((available_threads / 2).max(2)).min(available_threads)
 }
 
 #[cfg(test)]
@@ -308,7 +297,7 @@ mod tests {
         TickRateManager, UncachedPlayerTarget, WorldMap, can_entity_return_from_end_to_overworld,
         cap_positive_thread_count, classify_uncached_player_target, create_registered_dispatcher,
         direct_uuid_profile, is_allowed_to_enter_portal_target, is_end_return_transition,
-        offline_uuid, packet_workers_for_available, validate_player_permission_group_update,
+        offline_uuid, validate_player_permission_group_update,
     };
 
     struct TestConnection {
@@ -893,19 +882,6 @@ mod tests {
     fn zero_thread_count_keeps_pool_default() {
         assert_eq!(cap_positive_thread_count(Some(0), 8), None);
         assert_eq!(cap_positive_thread_count(None, 8), None);
-    }
-
-    #[test]
-    fn packet_worker_count_uses_the_configured_cap() {
-        assert_eq!(packet_workers_for_available(Some(16), 8), 8);
-        assert_eq!(packet_workers_for_available(Some(4), 8), 4);
-    }
-
-    #[test]
-    fn packet_worker_count_uses_the_automatic_default() {
-        assert_eq!(packet_workers_for_available(Some(0), 8), 4);
-        assert_eq!(packet_workers_for_available(None, 8), 4);
-        assert_eq!(packet_workers_for_available(None, 1), 1);
     }
 
     #[test]

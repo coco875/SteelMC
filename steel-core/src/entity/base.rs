@@ -760,19 +760,6 @@ impl EntityBaseState {
         };
         self
     }
-
-    /// Sets pose and dimensions on this state snapshot.
-    #[must_use]
-    pub fn with_pose_and_dimensions(
-        mut self,
-        pose: EntityPose,
-        dimensions: EntityDimensions,
-    ) -> Self {
-        self.pose = pose;
-        self.dimensions = dimensions;
-        self.bounding_box = Self::make_bounding_box(self.position, dimensions);
-        self
-    }
 }
 
 /// Shared vanilla entity save data that is not part of the movement snapshot.
