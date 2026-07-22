@@ -470,7 +470,6 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
             .map_err(|e| format!("failed to write config file {}: {e}", path.display()))?;
         let config: SteelConfig = toml::from_str(DEFAULT_CONFIG)
             .map_err(|e| format!("failed to parse default config: {e}"))?;
-        validate(&config.server).map_err(|e| format!("failed to validate default config: {e}"))?;
         config
     };
 
