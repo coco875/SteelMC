@@ -248,8 +248,10 @@ const fn default_log_file() -> bool {
     true
 }
 
+pub(crate) const DEFAULT_MAX_HISTORY: usize = 50;
+
 const fn default_max_history() -> usize {
-    50
+    DEFAULT_MAX_HISTORY
 }
 
 /// The full server configuration as deserialized from TOML.
@@ -443,6 +445,9 @@ impl LogLevel {
 /// Loads the server configuration from the given path, or creates it if it doesn't exist.
 ///
 pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?;
     let mut config = if path.exists() {
         let config_str = fs::read_to_string(path)
             .map_err(|e| format!("failed to read config file {}: {e}", path.display()))?;
@@ -451,9 +456,6 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         validate(&config.server).map_err(|e| format!("failed to validate config: {e}"))?;
         config
     } else {
-        let parent = path
-            .parent()
-            .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?;
         fs::create_dir_all(parent).map_err(|e| {
             format!(
                 "failed to create config directory {}: {e}",
@@ -468,15 +470,9 @@ pub fn load_or_create(path: &Path) -> Result<SteelConfig, String> {
         config
     };
 
-    let worlds_path = path
-        .parent()
-        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
-        .join("worlds.toml");
+    let worlds_path = parent.join("worlds.toml");
     config.worlds = load_or_create_worlds(&worlds_path)?;
-    let groups_path = path
-        .parent()
-        .ok_or_else(|| format!("failed to get config directory for {}", path.display()))?
-        .join("groups.toml");
+    let groups_path = parent.join("groups.toml");
     config.groups = load_or_create_groups(&groups_path)?;
     config.groups_path = Some(groups_path);
 
@@ -530,13 +526,38 @@ fn load_or_create_groups(path: &Path) -> Result<PermissionGroupsConfig, String> 
     Ok(config)
 }
 
+const MAX_VANILLA_VIEW_DISTANCE: u8 = 32;
+const MIN_COMPRESSION_THRESHOLD: u32 = 256;
+const MAX_COMPRESSION_LEVEL: i32 = 9;
+
 /// Validates the server configuration.
 ///
 /// # Errors
 /// This function will return an error if the configuration is invalid.
 fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     validate_login_security(config.online_mode, config.encryption)?;
-    if !config.allow_extended_view_distance && !(1..=32).contains(&config.view_distance) {
+    validate_view_distance(config)?;
+    validate_server_url(
+        config.auth_server.as_deref(),
+        "auth_server must be an absolute URL",
+        "auth_server must use http or https",
+    )?;
+    validate_server_url(
+        config.profile_server.as_deref(),
+        "profile_server must be an absolute URL",
+        "profile_server must use http or https",
+    )?;
+    if config.simulation_distance > config.view_distance {
+        return Err("Simulation distance must be less than or equal to view distance");
+    }
+    validate_compression(config.compression)?;
+    validate_secure_chat(config)
+}
+
+fn validate_view_distance(config: &ServerConfig) -> Result<(), &'static str> {
+    if !config.allow_extended_view_distance
+        && !(1..=MAX_VANILLA_VIEW_DISTANCE).contains(&config.view_distance)
+    {
         return Err("View distance must in range 1..32");
     }
     if config.allow_extended_view_distance
@@ -544,33 +565,37 @@ fn validate(config: &ServerConfig) -> Result<(), &'static str> {
     {
         return Err("View distance must in range 1..128");
     }
-    if let Some(auth_server) = &config.auth_server {
-        let Ok(url) = Url::parse(auth_server) else {
-            return Err("auth_server must be an absolute URL");
-        };
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err("auth_server must use http or https");
-        }
+    Ok(())
+}
+
+fn validate_server_url(
+    server: Option<&str>,
+    invalid_url_error: &'static str,
+    invalid_scheme_error: &'static str,
+) -> Result<(), &'static str> {
+    let Some(server) = server else { return Ok(()) };
+    let Ok(url) = Url::parse(server) else {
+        return Err(invalid_url_error);
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(invalid_scheme_error);
     }
-    if let Some(profile_server) = &config.profile_server {
-        let Ok(url) = Url::parse(profile_server) else {
-            return Err("profile_server must be an absolute URL");
-        };
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err("profile_server must use http or https");
-        }
-    }
-    if config.simulation_distance > config.view_distance {
-        return Err("Simulation distance must be less than or equal to view distance");
-    }
-    if let Some(compression) = config.compression {
-        if compression.threshold.get() < 256 {
+    Ok(())
+}
+
+fn validate_compression(compression: Option<CompressionInfo>) -> Result<(), &'static str> {
+    if let Some(compression) = compression {
+        if compression.threshold.get() < MIN_COMPRESSION_THRESHOLD {
             return Err("Compression threshold must be greater than or equal to 256");
         }
-        if !(1..=9).contains(&compression.level) {
+        if !(1..=MAX_COMPRESSION_LEVEL).contains(&compression.level) {
             return Err("Compression level must be between 1 and 9");
         }
     }
+    Ok(())
+}
+
+fn validate_secure_chat(config: &ServerConfig) -> Result<(), &'static str> {
     if config.enforce_secure_chat {
         if !config.online_mode {
             return Err("online_mode must be true when enforce_secure_chat is enabled");
