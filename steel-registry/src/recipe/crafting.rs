@@ -19,8 +19,6 @@ pub enum CraftingCategory {
     Misc,
 }
 
-impl CraftingCategory {}
-
 /// The result of a crafting recipe.
 #[derive(Debug, Clone)]
 pub struct RecipeResult {
