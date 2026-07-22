@@ -124,12 +124,6 @@ impl ItemBehaviorRegistry {
         self.behaviors[id].as_ref()
     }
 
-    /// Gets the behavior for an item by its ID.
-    #[must_use]
-    pub fn get_behavior_by_id(&self, id: usize) -> Option<&dyn ItemBehavior> {
-        self.behaviors.get(id).map(AsRef::as_ref)
-    }
-
     /// Get all behaviors.
     #[cfg(feature = "flint")]
     #[must_use]
