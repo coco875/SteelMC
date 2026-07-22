@@ -607,69 +607,6 @@ impl ChunkHolder {
         if ready { Some(self.data.read()) } else { None }
     }
 
-    /// Waits until the chunk has reached the given status.
-    pub fn await_chunk(
-        &self,
-        status: ChunkStatus,
-    ) -> impl Future<Output = Option<RwLockReadGuard<'_, ChunkAccess>>> {
-        let mut subscriber = self.sender.subscribe();
-        async move {
-            loop {
-                let ready = {
-                    let chunk_result = subscriber.borrow_and_update();
-                    matches!(&*chunk_result, ChunkResult::Ok(s) if status <= *s)
-                };
-
-                if ready {
-                    return Some(self.data.read());
-                }
-
-                if self.is_status_disallowed(status) {
-                    return None;
-                }
-
-                if subscriber.changed().await.is_err() {
-                    log::error!("Failed to wait for chunk access");
-                    return None;
-                }
-            }
-        }
-    }
-
-    /// Waits until the chunk has reached the given status without reading chunk data.
-    pub fn await_chunk_status(
-        &self,
-        status: ChunkStatus,
-    ) -> impl Future<Output = Option<ChunkStatus>> + '_ {
-        let mut subscriber = self.sender.subscribe();
-        async move {
-            loop {
-                let ready = {
-                    let chunk_result = subscriber.borrow_and_update();
-                    match &*chunk_result {
-                        ChunkResult::Ok(current_status) if status <= *current_status => {
-                            Some(*current_status)
-                        }
-                        ChunkResult::Ok(_) | ChunkResult::Unloaded => None,
-                    }
-                };
-
-                if ready.is_some() {
-                    return ready;
-                }
-
-                if self.is_status_disallowed(status) {
-                    return None;
-                }
-
-                if subscriber.changed().await.is_err() {
-                    log::error!("Failed to wait for chunk status");
-                    return None;
-                }
-            }
-        }
-    }
-
     fn await_claimed_chunk_status(
         &self,
         status: ChunkStatus,
