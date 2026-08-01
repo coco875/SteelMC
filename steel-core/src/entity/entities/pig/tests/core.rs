@@ -119,8 +119,11 @@ fn pig_item_steerable_boost_updates_synced_total_once() {
     let boost_time_total = pig.boost_time_total();
 
     assert!((140..=980).contains(&boost_time_total));
-    assert!(pig.is_boosting());
-    assert_eq!(pig.elapsed_boost_time(), 0);
+    {
+        let steering = pig.steering.lock();
+        assert!(steering.is_boosting());
+        assert_eq!(steering.boost_time(), 0);
+    }
     assert!(!ItemSteerable::boost(&pig));
     assert_eq!(pig.boost_time_total(), boost_time_total);
 }
@@ -270,14 +273,14 @@ fn pig_saddled_state_reads_saddle_equipment() {
 
     let pig = PigEntity::new(&vanilla_entities::PIG, 1, DVec3::ZERO, Weak::new());
 
-    assert!(!pig.is_saddled());
+    assert!(!LivingEntity::has_item_in_slot(&pig, EquipmentSlot::Saddle));
 
     pig.living_base.equipment().lock().set(
         EquipmentSlot::Saddle,
         ItemStack::new(&vanilla_items::SADDLE),
     );
 
-    assert!(pig.is_saddled());
+    assert!(LivingEntity::has_item_in_slot(&pig, EquipmentSlot::Saddle));
 }
 
 #[test]
@@ -416,6 +419,6 @@ fn mob_death_loot_without_world_keeps_preserved_equipment() {
         false,
     );
 
-    assert!(pig.is_saddled());
+    assert!(LivingEntity::has_item_in_slot(&pig, EquipmentSlot::Saddle));
     assert!(pig.is_equipment_drop_preserved(EquipmentSlot::Saddle));
 }

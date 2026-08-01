@@ -143,12 +143,6 @@ impl PigEntity {
         }
     }
 
-    /// Returns the current pig variant registry ID stored in synced data.
-    #[must_use]
-    pub fn variant_id(&self) -> i32 {
-        *self.entity_data.lock().variant.get()
-    }
-
     /// Sets the current pig variant by registry entry.
     pub fn set_variant(&self, variant: PigVariantRef) {
         let Some(id) = REGISTRY.pig_variants.id_from_key(&variant.key) else {
@@ -161,7 +155,7 @@ impl PigEntity {
     /// Returns the current pig variant, falling back to vanilla's default holder.
     #[must_use]
     pub fn variant(&self) -> PigVariantRef {
-        let id = self.variant_id();
+        let id = *self.entity_data.lock().variant.get();
         if let Ok(id) = usize::try_from(id)
             && let Some(variant) = REGISTRY.pig_variants.by_id(id)
         {
@@ -169,12 +163,6 @@ impl PigEntity {
         }
 
         &vanilla_pig_variants::TEMPERATE
-    }
-
-    /// Returns the current pig sound variant registry ID stored in synced data.
-    #[must_use]
-    pub fn sound_variant_id(&self) -> i32 {
-        *self.entity_data.lock().sound_variant.get()
     }
 
     /// Sets the current pig sound variant by registry entry.
@@ -189,7 +177,7 @@ impl PigEntity {
     /// Returns the current pig sound variant, falling back to vanilla classic.
     #[must_use]
     pub fn sound_variant(&self) -> PigSoundVariantRef {
-        let id = self.sound_variant_id();
+        let id = *self.entity_data.lock().sound_variant.get();
         if let Ok(id) = usize::try_from(id)
             && let Some(sound_variant) = REGISTRY.pig_sound_variants.by_id(id)
         {
@@ -223,12 +211,6 @@ impl PigEntity {
         true
     }
 
-    fn set_sound_variant_by_key(&self, key: &Identifier) {
-        if let Some(id) = REGISTRY.pig_sound_variants.id_from_key(key) {
-            self.set_sound_variant_id_from_usize(id);
-        }
-    }
-
     fn current_sound_set(&self) -> &'static PigAge {
         let sound_variant = self.sound_variant();
         if AgeableMob::is_baby(self) {
@@ -236,30 +218,6 @@ impl PigEntity {
         } else {
             &sound_variant.adult_sounds
         }
-    }
-
-    /// Returns whether this pig has a saddle equipped.
-    #[must_use]
-    pub fn is_saddled(&self) -> bool {
-        LivingEntity::has_item_in_slot(self, EquipmentSlot::Saddle)
-    }
-
-    /// Returns whether this pig can currently use the saddle equipment slot.
-    #[must_use]
-    pub fn can_use_saddle_slot(&self) -> bool {
-        Entity::is_alive(self) && !AgeableMob::is_baby(self)
-    }
-
-    /// Returns whether item-based steering is currently boosting.
-    #[must_use]
-    pub fn is_boosting(&self) -> bool {
-        self.steering.lock().is_boosting()
-    }
-
-    /// Returns the current elapsed boost time.
-    #[must_use]
-    pub fn elapsed_boost_time(&self) -> i32 {
-        self.steering.lock().boost_time()
     }
 
     /// Returns vanilla pig ridden speed.
@@ -278,25 +236,6 @@ impl PigEntity {
         let yaw = self.rotation().0;
         self.set_y_body_rot(yaw);
         self.set_y_head_rot(yaw);
-    }
-
-    fn update_dirty_mob_effect_entity_data(&self) {
-        if !self.living_base.take_effects_dirty() {
-            return;
-        }
-
-        let display = self.living_base.mob_effect_display_state();
-
-        {
-            let mut entity_data = self.entity_data.lock();
-            let living = entity_data.living_entity_mut();
-            living.effect_particles.set(display.particles);
-            living.effect_ambience.set(display.ambient);
-        }
-
-        self.entity_data.set_base_invisible_flag(display.invisible);
-        self.entity_data
-            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     /// Returns whether the stack is vanilla pig food.
@@ -368,7 +307,7 @@ impl Entity for PigEntity {
     }
 
     fn controlling_passenger(&self) -> Option<SharedEntity> {
-        if self.is_saddled()
+        if LivingEntity::has_item_in_slot(self, EquipmentSlot::Saddle)
             && let Some(passenger) = self.first_passenger()
             && passenger.as_player().is_some_and(|player| {
                 let mut is_holding_carrot_on_a_stick =
@@ -403,7 +342,21 @@ impl Entity for PigEntity {
     }
 
     fn update_data_before_sync(&self) {
-        self.update_dirty_mob_effect_entity_data();
+        if !self.living_base.take_effects_dirty() {
+            return;
+        }
+
+        let display = self.living_base.mob_effect_display_state();
+        {
+            let mut entity_data = self.entity_data.lock();
+            let living = entity_data.living_entity_mut();
+            living.effect_particles.set(display.particles);
+            living.effect_ambience.set(display.ambient);
+        }
+
+        self.entity_data.set_base_invisible_flag(display.invisible);
+        self.entity_data
+            .set_base_glowing_flag(self.has_glowing_tag() || display.glowing);
     }
 
     fn pack_syncable_attributes(&self) -> Vec<AttributeSnapshot> {
@@ -474,8 +427,9 @@ impl Entity for PigEntity {
         }
         if let Some(sound_variant) = nbt.string("sound_variant")
             && let Ok(key) = Identifier::from_str(sound_variant.to_str().as_ref())
+            && let Some(id) = REGISTRY.pig_sound_variants.id_from_key(&key)
         {
-            self.set_sound_variant_by_key(&key);
+            self.set_sound_variant_id_from_usize(id);
         }
     }
 }
@@ -512,7 +466,7 @@ impl LivingEntity for PigEntity {
     }
 
     fn can_use_slot(&self, slot: EquipmentSlot) -> bool {
-        slot != EquipmentSlot::Saddle || self.can_use_saddle_slot()
+        slot != EquipmentSlot::Saddle || Entity::is_alive(self) && !AgeableMob::is_baby(self)
     }
 
     fn can_dispenser_equip_into_slot(&self, slot: EquipmentSlot) -> bool {
@@ -694,7 +648,10 @@ impl Mob for PigEntity {
         };
         let has_food = PigEntity::is_food(&item_stack);
 
-        if !has_food && self.is_saddled() && !self.is_vehicle() && !player.is_secondary_use_active()
+        if !has_food
+            && LivingEntity::has_item_in_slot(self, EquipmentSlot::Saddle)
+            && !self.is_vehicle()
+            && !player.is_secondary_use_active()
         {
             if let Some(world) = self.level()
                 && let Some(vehicle) = world.get_entity_by_id(self.id())
