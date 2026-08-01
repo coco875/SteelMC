@@ -143,15 +143,6 @@ impl PigEntity {
         }
     }
 
-    /// Returns whether this pig is a baby.
-    ///
-    /// This resolves the otherwise ambiguous `LivingEntity::is_baby` and
-    /// `AgeableMob::is_baby` trait methods for concrete pig callers.
-    #[must_use]
-    pub fn is_baby(&self) -> bool {
-        AgeableMob::is_baby(self)
-    }
-
     /// Returns the current pig variant registry ID stored in synced data.
     #[must_use]
     pub fn variant_id(&self) -> i32 {
@@ -240,7 +231,7 @@ impl PigEntity {
 
     fn current_sound_set(&self) -> &'static PigAge {
         let sound_variant = self.sound_variant();
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             &sound_variant.baby_sounds
         } else {
             &sound_variant.adult_sounds
@@ -256,7 +247,7 @@ impl PigEntity {
     /// Returns whether this pig can currently use the saddle equipment slot.
     #[must_use]
     pub fn can_use_saddle_slot(&self) -> bool {
-        Entity::is_alive(self) && !self.is_baby()
+        Entity::is_alive(self) && !AgeableMob::is_baby(self)
     }
 
     /// Returns whether item-based steering is currently boosting.
@@ -332,7 +323,7 @@ impl Entity for PigEntity {
 
     fn dimensions_for_pose(&self, _pose: EntityPose) -> EntityDimensions {
         let scale = LivingEntity::get_scale(self);
-        if self.is_baby() {
+        if AgeableMob::is_baby(self) {
             PIG_BABY_DIMENSIONS.scale(scale)
         } else if self.entity_type.fixed {
             self.entity_type.dimensions
