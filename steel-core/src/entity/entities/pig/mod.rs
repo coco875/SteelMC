@@ -143,48 +143,13 @@ impl PigEntity {
         }
     }
 
-    /// Returns the vanilla age counter. Negative values are babies.
-    #[must_use]
-    pub fn get_age(&self) -> i32 {
-        AgeableMob::get_age(self)
-    }
-
-    /// Sets the vanilla age counter and updates the synchronized baby flag.
-    pub fn set_age(&self, age: i32) {
-        AgeableMob::set_age(self, age);
-    }
-
     /// Returns whether this pig is a baby.
+    ///
+    /// This resolves the otherwise ambiguous `LivingEntity::is_baby` and
+    /// `AgeableMob::is_baby` trait methods for concrete pig callers.
     #[must_use]
     pub fn is_baby(&self) -> bool {
         AgeableMob::is_baby(self)
-    }
-
-    /// Sets the vanilla baby state using the `AgeableMob` start age.
-    pub fn set_baby(&self, baby: bool) {
-        AgeableMob::set_baby(self, baby);
-    }
-
-    /// Returns vanilla `AgeableMob.forcedAge`.
-    #[must_use]
-    pub fn forced_age(&self) -> i32 {
-        AgeableMob::forced_age(self)
-    }
-
-    /// Sets vanilla `AgeableMob.forcedAge`.
-    pub fn set_forced_age(&self, forced_age: i32) {
-        AgeableMob::set_forced_age(self, forced_age);
-    }
-
-    /// Returns the synchronized vanilla age-lock flag.
-    #[must_use]
-    pub fn is_age_locked(&self) -> bool {
-        AgeableMob::is_age_locked(self)
-    }
-
-    /// Sets the synchronized vanilla age-lock flag.
-    pub fn set_age_locked(&self, age_locked: bool) {
-        AgeableMob::set_age_locked(self, age_locked);
     }
 
     /// Returns the current pig variant registry ID stored in synced data.
@@ -294,12 +259,6 @@ impl PigEntity {
         Entity::is_alive(self) && !self.is_baby()
     }
 
-    /// Returns the synced vanilla `DATA_BOOST_TIME` value.
-    #[must_use]
-    pub fn boost_time_total(&self) -> i32 {
-        ItemSteerable::boost_time_total(self)
-    }
-
     /// Returns whether item-based steering is currently boosting.
     #[must_use]
     pub fn is_boosting(&self) -> bool {
@@ -310,11 +269,6 @@ impl PigEntity {
     #[must_use]
     pub fn elapsed_boost_time(&self) -> i32 {
         self.steering.lock().boost_time()
-    }
-
-    /// Advances the active item-based steering boost.
-    pub fn tick_boost(&self) {
-        ItemSteerable::tick_boost(self);
     }
 
     /// Returns vanilla pig ridden speed.
