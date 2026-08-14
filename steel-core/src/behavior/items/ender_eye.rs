@@ -41,7 +41,7 @@ pub struct EnderEyeItem;
 
 impl ItemBehavior for EnderEyeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let clicked_pos = context.hit_result.block_pos;
+        let clicked_pos = context.hit_pos();
         let clicked_state = context.world.get_block_state(clicked_pos);
 
         let Some(clicked_block) = REGISTRY.blocks.by_state_id(clicked_state) else {

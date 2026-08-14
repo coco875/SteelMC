@@ -1,6 +1,7 @@
 //! Context types and results for block and item interactions.
 
 use glam::DVec3;
+use std::ops::Deref;
 use std::sync::Arc;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::item_stack::ItemStack;
@@ -69,38 +70,13 @@ impl InteractionResult {
 
 /// Context for placing a block.
 ///
-/// Vanilla porting map:
-/// - `UseOnContext.getClickedPos()` is [`Self::hit_pos`].
-/// - `BlockPlaceContext.getClickedPos()` is [`Self::place_pos`].
-/// - `BlockPlaceContext.replacingClickedOnBlock()` is
-///   [`Self::replaces_clicked_block`].
-///
-/// When translating vanilla block placement code, do not map
-/// `BlockPlaceContext.getClickedPos()` to [`Self::hit_pos`].
+/// Mirrors vanilla `BlockPlaceContext`, with the inherited `UseOnContext`
+/// represented through composition.
 pub struct BlockPlaceContext<'a> {
-    /// Raw block position from the hit result.
-    ///
-    /// Vanilla equivalent: `UseOnContext.getClickedPos()`.
-    hit_pos: BlockPos,
-    /// The face of the block that was clicked.
-    clicked_face: Direction,
-    /// The exact location where the click occurred.
-    click_location: DVec3,
-    /// Whether the click was inside the block.
-    inside: bool,
-    /// Position where the block will be placed.
-    ///
-    /// Vanilla equivalent: `BlockPlaceContext.getClickedPos()`. Vanilla returns
-    /// the raw hit position only when replacing the clicked block; otherwise it
-    /// returns the adjacent block position in the clicked-face direction.
-    place_pos: BlockPos,
-    /// Whether placement replaces the hit block itself.
-    ///
-    /// Vanilla equivalent: `BlockPlaceContext.replacingClickedOnBlock()`.
-    replaces_clicked_block: bool,
-    /// The world where the block is being placed.
-    pub world: &'a Arc<World>,
-    source: PlacementSource<'a>,
+    /// Vanilla's inherited `UseOnContext` state.
+    pub use_on_context: UseOnContext<'a, PlacementSource<'a>>,
+    relative_pos: BlockPos,
+    replace_clicked: bool,
     mode: PlacementMode,
 }
 
@@ -121,19 +97,13 @@ impl<'a> BlockPlaceContext<'a> {
         hit_result: &BlockHitResult,
         mode: PlacementMode,
     ) -> Self {
-        let hit_pos = hit_result.block_pos;
         let mut context = Self {
-            hit_pos,
-            clicked_face: hit_result.direction,
-            click_location: hit_result.location,
-            inside: hit_result.inside,
-            place_pos: hit_pos,
-            replaces_clicked_block: true,
-            world,
-            source,
+            use_on_context: UseOnContext::with_source(world, hit_result.clone(), source),
+            relative_pos: hit_result.direction.relative(hit_result.block_pos),
+            replace_clicked: true,
             mode,
         };
-        context.resolve_placement_geometry();
+        context.resolve_replacement();
         context
     }
 
@@ -168,16 +138,12 @@ impl<'a> BlockPlaceContext<'a> {
         Self::with_mode(world, source, &hit_result, PlacementMode::Directional)
     }
 
-    fn resolve_placement_geometry(&mut self) {
-        self.place_pos = self.hit_pos;
-        self.replaces_clicked_block = true;
-        self.replaces_clicked_block = self
+    fn resolve_replacement(&mut self) {
+        self.replace_clicked = true;
+        self.replace_clicked = self
             .world
-            .get_block_state(self.hit_pos)
+            .get_block_state(self.use_on_context.hit_pos())
             .can_be_replaced(self);
-        if self.mode == PlacementMode::Standard && !self.replaces_clicked_block {
-            self.place_pos = self.clicked_face.relative(self.hit_pos);
-        }
     }
 
     /// Returns whether the effective placement position can be replaced.
@@ -186,14 +152,14 @@ impl<'a> BlockPlaceContext<'a> {
         if self.mode == PlacementMode::Directional {
             return self
                 .world
-                .get_block_state(self.hit_pos)
+                .get_block_state(self.use_on_context.hit_pos())
                 .can_be_replaced(self);
         }
 
-        self.replaces_clicked_block
+        self.replace_clicked
             || self
                 .world
-                .get_block_state(self.place_pos)
+                .get_block_state(self.place_pos())
                 .can_be_replaced(self)
     }
 
@@ -201,47 +167,32 @@ impl<'a> BlockPlaceContext<'a> {
     #[must_use]
     pub fn at(mut self, pos: BlockPos, direction: Direction) -> Self {
         let (step_x, step_y, step_z) = direction.offset();
-        self.hit_pos = pos;
-        self.clicked_face = direction;
-        self.click_location = DVec3::new(
-            f64::from(pos.x()) + 0.5 + f64::from(step_x) * 0.5,
-            f64::from(pos.y()) + 0.5 + f64::from(step_y) * 0.5,
-            f64::from(pos.z()) + 0.5 + f64::from(step_z) * 0.5,
-        );
-        self.inside = false;
+        self.use_on_context.hit_result = BlockHitResult {
+            location: DVec3::new(
+                f64::from(pos.x()) + 0.5 + f64::from(step_x) * 0.5,
+                f64::from(pos.y()) + 0.5 + f64::from(step_y) * 0.5,
+                f64::from(pos.z()) + 0.5 + f64::from(step_z) * 0.5,
+            ),
+            direction,
+            block_pos: pos,
+            miss: false,
+            inside: false,
+            world_border_hit: false,
+        };
+        self.relative_pos = direction.relative(pos);
         self.mode = PlacementMode::Standard;
-        self.resolve_placement_geometry();
+        self.resolve_replacement();
         self
-    }
-
-    /// Returns the raw block position from the hit result.
-    #[must_use]
-    pub const fn hit_pos(&self) -> BlockPos {
-        self.hit_pos
-    }
-
-    /// Returns the face from the effective hit result.
-    #[must_use]
-    pub const fn clicked_face(&self) -> Direction {
-        self.clicked_face
-    }
-
-    /// Returns the exact effective hit location.
-    #[must_use]
-    pub const fn click_location(&self) -> DVec3 {
-        self.click_location
-    }
-
-    /// Returns whether the effective hit location is inside the hit block.
-    #[must_use]
-    pub const fn is_inside(&self) -> bool {
-        self.inside
     }
 
     /// Returns the effective block placement position.
     #[must_use]
     pub const fn place_pos(&self) -> BlockPos {
-        self.place_pos
+        if matches!(self.mode, PlacementMode::Directional) || self.replace_clicked {
+            self.use_on_context.hit_pos()
+        } else {
+            self.relative_pos
+        }
     }
 
     /// Returns whether placement replaces the originally hit block.
@@ -250,54 +201,57 @@ impl<'a> BlockPlaceContext<'a> {
         if self.mode == PlacementMode::Directional {
             self.can_place()
         } else {
-            self.replaces_clicked_block
+            self.replace_clicked
         }
     }
 
     /// Returns the player associated with this placement, if any.
     #[must_use]
     pub const fn player(&self) -> Option<&Player> {
-        self.source.player()
+        self.use_on_context.source.player()
     }
 
     /// Returns the interaction hand associated with this placement.
     #[must_use]
     pub const fn hand(&self) -> InteractionHand {
-        self.source.hand()
+        self.use_on_context.source.hand()
     }
 
     /// Runs `f` with read access to the current placement stack.
     pub fn with_item<R>(&self, f: impl FnOnce(&ItemStack) -> R) -> R {
-        self.source.with_item(f)
+        self.use_on_context.source.with_item(f)
     }
 
     /// Runs `f` with mutable access to the current placement stack.
     pub fn with_item_mut<R>(&mut self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
-        self.source.with_item_mut(f)
+        self.use_on_context.source.with_item_mut(f)
     }
 
     /// Returns the placement source used by block placement callbacks.
     #[must_use]
     pub const fn source(&self) -> &PlacementSource<'a> {
-        &self.source
+        &self.use_on_context.source
     }
 
     /// Returns the horizontal placement direction.
     #[must_use]
     pub fn horizontal_direction(&self) -> Direction {
-        self.source.orientation.horizontal_direction()
+        self.use_on_context
+            .source
+            .orientation
+            .horizontal_direction()
     }
 
     /// Returns the placement rotation.
     #[must_use]
     pub const fn rotation(&self) -> f32 {
-        self.source.orientation.rotation()
+        self.use_on_context.source.orientation.rotation()
     }
 
     /// Returns whether secondary use is active for this placement.
     #[must_use]
     pub const fn is_secondary_use_active(&self) -> bool {
-        self.source.is_secondary_use_active
+        self.use_on_context.source.is_secondary_use_active
     }
 
     /// Returns the direction the player is looking at most directly.
@@ -310,7 +264,10 @@ impl<'a> BlockPlaceContext<'a> {
     /// the clicked face when placing beside a non-replaceable block.
     #[must_use]
     pub fn get_nearest_looking_direction(&self) -> Direction {
-        self.source.orientation.nearest_looking_direction()
+        self.use_on_context
+            .source
+            .orientation
+            .nearest_looking_direction()
     }
 
     /// Returns the vertical direction the player is looking toward.
@@ -318,7 +275,10 @@ impl<'a> BlockPlaceContext<'a> {
     /// Based on Java's `BlockPlaceContext.getNearestLookingVerticalDirection()`.
     #[must_use]
     pub const fn get_nearest_looking_vertical_direction(&self) -> Direction {
-        self.source.orientation.nearest_vertical_direction()
+        self.use_on_context
+            .source
+            .orientation
+            .nearest_vertical_direction()
     }
     /// Returns all 6 directions ordered by how closely the player is looking at them.
     ///
@@ -327,11 +287,12 @@ impl<'a> BlockPlaceContext<'a> {
     /// is moved to the front of the array.
     #[must_use]
     pub fn get_nearest_looking_directions(&self) -> [Direction; 6] {
-        let (mut directions, adjust_for_replacement) = self.source.orientation.directions();
+        let (mut directions, adjust_for_replacement) =
+            self.use_on_context.source.orientation.directions();
 
         // If not replacing the clicked block, prioritize the opposite of clicked face
-        if adjust_for_replacement && !self.replaces_clicked_block {
-            let clicked_opposite = self.clicked_face.opposite();
+        if adjust_for_replacement && !self.replace_clicked {
+            let clicked_opposite = self.use_on_context.clicked_face().opposite();
             if let Some(index) = directions.iter().position(|&d| d == clicked_opposite)
                 && index > 0
             {
@@ -347,7 +308,7 @@ impl<'a> BlockPlaceContext<'a> {
     #[must_use]
     pub fn is_water_source(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, self.place_pos);
+        let fluid_state = get_fluid_state(self.world, self.place_pos());
         fluid_state.is_source() && fluid_state.is_water()
     }
 
@@ -355,8 +316,16 @@ impl<'a> BlockPlaceContext<'a> {
     #[must_use]
     pub fn is_full_water(&self) -> bool {
         use crate::fluid::get_fluid_state;
-        let fluid_state = get_fluid_state(self.world, self.place_pos);
+        let fluid_state = get_fluid_state(self.world, self.place_pos());
         fluid_state.is_full() && fluid_state.is_water()
+    }
+}
+
+impl<'a> Deref for BlockPlaceContext<'a> {
+    type Target = UseOnContext<'a, PlacementSource<'a>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.use_on_context
     }
 }
 
@@ -607,25 +576,64 @@ impl InventoryAccess {
     }
 }
 
-/// Context for using an item on a block.
-///
-/// Immutable fields (`player`, `hand`, `world`, `hit_result`) can be accessed
-/// freely while `inv` is mutably borrowed — the borrow checker tracks them as
-/// disjoint fields.
-pub struct UseOnContext<'a> {
+/// Player-only state attached to an ordinary item-on-block interaction.
+pub struct PlayerUseOnSource<'a> {
     /// The player using the item.
     pub player: &'a Player,
     /// Which hand the item is in.
     pub hand: InteractionHand,
-    /// Information about where the block was hit.
-    pub hit_result: BlockHitResult,
-    /// The world where the interaction is happening.
-    pub world: &'a Arc<World>,
     /// Mutable inventory access.
     pub inv: InventoryAccess,
 }
 
-impl<'a> UseOnContext<'a> {
+/// Context for using an item on a block.
+///
+/// `S` carries the interaction source so block placement can reuse the same
+/// context shape for player and synthetic callers, as vanilla does through its
+/// protected `UseOnContext` constructor.
+pub struct UseOnContext<'a, S = PlayerUseOnSource<'a>> {
+    /// Information about where the block was hit.
+    pub hit_result: BlockHitResult,
+    /// The world where the interaction is happening.
+    pub world: &'a Arc<World>,
+    source: S,
+}
+
+impl<'a, S> UseOnContext<'a, S> {
+    const fn with_source(world: &'a Arc<World>, hit_result: BlockHitResult, source: S) -> Self {
+        Self {
+            hit_result,
+            world,
+            source,
+        }
+    }
+
+    /// Returns the raw block position from the hit result.
+    #[must_use]
+    pub const fn hit_pos(&self) -> BlockPos {
+        self.hit_result.block_pos
+    }
+
+    /// Returns the face from the hit result.
+    #[must_use]
+    pub const fn clicked_face(&self) -> Direction {
+        self.hit_result.direction
+    }
+
+    /// Returns the exact hit location.
+    #[must_use]
+    pub const fn click_location(&self) -> DVec3 {
+        self.hit_result.location
+    }
+
+    /// Returns whether the hit location is inside the hit block.
+    #[must_use]
+    pub const fn is_inside(&self) -> bool {
+        self.hit_result.inside
+    }
+}
+
+impl<'a> UseOnContext<'a, PlayerUseOnSource<'a>> {
     /// Creates a new `UseOnContext`.
     #[must_use]
     pub const fn new(
@@ -635,13 +643,15 @@ impl<'a> UseOnContext<'a> {
         world: &'a Arc<World>,
         inventory: Shared<PlayerInventory>,
     ) -> Self {
-        Self {
-            player,
-            hand,
-            hit_result,
+        Self::with_source(
             world,
-            inv: InventoryAccess::new(inventory, hand),
-        }
+            hit_result,
+            PlayerUseOnSource {
+                player,
+                hand,
+                inv: InventoryAccess::new(inventory, hand),
+            },
+        )
     }
 
     /// Builds a [`BlockPlaceContext`] from this interaction context.
@@ -652,6 +662,14 @@ impl<'a> UseOnContext<'a> {
             PlacementSource::player_hand(self.player, &self.inv),
             &self.hit_result,
         )
+    }
+}
+
+impl<'a> Deref for UseOnContext<'a, PlayerUseOnSource<'a>> {
+    type Target = PlayerUseOnSource<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.source
     }
 }
 
@@ -830,7 +848,7 @@ mod tests {
         let shifted_pos = BlockPos::new(4, 90, 7);
         let mut shifted = context.at(shifted_pos, Direction::East);
 
-        assert_eq!(shifted.hit_pos(), shifted_pos);
+        assert_eq!(shifted.use_on_context.hit_pos(), shifted_pos);
         assert_eq!(shifted.place_pos(), shifted_pos);
         assert_eq!(shifted.clicked_face(), Direction::East);
         assert_eq!(shifted.click_location(), DVec3::new(5.0, 90.5, 7.5));
@@ -895,7 +913,7 @@ mod tests {
             world_border_hit: false,
         };
         let mut context = BlockPlaceContext::new(test_world(), source, &hit_result);
-        context.replaces_clicked_block = false;
+        context.replace_clicked = false;
 
         assert_eq!(context.get_nearest_looking_direction(), Direction::Down);
         assert_eq!(context.get_nearest_looking_directions()[0], Direction::West);

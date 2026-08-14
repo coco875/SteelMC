@@ -34,15 +34,15 @@ impl HoeItem {
 
 impl ItemBehavior for HoeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let state = context.world.get_block_state(context.hit_result.block_pos);
+        let state = context.world.get_block_state(context.hit_pos());
         let Some(tilled_variant) = Self::get_tilled_variant(state.get_block()) else {
             return InteractionResult::Pass;
         };
 
-        if (context.hit_result.direction == Direction::Down
+        if (context.clicked_face() == Direction::Down
             || !context
                 .world
-                .get_block_state(context.hit_result.block_pos.above())
+                .get_block_state(context.hit_pos().above())
                 .is_air())
             && state.get_block() != &vanilla_blocks::ROOTED_DIRT
         {
@@ -51,27 +51,27 @@ impl ItemBehavior for HoeItem {
 
         let new_state = tilled_variant.default_state();
         context.world.set_block(
-            context.hit_result.block_pos,
+            context.hit_pos(),
             new_state,
             UpdateFlags::UPDATE_ALL_IMMEDIATE,
         );
         context.world.game_event(
             &vanilla_game_events::BLOCK_CHANGE,
-            context.hit_result.block_pos,
+            context.hit_pos(),
             &GameEventContext::new(Some(context.player), Some(new_state)),
         );
 
         if state.get_block() == &vanilla_blocks::ROOTED_DIRT {
             context.world.pop_resource_from_face(
-                context.hit_result.block_pos,
-                context.hit_result.direction,
+                context.hit_pos(),
+                context.clicked_face(),
                 ItemStack::new(&vanilla_items::HANGING_ROOTS),
             );
         }
 
         context.world.play_block_sound(
             &sound_events::ITEM_HOE_TILL,
-            context.hit_result.block_pos,
+            context.hit_pos(),
             1.0,
             1.0,
             Some(context.player.id()),

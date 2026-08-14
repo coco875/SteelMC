@@ -44,10 +44,10 @@ impl ItemBehavior for AxeItem {
             return InteractionResult::Pass;
         }
 
-        let old_block_state = context.world.get_block_state(context.hit_result.block_pos);
+        let old_block_state = context.world.get_block_state(context.hit_pos());
         let old_block = old_block_state.get_block();
 
-        let pos = context.hit_result.block_pos;
+        let pos = context.hit_pos();
 
         let (new_block_state, sound_event, level_event) =
             if let Some(new_block) = get_strippable_variant(old_block) {

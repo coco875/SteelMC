@@ -34,11 +34,11 @@ impl ItemBehavior for PotionItem {
     }
 
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if context.hit_result.direction == Direction::Down {
+        if context.clicked_face() == Direction::Down {
             return InteractionResult::Pass;
         }
 
-        let pos = context.hit_result.block_pos;
+        let pos = context.hit_pos();
         let block_state = context.world.get_block_state(pos);
         if !block_state
             .get_block()

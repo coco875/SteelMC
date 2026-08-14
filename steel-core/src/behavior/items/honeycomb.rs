@@ -22,7 +22,7 @@ pub struct HoneycombItem;
 
 impl ItemBehavior for HoneycombItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let pos = context.hit_result.block_pos;
+        let pos = context.hit_pos();
 
         // Try block waxing first
         let old_block_state = context.world.get_block_state(pos);

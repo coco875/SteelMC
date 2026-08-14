@@ -22,7 +22,7 @@ pub struct FlintAndSteelItem;
 
 impl ItemBehavior for FlintAndSteelItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let click_pos = context.hit_result.block_pos;
+        let click_pos = context.hit_pos();
         let clicked_state = context.world.get_block_state(click_pos);
         if try_light_block(
             context,
@@ -38,7 +38,7 @@ impl ItemBehavior for FlintAndSteelItem {
             return InteractionResult::Success;
         }
 
-        let fire_pos = click_pos.relative(context.hit_result.direction);
+        let fire_pos = click_pos.relative(context.clicked_face());
         let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {
@@ -79,7 +79,7 @@ pub struct FireChargeItem;
 
 impl ItemBehavior for FireChargeItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        let click_pos = context.hit_result.block_pos;
+        let click_pos = context.hit_pos();
         let clicked_state = context.world.get_block_state(click_pos);
         if try_light_block(
             context,
@@ -92,7 +92,7 @@ impl ItemBehavior for FireChargeItem {
             return InteractionResult::Success;
         }
 
-        let fire_pos = click_pos.relative(context.hit_result.direction);
+        let fire_pos = click_pos.relative(context.clicked_face());
         let forward_dir = context.player.direction_yaw();
 
         if !FireBlock::can_be_placed_at(context.world, fire_pos, forward_dir) {

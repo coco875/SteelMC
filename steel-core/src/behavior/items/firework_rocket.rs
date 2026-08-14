@@ -51,8 +51,7 @@ impl ItemBehavior for FireworkRocketItem {
         }
 
         let source_item = context.inv.with_item(|item| item.clone());
-        let position =
-            Self::placement_position(context.hit_result.location, context.hit_result.direction);
+        let position = Self::placement_position(context.click_location(), context.clicked_face());
         let rocket = FireworkRocketEntity::launched(
             &vanilla_entities::FIREWORK_ROCKET,
             next_entity_id(),

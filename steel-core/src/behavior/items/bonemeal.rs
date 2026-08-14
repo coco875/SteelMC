@@ -114,41 +114,30 @@ impl BoneMealItem {
 
 impl ItemBehavior for BoneMealItem {
     fn use_on(&self, context: &mut UseOnContext) -> InteractionResult {
-        if Self::grow(context.world, context.hit_result.block_pos) {
+        let hit_pos = context.hit_pos();
+        let clicked_face = context.clicked_face();
+        if Self::grow(context.world, hit_pos) {
             context.inv.with_item(|item| item.shrink(1));
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
-                context.hit_result.block_pos,
+                hit_pos,
                 15,
                 None,
             );
             return InteractionResult::Success;
         }
-        let state = context.world.get_block_state(context.hit_result.block_pos);
-        let is_clicked_face_sturdy = context.world.is_face_sturdy(
-            state,
-            context.hit_result.block_pos,
-            context.hit_result.direction,
-        );
+        let state = context.world.get_block_state(hit_pos);
+        let is_clicked_face_sturdy = context.world.is_face_sturdy(state, hit_pos, clicked_face);
+        let adjacent_pos = hit_pos.relative(clicked_face);
         if is_clicked_face_sturdy
-            && Self::grow_water_plant(
-                context.world,
-                context
-                    .hit_result
-                    .block_pos
-                    .relative(context.hit_result.direction),
-                context.hit_result.direction,
-            )
+            && Self::grow_water_plant(context.world, adjacent_pos, clicked_face)
         {
             context.inv.with_item(|item| item.shrink(1));
             Self::cause_finish_use_vibration(context);
             context.world.level_event(
                 level_events::PARTICLES_AND_SOUND_PLANT_GROWTH,
-                context
-                    .hit_result
-                    .block_pos
-                    .relative(context.hit_result.direction),
+                adjacent_pos,
                 15,
                 None,
             );

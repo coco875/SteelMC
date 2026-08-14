@@ -201,7 +201,7 @@ impl BlockBehavior for MultifaceBlock {
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let level = context.world;
         let place_pos = if context.replaces_clicked_block() {
-            context.hit_pos()
+            context.use_on_context.hit_pos()
         } else {
             context.place_pos()
         };

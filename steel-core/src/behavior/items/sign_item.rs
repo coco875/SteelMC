@@ -216,7 +216,7 @@ impl ItemBehavior for HangingSignItem {
         let block_behaviors = &*BLOCK_BEHAVIORS;
 
         // Try ceiling hanging sign first if clicked from below, otherwise try wall
-        let blocks_to_try = if context.hit_result.direction == Direction::Down {
+        let blocks_to_try = if context.clicked_face() == Direction::Down {
             [self.ceiling_block, self.wall_block]
         } else {
             [self.wall_block, self.ceiling_block]

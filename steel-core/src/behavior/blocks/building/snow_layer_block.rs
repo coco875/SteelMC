@@ -106,7 +106,7 @@ impl BlockBehavior for SnowLayerBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         let pos = if context.replaces_clicked_block() {
-            context.hit_pos()
+            context.use_on_context.hit_pos()
         } else {
             context.place_pos()
         };
