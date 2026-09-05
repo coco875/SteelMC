@@ -120,7 +120,7 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
         .filter(|s| s.key.namespace == "minecraft")
         .map(|structure| structure.key.path.as_ref())
         .collect();
-    let expected_surface = vec![
+    let mut expected_surface = vec![
         "bastion_remnant",
         "desert_pyramid",
         "end_city",
@@ -187,7 +187,10 @@ fn structures_for_decoration_step_use_registry_order_inside_vanilla_step() {
             vec!["end_city"]
         );
     } else {
-        assert!(FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).is_empty());
+        assert_eq!(
+            FeatureDecorationRunner::structures_for_decoration_step(&registry, 0).len(),
+            0
+        );
     }
 }
 

@@ -188,6 +188,7 @@ impl DatapackOverlay {
     /// Panics if [`DATAPACKS_DIR_ENV`] points to a missing directory, or is not valid UTF-8.
     #[must_use]
     pub fn resolve_datapacks_dir() -> Option<PathBuf> {
+        println!("cargo:rerun-if-env-changed={DATAPACKS_DIR_ENV}");
         match env::var(DATAPACKS_DIR_ENV) {
             Ok(value) if value.is_empty() => None,
             Ok(value) => {

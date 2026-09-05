@@ -469,7 +469,7 @@ impl SurfaceSystem {
                 pillar_buffer * pillar_buffer * 2.5,
                 (pillar_floor * 50.0).ceil() + 24.0,
             );
-        let max_y = min_y + (chunk.sections().sections.len() * 16) as i32 - 1;
+        let max_y = min_y + (chunk.section_count() * 16) as i32 - 1;
         let start_y = (extension_top.floor() as i32).clamp(min_y, max_y);
 
         if height > start_y {

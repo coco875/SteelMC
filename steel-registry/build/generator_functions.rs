@@ -7,10 +7,7 @@ use proc_macro2::{Ident, Span};
 use quote::quote;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
 use steel_utils::Identifier;
 use steel_utils::datapack_overlay::DatapackOverlay;
 

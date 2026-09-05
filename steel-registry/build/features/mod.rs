@@ -93,10 +93,14 @@ pub(crate) fn build_configured(overlay: &DatapackOverlay) -> TokenStream {
 
     let mut register = TokenStream::new();
     for (registry_id, kind) in &entries {
-        let ident = registry_entry_ident(registry_id);
         let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid configured feature registry id {registry_id}: {err}")
         });
+        let ident = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
+            registry_entry_ident(identifier.path.as_ref())
+        } else {
+            registry_entry_ident(registry_id)
+        };
         let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<ConfiguredFeature> = LazyLock::new(|| {
@@ -142,10 +146,14 @@ pub(crate) fn build_placed(overlay: &DatapackOverlay) -> TokenStream {
 
     let mut register = TokenStream::new();
     for (registry_id, data) in &entries {
-        let ident = registry_entry_ident(registry_id);
         let identifier = Identifier::parse_or_vanilla(registry_id).unwrap_or_else(|err| {
             panic!("invalid placed feature registry id {registry_id}: {err}")
         });
+        let ident = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
+            registry_entry_ident(identifier.path.as_ref())
+        } else {
+            registry_entry_ident(registry_id)
+        };
         let key = generate_identifier(&identifier);
         stream.extend(quote! {
             pub static #ident: LazyLock<PlacedFeature> = LazyLock::new(|| {
