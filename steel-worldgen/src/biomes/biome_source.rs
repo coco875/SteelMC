@@ -368,6 +368,7 @@ impl NetherChunkBiomeSampler<'_> {
 ///
 /// Matches vanilla's `TheEndBiomeSource`.
 pub struct EndBiomeSource {
+    seed: u64,
     source: multi_noise::GeneratedEndBiomeSource,
 }
 
@@ -380,8 +381,15 @@ impl EndBiomeSource {
     #[must_use]
     pub fn new(seed: u64) -> Self {
         Self {
+            seed,
             source: multi_noise::new_end_biome_source(seed),
         }
+    }
+
+    /// World seed used to initialize this biome source.
+    #[must_use]
+    pub const fn seed(&self) -> u64 {
+        self.seed
     }
 
     fn chunk_sampler(&self) -> ChunkBiomeSampler<'_> {

@@ -266,7 +266,8 @@ impl SurfaceRuleTranspiler {
                     .as_slice()
                     .iter()
                     .map(|b| {
-                        let biome_ident = Ident::new(&super::biome_ident_str(b.as_str()), Span::call_site());
+                        let biome_ident =
+                            Ident::new(&crate::biome_ident_str(b.as_str()), Span::call_site());
                         quote! { biome_id == steel_registry::RegistryEntry::id(&*steel_registry::vanilla_biomes::#biome_ident) as u16 }
                     })
                     .collect();

@@ -37,7 +37,7 @@ pub(super) fn generate_configured_feature_entry_ref(identifier: &Identifier) -> 
     let registry_id = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
         identifier.path.as_ref().to_string()
     } else {
-        format!("{}:{}", identifier.namespace, identifier.path)
+        identifier.to_string()
     };
     let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_configured_features::#ident }
@@ -47,7 +47,7 @@ pub(super) fn generate_placed_feature_entry_ref(identifier: &Identifier) -> Toke
     let registry_id = if identifier.namespace == Identifier::VANILLA_NAMESPACE {
         identifier.path.as_ref().to_string()
     } else {
-        format!("{}:{}", identifier.namespace, identifier.path)
+        identifier.to_string()
     };
     let ident = registry_entry_ident(&registry_id);
     quote! { &crate::vanilla_placed_features::#ident }

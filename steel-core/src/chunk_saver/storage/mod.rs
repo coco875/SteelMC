@@ -27,12 +27,13 @@ use std::{
     io,
     sync::{Arc, Weak},
 };
+use steel_registry::shared_structs::BlockStateData as ProcessorBlockStateData;
 use steel_registry::structure::{
     LiquidSettingsData, OceanRuinBiomeTempData, RuinedPortalPlacementData, TerrainAdjustment,
 };
 use steel_registry::structure_processor::{
-    PosRuleTestData, ProcessorBlockStateData, ProcessorRuleData, RuleBlockEntityModifierData,
-    StructureProcessorAxis, StructureProcessorKind, StructureRuleTestData,
+    PosRuleTestData, ProcessorRuleData, RuleBlockEntityModifierData, StructureProcessorAxis,
+    StructureProcessorKind, StructureRuleTestData,
 };
 use steel_registry::template_pool::{PoolElement, ProcessorList, Projection};
 use steel_registry::{

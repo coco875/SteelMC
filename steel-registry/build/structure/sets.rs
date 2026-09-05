@@ -205,7 +205,7 @@ fn tag_value_strings(values: Vec<TagValueJson>) -> Vec<String> {
         .collect()
 }
 fn normalize_tag_key(tag: &str) -> String {
-    crate::generator_functions::parse_loose_identifier(tag)
+    Identifier::parse_or_vanilla(tag)
         .unwrap_or_else(|error| panic!("invalid tag key {tag}: {error}"))
         .to_string()
 }
