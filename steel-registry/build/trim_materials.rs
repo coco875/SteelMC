@@ -1,4 +1,6 @@
-use crate::generator_functions::{generate_identifier, generate_text_component, read_json_asset};
+use crate::generator_functions::{
+    generate_identifier, generate_text_component, read_ordered_minecraft_datapack_entries,
+};
 use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -42,7 +44,7 @@ fn validate_asset_suffix(suffix: &str) {
     );
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     // TrimMaterials.bootstrap defines registry insertion order in Vanilla.
     const VANILLA_ORDER: &[&str] = &[
         "quartz",
@@ -58,12 +60,8 @@ pub(crate) fn build() -> TokenStream {
         "resin",
     ];
 
-    let trim_materials = VANILLA_ORDER.iter().map(|name| {
-        let path = format!(
-            "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_material/{name}.json"
-        );
-        (*name, read_json_asset::<TrimMaterialJson>(&path))
-    });
+    let trim_materials: Vec<(String, TrimMaterialJson)> =
+        read_ordered_minecraft_datapack_entries(overlay, "trim_material", VANILLA_ORDER);
 
     let mut definitions = TokenStream::new();
     let mut registrations = TokenStream::new();

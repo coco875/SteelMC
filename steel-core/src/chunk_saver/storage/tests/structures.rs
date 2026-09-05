@@ -1,4 +1,52 @@
 use super::*;
+use std::collections::BTreeMap;
+
+#[test]
+fn direct_rule_processors_roundtrip_through_chunk_persistence() {
+    let loot_table = Identifier::vanilla_static("chests/simple_dungeon");
+    let processors = ProcessorList::Direct(vec![StructureProcessorKind::Rule {
+        rules: vec![ProcessorRuleData {
+            input_predicate: StructureRuleTestData::AlwaysTrue,
+            location_predicate: StructureRuleTestData::BlockMatch {
+                block: Identifier::vanilla_static("stone"),
+            },
+            position_predicate: PosRuleTestData::AlwaysTrue,
+            output_state: ProcessorBlockStateData {
+                name: Identifier::vanilla_static("cobblestone"),
+                properties: BTreeMap::default(),
+            },
+            block_entity_modifier: RuleBlockEntityModifierData::AppendLoot {
+                loot_table: loot_table.clone(),
+            },
+        }],
+    }]);
+
+    let persistent = ChunkStorage::processors_to_persistent(&processors);
+    let encoded = wincode::serialize(&persistent).expect("direct processors should serialize");
+    let decoded: PersistentProcessorList =
+        wincode::deserialize(&encoded).expect("direct processors should deserialize");
+    let restored = ChunkStorage::persistent_to_processors(&decoded);
+
+    let ProcessorList::Direct(restored_processors) = restored else {
+        panic!("expected direct processors");
+    };
+    let StructureProcessorKind::Rule { rules } = &restored_processors[0] else {
+        panic!("expected rule processor");
+    };
+    assert_eq!(rules.len(), 1);
+    assert!(matches!(
+        rules[0].location_predicate,
+        StructureRuleTestData::BlockMatch { ref block }
+            if block == &Identifier::vanilla_static("stone")
+    ));
+    assert!(matches!(
+        rules[0].block_entity_modifier,
+        RuleBlockEntityModifierData::AppendLoot {
+            loot_table: ref restored,
+        }
+            if restored == &loot_table
+    ));
+}
 
 #[test]
 fn structure_persistence_filters_empty_starts_and_sorts_entries() {

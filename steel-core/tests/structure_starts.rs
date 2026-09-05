@@ -914,6 +914,13 @@ fn processors_to_value(processors: &ProcessorList) -> Value {
     match processors {
         ProcessorList::Empty => json!({ "processors": [] }),
         ProcessorList::Registry(id) => Value::String(id.to_string()),
+        ProcessorList::Direct(list) => {
+            assert!(
+                list.is_empty(),
+                "structure comparison does not serialize non-empty direct processor lists: {list:?}"
+            );
+            json!({ "processors": [] })
+        }
     }
 }
 

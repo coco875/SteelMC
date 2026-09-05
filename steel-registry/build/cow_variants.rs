@@ -25,8 +25,9 @@ fn generate_cow_model_type(model: &str) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
-    let cow_variants: Vec<(String, CowVariantJson)> = read_variants_from_dir("cow_variant");
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
+    let cow_variants: Vec<(String, CowVariantJson)> =
+        read_variants_from_dir(overlay, "cow_variant");
 
     let mut stream = TokenStream::new();
 

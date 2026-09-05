@@ -66,6 +66,15 @@ pub struct TranspilerInput {
     pub legacy_random_source: bool,
 }
 
+/// Returns whether the dimension's transpiled density graph uses `BlendedNoise`.
+#[must_use]
+pub fn dimension_uses_blended_noise(input: &TranspilerInput) -> bool {
+    let mut ctx = context::TranspileContext::new(&input.prefix);
+    ctx.legacy_random_source = input.legacy_random_source;
+    ctx.analyze(input);
+    ctx.blended_noise_config.is_some()
+}
+
 /// Compile density function trees into a `TokenStream` of Rust code.
 ///
 /// The generated code contains:

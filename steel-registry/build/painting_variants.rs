@@ -76,9 +76,9 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
     }
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     let painting_variants: Vec<(String, PaintingVariantJson)> =
-        read_variants_from_dir("painting_variant");
+        read_variants_from_dir(overlay, "painting_variant");
 
     let mut stream = TokenStream::new();
 
