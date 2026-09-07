@@ -1,4 +1,6 @@
-use crate::generator_functions::{generate_identifier, generate_text_component, read_json_asset};
+use crate::generator_functions::{
+    generate_identifier, generate_text_component, read_ordered_minecraft_datapack_entries,
+};
 use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -15,7 +17,7 @@ struct TrimPatternJson {
     decal: bool,
 }
 
-pub(crate) fn build() -> TokenStream {
+pub(crate) fn build(overlay: &steel_utils::datapack_overlay::DatapackOverlay) -> TokenStream {
     // TrimPatterns.bootstrap defines registry insertion order in Vanilla.
     const VANILLA_ORDER: &[&str] = &[
         "sentry",
@@ -38,12 +40,8 @@ pub(crate) fn build() -> TokenStream {
         "bolt",
     ];
 
-    let trim_patterns = VANILLA_ORDER.iter().map(|name| {
-        let path = format!(
-            "../steel-utils/build_assets/builtin_datapacks/minecraft/trim_pattern/{name}.json"
-        );
-        (*name, read_json_asset::<TrimPatternJson>(&path))
-    });
+    let trim_patterns: Vec<(String, TrimPatternJson)> =
+        read_ordered_minecraft_datapack_entries(overlay, "trim_pattern", VANILLA_ORDER);
 
     let mut definitions = TokenStream::new();
     let mut registrations = TokenStream::new();
@@ -64,7 +62,6 @@ pub(crate) fn build() -> TokenStream {
             registry.register(&#ident);
         });
     }
-
     quote! {
         use crate::trim_pattern::{TrimPattern, TrimPatternRegistry, TrimPatternValue};
         use steel_utils::Identifier;

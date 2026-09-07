@@ -3,6 +3,9 @@
 //! Parsed at build time from vanilla datapack JSONs and structure NBT files.
 //! Used by the jigsaw placement system to assemble structures from pools.
 
+use std::io::Read;
+
+use crate::structure_processor::StructureProcessorKind;
 use steel_utils::{Direction, Identifier, Rotation};
 
 /// Orientation of a jigsaw block, encoding both facing direction and up direction.
@@ -180,15 +183,24 @@ impl Projection {
 
 /// Vanilla's `Holder<StructureProcessorList>` on single pool elements.
 ///
-/// The generated vanilla datapack currently uses registry references plus direct
-/// empty lists. If direct non-empty lists show up, codegen should preserve their
-/// processor entries instead of flattening them into this enum.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ProcessorList {
     /// Direct empty processor list: `{ "processors": [] }`.
     Empty,
+    /// Direct processor list payload.
+    Direct(Vec<StructureProcessorKind>),
     /// Registry-backed processor list, e.g. `minecraft:street_savanna`.
     Registry(Identifier),
+}
+
+impl PartialEq for ProcessorList {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Empty, Self::Empty) => true,
+            (Self::Registry(left), Self::Registry(right)) => left == right,
+            _ => false,
+        }
+    }
 }
 
 /// A pool element — one possible piece that can be drawn from a template pool.
@@ -261,4 +273,186 @@ pub struct TemplatePoolData {
     pub fallback: Identifier,
     /// Weighted elements. Each entry is (element, weight).
     pub elements: Vec<(PoolElement, i32)>,
+}
+
+fn extract_template_data_from_nbt_bytes(
+    bytes: &[u8],
+    key: &Identifier,
+) -> Result<TemplateData, String> {
+    let mut decoder = flate2::read::GzDecoder::new(bytes);
+    let mut data = Vec::new();
+    decoder
+        .read_to_end(&mut data)
+        .map_err(|err| format!("failed to decompress template {key}: {err}"))?;
+
+    let nbt = simdnbt::borrow::read(&mut std::io::Cursor::new(&data))
+        .map_err(|err| format!("failed to parse template {key}: {err}"))?;
+    let simdnbt::borrow::Nbt::Some(root) = nbt else {
+        return Err(format!("template {key} is empty"));
+    };
+    let compound = root.as_compound();
+
+    let size_list = compound
+        .list("size")
+        .ok_or_else(|| format!("template {key} is missing size"))?;
+    let size_ints = size_list
+        .ints()
+        .ok_or_else(|| format!("template {key} has non-int size list"))?;
+    if size_ints.len() < 3 {
+        return Err(format!("template {key} size list has fewer than 3 entries"));
+    }
+    let size = [size_ints[0], size_ints[1], size_ints[2]];
+
+    let palette = if let Some(palette) = compound.list("palette").and_then(|list| list.compounds())
+    {
+        Some(palette)
+    } else if let Some(palettes) = compound.list("palettes").and_then(|list| list.lists()) {
+        match palettes.into_iter().next() {
+            Some(first_palette) => Some(
+                first_palette
+                    .compounds()
+                    .ok_or_else(|| format!("template {key} palettes[0] is not a compound list"))?,
+            ),
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    let Some(palette) = palette else {
+        return Ok(TemplateData {
+            size,
+            jigsaws: Vec::new(),
+        });
+    };
+
+    let palette_len = palette.len();
+    let mut jigsaw_indices = Vec::new();
+    for (index, entry) in palette.into_iter().enumerate() {
+        let Some(name) = entry.string("Name") else {
+            continue;
+        };
+        if name.to_str() != "minecraft:jigsaw" {
+            continue;
+        }
+        let Some(orientation) = entry
+            .compound("Properties")
+            .and_then(|properties| properties.string("orientation"))
+            .map(|orientation| orientation.to_str().to_string())
+        else {
+            return Err(format!(
+                "jigsaw block state in template {key} is missing orientation"
+            ));
+        };
+        jigsaw_indices.push((index, orientation));
+    }
+
+    let blocks = compound
+        .list("blocks")
+        .ok_or_else(|| format!("template {key} is missing blocks"))?
+        .compounds()
+        .ok_or_else(|| format!("template {key} has non-compound blocks list"))?;
+
+    if jigsaw_indices.is_empty() {
+        return Ok(TemplateData {
+            size,
+            jigsaws: Vec::new(),
+        });
+    }
+
+    let mut jigsaws = Vec::new();
+    for block in blocks {
+        let state = block
+            .int("state")
+            .ok_or_else(|| format!("block in template {key} is missing state"))?;
+        if state < 0 {
+            return Err(format!(
+                "block in template {key} has negative state {state}"
+            ));
+        }
+        let state = usize::try_from(state)
+            .map_err(|_| format!("block state {state} in template {key} does not fit usize"))?;
+        if state >= palette_len {
+            return Err(format!(
+                "block state {state} in template {key} is outside palette length {palette_len}"
+            ));
+        }
+        let Some((_, orientation)) = jigsaw_indices.iter().find(|(index, _)| *index == state)
+        else {
+            continue;
+        };
+
+        let pos_list = block
+            .list("pos")
+            .ok_or_else(|| format!("jigsaw block in template {key} is missing pos"))?
+            .ints()
+            .ok_or_else(|| format!("jigsaw block in template {key} has non-int pos list"))?;
+        if pos_list.len() < 3 {
+            return Err(format!(
+                "jigsaw block in template {key} has fewer than 3 pos entries"
+            ));
+        }
+
+        let nbt_data = block
+            .compound("nbt")
+            .ok_or_else(|| format!("jigsaw block in template {key} is missing nbt"))?;
+        let get_str = |field: &str| -> Result<String, String> {
+            nbt_data
+                .string(field)
+                .map(|value| value.to_str().to_string())
+                .ok_or_else(|| format!("jigsaw block in template {key} is missing {field}"))
+        };
+
+        let orientation = JigsawOrientation::parse(orientation).ok_or_else(|| {
+            format!("template {key} has unknown jigsaw orientation {orientation}")
+        })?;
+        let joint = match get_str("joint")?.as_str() {
+            "aligned" => JointType::Aligned,
+            "rollable" => JointType::Rollable,
+            other => return Err(format!("template {key} has unknown jigsaw joint {other}")),
+        };
+
+        jigsaws.push(JigsawBlock {
+            pos: [pos_list[0], pos_list[1], pos_list[2]],
+            orientation,
+            name: get_str("name")?
+                .parse()
+                .map_err(|err| format!("template {key} jigsaw name: {err}"))?,
+            target: get_str("target")?
+                .parse()
+                .map_err(|err| format!("template {key} jigsaw target: {err}"))?,
+            pool: get_str("pool")?
+                .parse()
+                .map_err(|err| format!("template {key} jigsaw pool: {err}"))?,
+            joint,
+            final_state: get_str("final_state")?,
+            selection_priority: nbt_data.int("selection_priority").unwrap_or(0),
+            placement_priority: nbt_data.int("placement_priority").unwrap_or(0),
+        });
+    }
+
+    jigsaws.sort_by(|a, b| {
+        a.pos[1]
+            .cmp(&b.pos[1])
+            .then(a.pos[0].cmp(&b.pos[0]))
+            .then(a.pos[2].cmp(&b.pos[2]))
+    });
+
+    Ok(TemplateData { size, jigsaws })
+}
+
+/// Loads jigsaw template summaries from embedded compressed structure template NBT.
+pub fn load_template_data_from_nbt_keys(
+    keys: &[Identifier],
+    nbt_bytes: fn(&Identifier) -> Option<&'static [u8]>,
+) -> Vec<(Identifier, TemplateData)> {
+    keys.iter()
+        .map(|key| {
+            let bytes = nbt_bytes(key)
+                .unwrap_or_else(|| panic!("missing embedded structure template NBT for {key}"));
+            let data = extract_template_data_from_nbt_bytes(bytes, key)
+                .unwrap_or_else(|err| panic!("{err}"));
+            (key.clone(), data)
+        })
+        .collect()
 }

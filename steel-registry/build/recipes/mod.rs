@@ -1,10 +1,9 @@
 //! Build-time generation of typed vanilla recipe declarations.
 
-use std::{fs, path::Path};
-
 use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
+use steel_utils::datapack_overlay::DatapackOverlay;
 
 mod cooking;
 mod crafting;
@@ -23,11 +22,16 @@ struct ParsedRecipe {
     value: Value,
 }
 
-pub(crate) fn build() -> TokenStream {
-    let recipe_dir = Path::new("../steel-utils/build_assets/builtin_datapacks/minecraft/recipe");
-    println!("cargo:rerun-if-changed={}", recipe_dir.display());
-
-    let mut recipes = read_recipes(recipe_dir);
+pub(crate) fn build(overlay: &DatapackOverlay) -> TokenStream {
+    let mut recipes: Vec<_> = overlay
+        .list_json_relative("minecraft/recipe")
+        .into_iter()
+        .map(|(name, source)| ParsedRecipe {
+            value: serde_json::from_str(&source)
+                .unwrap_or_else(|error| panic!("Cannot parse recipe {name}: {error}")),
+            name,
+        })
+        .collect();
     recipes.sort_by(|left, right| left.name.cmp(&right.name));
 
     let declarations: Vec<_> = recipes.iter().map(generate_declaration).collect();
@@ -60,44 +64,6 @@ pub(crate) fn build() -> TokenStream {
         pub fn register_recipes(registry: &mut RecipeRegistry) {
             #(#registrations)*
         }
-    }
-}
-
-fn read_recipes(dir: &Path) -> Vec<ParsedRecipe> {
-    let mut recipes = Vec::new();
-    read_recipes_from(dir, dir, &mut recipes);
-    recipes
-}
-
-fn read_recipes_from(root: &Path, dir: &Path, recipes: &mut Vec<ParsedRecipe>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("Cannot read recipe directory {}: {error}", dir.display()));
-    for entry in entries {
-        let entry = entry.unwrap_or_else(|error| {
-            panic!(
-                "Cannot read an entry in recipe directory {}: {error}",
-                dir.display()
-            )
-        });
-        let path = entry.path();
-        if path.is_dir() {
-            read_recipes_from(root, &path, recipes);
-            continue;
-        }
-        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-            continue;
-        }
-        let name = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .with_extension("")
-            .to_string_lossy()
-            .replace(std::path::MAIN_SEPARATOR, "/");
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("Cannot read recipe {}: {error}", path.display()));
-        let value = serde_json::from_str(&source)
-            .unwrap_or_else(|error| panic!("Cannot parse recipe {}: {error}", path.display()));
-        recipes.push(ParsedRecipe { name, value });
     }
 }
 
