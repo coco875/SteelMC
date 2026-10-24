@@ -4,6 +4,20 @@
   "description": "Configuration schema for Steel Minecraft server",
   "type": "object",
   "properties": {
+    "plugins": {
+      "type": "array",
+      "description": "Trusted native plugins loaded at startup and retained until process exit",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "description": "Library path relative to the server working directory" },
+          "config": { "type": "object", "description": "Plugin-owned configuration" }
+        }
+      },
+      "default": []
+    },
     "server": {
       "type": "object",
       "description": "Server configuration",

@@ -1,0 +1,3 @@
+[submodule "stabby"]
+	path = stabby
+	url = https://github.com/ZettaScaleLabs/stabby

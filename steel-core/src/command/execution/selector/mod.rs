@@ -3,8 +3,6 @@
 //! Vanilla's server-wide candidate scope maps to one Steel domain. Selectors
 //! never expose players, entities, teams, or scores from another domain.
 
-use std::sync::Arc;
-
 use glam::DVec3;
 use rand::seq::SliceRandom;
 use simdnbt::owned::NbtCompound;

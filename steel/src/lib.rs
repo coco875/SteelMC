@@ -2,6 +2,8 @@
 //!
 //! The main library for the Steel Minecraft server.
 
+// World and server lifecycle graphs require deeper auto-trait evaluation.
+#![recursion_limit = "256"]
 use std::sync::atomic::Ordering;
 use std::{
     error::Error,
@@ -11,9 +13,15 @@ use std::{
 };
 
 use steel_core::{
-    GIT_HASH_SHORT, command::CommandRegistry, permission::PermissionGroupManager, server::Server,
+    GIT_HASH_SHORT,
+    bootstrap::init_globals,
+    command::CommandRegistry,
+    extension::{ExtensionHooks, RegisteredExtensions},
+    permission::PermissionGroupManager,
+    server::Server,
 };
 use steel_login::{JavaTcpClient, ServerConnectionSession};
+use steel_plugin_api::host;
 use tokio::{net::TcpListener, runtime::Runtime, select};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
@@ -92,6 +100,28 @@ impl SteelServer {
     ) -> Result<Self, SteelServerError> {
         log::info!("Starting Steel Server ({GIT_HASH_SHORT})");
 
+        let mut hooks = ExtensionHooks::default();
+        let mut plugins = Vec::with_capacity(steel_config.plugins.len());
+        for plugin in &steel_config.plugins {
+            let config = toml::to_string(&plugin.config).map_err(|error| {
+                SteelServerError::Core(format!("invalid plugin configuration: {error}"))
+            })?;
+            // SAFETY: configured plugins are trusted native code; the loader checks
+            // both entrypoint ABIs and pins the library for every callback's lifetime.
+            let plugin = unsafe { host::load(&plugin.path, &config, &mut hooks) }
+                .map_err(SteelServerError::Core)?;
+            log::info!("Pre-initialized plugin {}", plugin.name);
+            plugins.push(plugin);
+        }
+        init_globals();
+        let mut extensions =
+            RegisteredExtensions::new_with_builtins().map_err(SteelServerError::Core)?;
+        extensions.hooks = hooks;
+        let commands = command_registry.freeze().map_err(SteelServerError::Core)?;
+        for name in host::initialize_all(plugins).map_err(SteelServerError::Core)? {
+            log::info!("Initialized plugin {name}");
+        }
+
         let permission_group_store = steel_config.permission_group_store();
         let server_port = steel_config.server.server_port;
         let worlds_config = steel_config.worlds;
@@ -104,13 +134,14 @@ impl SteelServer {
         let player_idle_timeout = steel_config.server.player_idle_timeout;
         let runtime_config = steel_config.server.into_runtime_config();
 
-        let server = Server::new_with_commands(
+        let server = Server::new_with_extensions(
             chunk_runtime,
             cancel_token.clone(),
             runtime_config,
             worlds_config,
             permission_groups,
-            command_registry,
+            commands,
+            extensions,
         )
         .await
         .map_err(SteelServerError::Core)?;

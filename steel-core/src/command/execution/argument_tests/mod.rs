@@ -73,8 +73,8 @@ impl CommandArgumentSource for TestSource {
         matches!(domain, "alpha" | "beta")
     }
 
-    fn domain_names(&self) -> Vec<&str> {
-        vec!["alpha", "beta"]
+    fn domain_names(&self) -> Vec<String> {
+        vec!["alpha".to_owned(), "beta".to_owned()]
     }
 
     fn command_world_names(&self) -> Vec<String> {

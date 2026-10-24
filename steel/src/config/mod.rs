@@ -37,6 +37,9 @@ const DEFAULT_WORLDS: &str = include_str!("../../../package-content/worlds.toml"
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteelConfig {
+    /// Explicitly configured trusted native libraries, initialized before worlds.
+    #[serde(default)]
+    pub plugins: Vec<PluginConfig>,
     /// The full server configuration (`[server]` section)
     pub server: ServerConfig,
     /// Logging configuration (`[log]` section)
@@ -50,6 +53,17 @@ pub struct SteelConfig {
     /// Path to the loaded `groups.toml`.
     #[serde(skip, default)]
     pub groups_path: Option<PathBuf>,
+}
+
+/// One startup-loaded native plugin and its private configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginConfig {
+    /// Native library path, relative to the server's working directory.
+    pub path: PathBuf,
+    /// Plugin-owned TOML configuration passed during initialization.
+    #[serde(default)]
+    pub config: BTreeMap<String, toml::Value>,
 }
 
 impl SteelConfig {

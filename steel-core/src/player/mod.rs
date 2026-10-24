@@ -1,6 +1,7 @@
 //! This module contains all things player-related.
 mod abilities;
 pub mod advancement;
+pub mod bot;
 pub mod chat;
 pub mod chunk_sender;
 /// This module contains the `PlayerConnection` trait that abstracts network connections.
@@ -166,6 +167,7 @@ use crate::world::World;
 
 /// A struct representing a player.
 pub struct Player {
+    pub(crate) bot: Option<bot::BotController>,
     /// The player's game profile.
     pub gameprofile: GameProfile,
     /// The player's connection (abstracted for testing).
@@ -573,11 +575,15 @@ impl Player {
 
         let pos = DVec3::new(0.0, 0.0, 0.0);
 
+        let bot = connection
+            .is_server_controlled()
+            .then(bot::BotController::default);
         let equipment = Arc::clone(&inventory);
         let living_base = LivingEntityBase::with_equipment(&vanilla_entities::PLAYER, equipment);
         let player_uuid = gameprofile.id();
         let world_ref = Arc::downgrade(&world);
         Self {
+            bot,
             gameprofile,
             connection,
             session,
@@ -1286,6 +1292,9 @@ impl Player {
     }
 
     fn check_idle_timeout(&self) {
+        if self.is_server_controlled() {
+            return;
+        }
         if let Some(server) = self.server.upgrade() {
             let player_idle_timeout = server.player_idle_timeout.load(Ordering::Relaxed);
             if player_idle_timeout > 0
@@ -1513,7 +1522,7 @@ impl Entity for Player {
     }
 
     fn uses_client_movement_packets(&self) -> bool {
-        true
+        !self.is_server_controlled()
     }
 
     fn can_simulate_movement(&self) -> bool {
@@ -1525,6 +1534,9 @@ impl Entity for Player {
     }
 
     fn known_movement(&self) -> DVec3 {
+        if self.is_server_controlled() {
+            return self.velocity();
+        }
         if let Some(vehicle) = self.vehicle()
             && vehicle
                 .controlling_passenger()
@@ -1537,6 +1549,9 @@ impl Entity for Player {
     }
 
     fn known_speed(&self) -> DVec3 {
+        if self.is_server_controlled() {
+            return self.velocity();
+        }
         if let Some(vehicle) = self.vehicle()
             && vehicle
                 .controlling_passenger()
@@ -1728,6 +1743,7 @@ impl LivingEntity for Player {
 
     fn tick_living_entity(&self, entity: &SharedEntity) {
         self.advance_tick();
+        self.tick_bot_controls();
         self.tick_item_cooldowns();
         self.tick_attack_strength();
         self.tick_throttlers();
@@ -1765,8 +1781,10 @@ impl LivingEntity for Player {
         self.detect_equipment_updates();
         self.ai_step(entity);
 
-        // Vanilla snaps the player back to firstGood after ServerPlayer.doTick().
-        if let Err(error) = self.try_set_position(tick_position) {
+        // Network players follow their client's position. Bots retain server travel results.
+        if !self.is_server_controlled()
+            && let Err(error) = self.try_set_position(tick_position)
+        {
             panic!(
                 "failed to restore player {} tick position after ai_step: {error}",
                 self.id()
